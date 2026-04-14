@@ -1,0 +1,8 @@
+go 1.26.2
+
+use (
+	./mcp-servers/flux-mcp
+	./mcp-servers/kubectl-mcp
+	./mcp-servers/nixos-mcp
+	./mcp-servers/ssh-mcp
+)

@@ -1,0 +1,5 @@
+# Go binaries
+mcp-servers/kubectl-mcp/kubectl-mcp
+mcp-servers/flux-mcp/flux-mcp
+mcp-servers/ssh-mcp/ssh-mcp
+mcp-servers/nixos-mcp/nixos-mcp
