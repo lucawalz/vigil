@@ -32,7 +32,7 @@ nc -l 9099
 kubectl port-forward statefulset/alertmanager-kube-prometheus-stack-alertmanager -n monitoring 9093:9093
 curl -H 'Content-Type: application/json' \
   -d '[{"labels":{"alertname":"TestAlert","severity":"warning"}}]' \
-  http://127.0.0.1:9093/api/v1/alerts
+  http://127.0.0.1:9093/api/v2/alerts
 ```
 
 The `nc` listener should receive a POST within ~30 seconds (group_wait: 10s + delivery).
