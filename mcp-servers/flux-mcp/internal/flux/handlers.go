@@ -10,7 +10,7 @@ import (
 
 // HandleSuspendKustomization suspends a Flux Kustomization and calls onSuspend to
 // register the name with the session guard in server.go.
-func HandleSuspendKustomization(client FluxClient, maxBytes int, onSuspend func(name string)) server.ToolHandlerFunc {
+func HandleSuspendKustomization(client FluxClient, onSuspend func(name string)) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		ns, ok := args["namespace"].(string)
@@ -31,7 +31,7 @@ func HandleSuspendKustomization(client FluxClient, maxBytes int, onSuspend func(
 
 // HandleResumeKustomization resumes a Flux Kustomization and calls onResume to
 // unregister the name from the session guard.
-func HandleResumeKustomization(client FluxClient, maxBytes int, onResume func(name string) bool) server.ToolHandlerFunc {
+func HandleResumeKustomization(client FluxClient, onResume func(name string) bool) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		ns, ok := args["namespace"].(string)
