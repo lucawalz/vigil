@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -12,11 +11,9 @@ import (
 	"github.com/lucawalz/vigil/mcp-servers/flux-mcp/internal/flux"
 )
 
-// FluxServer holds the session-scoped flux_suspended guard. The guard enforces
-// that suspend_kustomization is called before any mutating tool in this session,
-// making it impossible for the agent to bypass the invariant.
+// FluxServer holds per-resource suspend state. guardMutation checks that the
+// specific named resource was suspended by this session before allowing mutations.
 type FluxServer struct {
-	suspended      atomic.Bool
 	suspendedNames map[string]bool
 	mu             sync.Mutex
 }
@@ -74,9 +71,13 @@ func NewFluxServer(client flux.FluxClient, cfg *config.Config) *server.MCPServer
 
 func (s *FluxServer) guardMutation(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if !s.suspended.Load() {
+		name, _ := req.GetArguments()["name"].(string)
+		s.mu.Lock()
+		allowed := name != "" && s.suspendedNames[name]
+		s.mu.Unlock()
+		if !allowed {
 			return mcp.NewToolResultError(
-				"flux_suspended guard: call suspend_kustomization before any mutating tool",
+				"flux_suspended guard: call suspend_kustomization for this resource before any mutating tool",
 			), nil
 		}
 		return next(ctx, req)
@@ -87,17 +88,12 @@ func (s *FluxServer) onSuspend(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.suspendedNames[name] = true
-	s.suspended.Store(true)
 }
 
-// onResume removes the name and only resets the flag when all suspended names
-// have been resumed — prevents premature guard reset on partial resume.
+// onResume removes the name from the suspended set.
 func (s *FluxServer) onResume(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.suspendedNames, name)
-	if len(s.suspendedNames) == 0 {
-		s.suspended.Store(false)
-	}
 	return true
 }
