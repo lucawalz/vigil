@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,16 +105,19 @@ func (c *realK8sClient) GetLogs(ctx context.Context, namespace, name, container 
 }
 
 func (c *realK8sClient) RolloutUndo(ctx context.Context, namespace, deploymentName string) (string, error) {
-	// Rollback by clearing rollout annotations — this reverts to the previous revision.
-	// We patch the deployment to remove the change-cause annotation and trigger a rollback.
-	patch := `{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":null}}}}}`
+	// Trigger a rolling restart by setting restartedAt to the current time.
+	// This causes the deployment controller to replace all pods one by one.
+	patch := fmt.Sprintf(
+		`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":%q}}}}}`,
+		time.Now().UTC().Format(time.RFC3339),
+	)
 	_, err := c.cs.AppsV1().Deployments(namespace).Patch(
 		ctx, deploymentName, types.MergePatchType, []byte(patch), metav1.PatchOptions{},
 	)
 	if err != nil {
 		return "", fmt.Errorf("rollout undo patch: %w", err)
 	}
-	return fmt.Sprintf("deployment.apps/%s rolled back", deploymentName), nil
+	return fmt.Sprintf("deployment.apps/%s restarted", deploymentName), nil
 }
 
 func (c *realK8sClient) ApplyPatch(ctx context.Context, namespace, resourceType, name, patch string) (string, error) {
