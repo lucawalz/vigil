@@ -15,7 +15,7 @@ var allowList = map[string]map[string]bool{
 	"ss":         {},
 }
 
-var shellMetaRE = regexp.MustCompile(`[;&|$` + "`" + `(){}<>]`)
+var shellMetaRE = regexp.MustCompile(`[;&|$` + "`" + `(){}<>\n\r]`)
 
 func validateCommand(binary string, args []string) error {
 	permitted, ok := allowList[binary]
