@@ -17,7 +17,7 @@ func main() {
 
 	cfg := config.Load()
 
-	client, err := ssh.NewRealSSHClient(cfg.SSHUser, cfg.SSHKeyPath)
+	client, err := ssh.NewRealSSHClient(cfg.SSHUser, cfg.SSHKeyPath, cfg.SSHHosts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ssh client: %v\n", err)
 		os.Exit(1)

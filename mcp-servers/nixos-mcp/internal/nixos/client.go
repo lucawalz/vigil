@@ -42,11 +42,12 @@ type NixOSClient interface {
 }
 
 type realNixOSClient struct {
-	user   string
-	signer gossh.Signer
+	user         string
+	signer       gossh.Signer
+	allowedHosts []string
 }
 
-func NewRealNixOSClient(user, keyPath string) (NixOSClient, error) {
+func NewRealNixOSClient(user, keyPath string, allowedHosts []string) (NixOSClient, error) {
 	expanded, err := expandTilde(keyPath)
 	if err != nil {
 		return nil, err
@@ -59,10 +60,25 @@ func NewRealNixOSClient(user, keyPath string) (NixOSClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse SSH key: %w", err)
 	}
-	return &realNixOSClient{user: user, signer: signer}, nil
+	return &realNixOSClient{user: user, signer: signer, allowedHosts: allowedHosts}, nil
+}
+
+func validateHost(host string, allowed []string) error {
+	if len(allowed) == 0 {
+		return fmt.Errorf("SSH_HOSTS is not configured; refusing to connect")
+	}
+	for _, h := range allowed {
+		if h == host {
+			return nil
+		}
+	}
+	return fmt.Errorf("host %q is not in SSH_HOSTS allow-list", host)
 }
 
 func (c *realNixOSClient) runSSH(host, cmd string) (string, error) {
+	if err := validateHost(host, c.allowedHosts); err != nil {
+		return "", err
+	}
 	cfg := &gossh.ClientConfig{
 		User: c.user,
 		Auth: []gossh.AuthMethod{gossh.PublicKeys(c.signer)},

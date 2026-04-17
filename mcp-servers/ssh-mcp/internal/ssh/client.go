@@ -27,11 +27,12 @@ type SSHClient interface {
 }
 
 type realSSHClient struct {
-	user   string
-	signer gossh.Signer
+	user         string
+	signer       gossh.Signer
+	allowedHosts []string
 }
 
-func NewRealSSHClient(user, keyPath string) (SSHClient, error) {
+func NewRealSSHClient(user, keyPath string, allowedHosts []string) (SSHClient, error) {
 	expanded, err := expandTilde(keyPath)
 	if err != nil {
 		return nil, err
@@ -44,10 +45,25 @@ func NewRealSSHClient(user, keyPath string) (SSHClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse SSH key: %w", err)
 	}
-	return &realSSHClient{user: user, signer: signer}, nil
+	return &realSSHClient{user: user, signer: signer, allowedHosts: allowedHosts}, nil
+}
+
+func validateHost(host string, allowed []string) error {
+	if len(allowed) == 0 {
+		return fmt.Errorf("SSH_HOSTS is not configured; refusing to connect")
+	}
+	for _, h := range allowed {
+		if h == host {
+			return nil
+		}
+	}
+	return fmt.Errorf("host %q is not in SSH_HOSTS allow-list", host)
 }
 
 func (c *realSSHClient) RunAllowedCommand(ctx context.Context, host, binary string, args []string) (string, error) {
+	if err := validateHost(host, c.allowedHosts); err != nil {
+		return "", err
+	}
 	if err := validateCommand(binary, args); err != nil {
 		return "", err
 	}

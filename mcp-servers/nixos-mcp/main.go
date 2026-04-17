@@ -17,7 +17,7 @@ func main() {
 
 	cfg := config.Load()
 
-	client, err := nixos.NewRealNixOSClient(cfg.SSHUser, cfg.SSHKeyPath)
+	client, err := nixos.NewRealNixOSClient(cfg.SSHUser, cfg.SSHKeyPath, cfg.SSHHosts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "nixos client: %v\n", err)
 		os.Exit(1)
