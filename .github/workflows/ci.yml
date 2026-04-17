@@ -92,6 +92,7 @@ jobs:
           work-dir: ${{ matrix.module }}
 
   go-build:
+    needs: [go-test, go-lint]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
