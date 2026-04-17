@@ -4,10 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	gossh "golang.org/x/crypto/ssh"
 )
+
+var shellMetaRE = regexp.MustCompile(`[;&|$` + "`" + `(){}<>\n\r]`)
+
+func validateArg(name, value string) error {
+	if shellMetaRE.MatchString(value) {
+		return fmt.Errorf("%s: contains disallowed shell metacharacter", name)
+	}
+	return nil
+}
 
 type NixOSClient interface {
 	GetGenerations(ctx context.Context, host string) (string, error)
@@ -87,13 +97,22 @@ func (c *realNixOSClient) RebuildTest(_ context.Context, host string) (string, e
 }
 
 func (c *realNixOSClient) GetJournal(_ context.Context, host, unit string, lines int) (string, error) {
+	if err := validateArg("unit", unit); err != nil {
+		return "", err
+	}
 	return c.runSSH(host, fmt.Sprintf("journalctl -u %s -n %d --no-pager", unit, lines))
 }
 
 func (c *realNixOSClient) GetSystemdStatus(_ context.Context, host, unit string) (string, error) {
+	if err := validateArg("unit", unit); err != nil {
+		return "", err
+	}
 	return c.runSSH(host, fmt.Sprintf("systemctl status %s --no-pager", unit))
 }
 
 func (c *realNixOSClient) EtcdSnapshotSave(_ context.Context, host, destPath string) (string, error) {
+	if err := validateArg("dest_path", destPath); err != nil {
+		return "", err
+	}
 	return c.runSSH(host, fmt.Sprintf("sudo etcdctl snapshot save %s", destPath))
 }
