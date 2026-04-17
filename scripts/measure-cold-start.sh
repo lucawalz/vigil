@@ -7,13 +7,14 @@ if [ $# -lt 1 ]; then
 fi
 
 HOST="$1"
+FLAKE_ROOT="${NIXOS_FLAKE_ROOT:-/etc/nixos}"
 SAMPLES=3
 times=()
 
 for ((i = 1; i <= SAMPLES; i++)); do
   t_start=$(date +%s)
-  if ! ssh "root@$HOST" 'sudo nixos-rebuild test 2>/dev/null'; then
-    echo "error: nixos-rebuild test failed on ${HOST}" >&2
+  if ! ssh "root@$HOST" "nixos-rebuild test --flake '${FLAKE_ROOT}#${HOST}'"; then
+    echo "error: nixos-rebuild test failed on ${HOST} (hint: host must match flake output name, e.g. worker-1)" >&2
     exit 1
   fi
   while true; do
