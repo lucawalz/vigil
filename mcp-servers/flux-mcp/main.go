@@ -23,7 +23,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	client := flux.NewRealFluxClient(restCfg)
+	client, err := flux.NewRealFluxClient(restCfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "flux client: %v\n", err)
+		os.Exit(1)
+	}
 	s := mcpserver.NewFluxServer(client, cfg)
 
 	if err := server.ServeStdio(s); err != nil {

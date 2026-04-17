@@ -33,12 +33,12 @@ type realFluxClient struct {
 	dynClient dynamic.Interface
 }
 
-func NewRealFluxClient(cfg *rest.Config) FluxClient {
+func NewRealFluxClient(cfg *rest.Config) (FluxClient, error) {
 	dynClient, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		panic(fmt.Sprintf("dynamic.NewForConfig: %v", err))
+		return nil, fmt.Errorf("dynamic.NewForConfig: %w", err)
 	}
-	return &realFluxClient{dynClient: dynClient}
+	return &realFluxClient{dynClient: dynClient}, nil
 }
 
 func (c *realFluxClient) SuspendKustomization(ctx context.Context, namespace, name string) error {
