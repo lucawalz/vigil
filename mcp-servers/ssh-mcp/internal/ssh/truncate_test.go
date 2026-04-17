@@ -14,7 +14,7 @@ func TestTruncateOutput_NoTruncation(t *testing.T) {
 }
 
 func TestTruncateOutput_Truncates(t *testing.T) {
-	s := strings.Repeat("line\n", 500) // well over 100 bytes
+	s := strings.Repeat("line\n", 500)
 	result := truncateOutput(s, 100)
 	if !strings.Contains(result, "[TRUNCATED:") {
 		t.Errorf("expected truncation marker, got: %s", result[:50])

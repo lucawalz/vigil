@@ -6,8 +6,8 @@ import (
 )
 
 var allowList = map[string]map[string]bool{
-	"journalctl": {},                                                         // any args
-	"systemctl":  {"status": true, "is-active": true, "is-failed": true},    // read-only sub-commands only
+	"journalctl": {},
+	"systemctl":  {"status": true, "is-active": true, "is-failed": true},
 	"free":       {},
 	"df":         {},
 	"uptime":     {},
