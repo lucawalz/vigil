@@ -63,7 +63,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("rollout_undo",
-			mcp.WithDescription("Rollback a deployment to its previous revision"),
+			mcp.WithDescription("Rolling restart of all pods in a deployment — not a rollback."),
 			mcp.WithString("namespace",
 				mcp.Required(),
 				mcp.Description("Kubernetes namespace"),
