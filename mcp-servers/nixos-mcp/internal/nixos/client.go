@@ -4,11 +4,24 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	gossh "golang.org/x/crypto/ssh"
 )
+
+func expandTilde(path string) (string, error) {
+	if !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	u, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("get current user: %w", err)
+	}
+	return filepath.Join(u.HomeDir, path[2:]), nil
+}
 
 var shellMetaRE = regexp.MustCompile(`[;&|$` + "`" + `(){}<>\n\r]`)
 
@@ -34,9 +47,13 @@ type realNixOSClient struct {
 }
 
 func NewRealNixOSClient(user, keyPath string) (NixOSClient, error) {
-	keyBytes, err := os.ReadFile(keyPath)
+	expanded, err := expandTilde(keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("read SSH key %s: %w", keyPath, err)
+		return nil, err
+	}
+	keyBytes, err := os.ReadFile(expanded)
+	if err != nil {
+		return nil, fmt.Errorf("read SSH key %s: %w", expanded, err)
 	}
 	signer, err := gossh.ParsePrivateKey(keyBytes)
 	if err != nil {
