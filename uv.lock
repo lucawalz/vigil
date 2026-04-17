@@ -2794,6 +2794,12 @@ requires-dist = [{ name = "pydantic-ai", specifier = ">=1.84.0" }]
 name = "vigil-diagnosis"
 version = "0.1.0"
 source = { editable = "agents/diagnosis" }
+dependencies = [
+    { name = "vigil-common" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "vigil-common", editable = "agents/common" }]
 
 [[package]]
 name = "vigil-eval"
@@ -2804,16 +2810,34 @@ source = { editable = "eval" }
 name = "vigil-orchestrator"
 version = "0.1.0"
 source = { editable = "agents/orchestrator" }
+dependencies = [
+    { name = "vigil-common" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "vigil-common", editable = "agents/common" }]
 
 [[package]]
 name = "vigil-remediation"
 version = "0.1.0"
 source = { editable = "agents/remediation" }
+dependencies = [
+    { name = "vigil-common" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "vigil-common", editable = "agents/common" }]
 
 [[package]]
 name = "vigil-watchdog"
 version = "0.1.0"
 source = { editable = "agents/watchdog" }
+dependencies = [
+    { name = "vigil-common" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "vigil-common", editable = "agents/common" }]
 
 [[package]]
 name = "watchfiles"
