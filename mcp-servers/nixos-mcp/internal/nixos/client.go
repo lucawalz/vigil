@@ -76,6 +76,9 @@ func validateHost(host string, allowed []string) error {
 }
 
 func (c *realNixOSClient) runSSH(host, cmd string) (string, error) {
+	if strings.ContainsAny(host, ":/ \t\n\r") {
+		return "", fmt.Errorf("host contains invalid character")
+	}
 	if err := validateHost(host, c.allowedHosts); err != nil {
 		return "", err
 	}
