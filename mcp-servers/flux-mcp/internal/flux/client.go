@@ -92,12 +92,12 @@ func (c *realFluxClient) GetKustomizationStatus(ctx context.Context, namespace, 
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Kustomization: %s/%s\n", namespace, name))
+	fmt.Fprintf(&sb, "Kustomization: %s/%s\n", namespace, name)
 
 	spec, _, _ := unstructuredNested(obj.Object, "spec")
 	if spec != nil {
 		if suspended, ok := spec.(map[string]interface{})["suspend"].(bool); ok {
-			sb.WriteString(fmt.Sprintf("Suspended: %v\n", suspended))
+			fmt.Fprintf(&sb, "Suspended: %v\n", suspended)
 		}
 	}
 
@@ -110,7 +110,7 @@ func (c *realFluxClient) GetKustomizationStatus(ctx context.Context, namespace, 
 					condType, _ := cond["type"].(string)
 					condStatus, _ := cond["status"].(string)
 					condMsg, _ := cond["message"].(string)
-					sb.WriteString(fmt.Sprintf("  %s: %s — %s\n", condType, condStatus, condMsg))
+					fmt.Fprintf(&sb, "  %s: %s — %s\n", condType, condStatus, condMsg)
 				}
 			}
 		}

@@ -16,13 +16,13 @@ import (
 // fakeK8sClient implements K8sClient for testing. Each method returns its fixture
 // string and the configured err field.
 type fakeK8sClient struct {
-	pods         string
-	describePod  string
-	logs         string
-	rolloutUndo  string
-	applyPatch   string
+	pods          string
+	describePod   string
+	logs          string
+	rolloutUndo   string
+	applyPatch    string
 	rolloutStatus string
-	err          error
+	err           error
 }
 
 func (f *fakeK8sClient) GetPods(_ context.Context, _ string) (string, error) {
