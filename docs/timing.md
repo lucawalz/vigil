@@ -1,18 +1,24 @@
 # Cold-start timing
 
-For tuning `OnActiveSec` on the rollback gate. Run `scripts/measure-cold-start.sh worker-1` (or `worker-2`) from somewhere that can SSH as root, then fix the numbers below from the script output. What's here now is just a stub.
+For `OnActiveSec` on the rollback gate. Measured with `scripts/measure-cold-start.sh <host> ~/nixos-homelab` (three `nixos-rebuild test` runs per node, Ready via local `kubectl`).
 
 ## Local cluster
 
 | Run | Host | s |
 |-----|------|---|
-| 1 | worker-1 | 60 |
-| 2 | worker-1 | 60 |
-| 3 | worker-1 | 60 |
+| 1 | worker-1 | 22 |
+| 2 | worker-1 | 11 |
+| 3 | worker-1 | 11 |
+| 1 | worker-2 | 12 |
+| 2 | worker-2 | 10 |
+| 3 | worker-2 | 12 |
+| 1 | master | 19 |
+| 2 | master | 11 |
+| 3 | master | 11 |
 
-Max: 60s  
-OnActiveSec: 90s (`ceil(max * 1.5)`)
+Max: 22s (worker-1 run 1)
+OnActiveSec: 33s (`ceil(max * 1.5)`)
 
 ## Hetzner
 
-Don't reuse the local times on cloud VMs; run the script again there when those nodes exist.
+Don't reuse these on cloud VMs; run the script again there when those nodes exist.
