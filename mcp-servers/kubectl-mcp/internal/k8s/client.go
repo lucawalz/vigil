@@ -162,8 +162,8 @@ func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deployment
 	fmt.Fprintf(&sb, "Deployment: %s/%s\n", namespace, deploymentName)
 	fmt.Fprintf(&sb, "Desired:    %d\n", desiredCount)
 	fmt.Fprintf(&sb, "Updated:    %d\n", updated)
-	sb.WriteString(fmt.Sprintf("Ready:      %d\n", ready))
-	sb.WriteString(fmt.Sprintf("Available:  %d\n", available))
+	fmt.Fprintf(&sb, "Ready:      %d\n", ready)
+	fmt.Fprintf(&sb, "Available:  %d\n", available)
 	if ready == desiredCount && updated == desiredCount {
 		sb.WriteString("Status:     Rolled out successfully\n")
 	} else {
