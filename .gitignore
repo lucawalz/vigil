@@ -13,3 +13,10 @@ dist/
 
 # OS
 .DS_Store
+
+# Terraform
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+infra/terraform/*.auto.tfvars
