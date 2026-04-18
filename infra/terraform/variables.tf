@@ -15,11 +15,6 @@ variable "sops_age_key_path" {
   description = "Local file path to SOPS age private key (set via TF_VAR_sops_age_key_path); read by inject-secrets.sh, never written to state"
 }
 
-variable "github_token" {
-  type      = string
-  sensitive = true
-}
-
 variable "nixos_homelab_branch" {
   type    = string
   default = "feat/hetzner-cluster"

@@ -27,7 +27,6 @@ module "install_master" {
   instance_id            = tostring(hcloud_server.master.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  nix_options            = { "access-tokens" = "github.com=${var.github_token}" }
 }
 
 resource "hcloud_server" "worker_1" {
@@ -59,7 +58,6 @@ module "install_worker_1" {
   instance_id            = tostring(hcloud_server.worker_1.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  nix_options            = { "access-tokens" = "github.com=${var.github_token}" }
 }
 
 resource "hcloud_server" "worker_2" {
@@ -91,7 +89,6 @@ module "install_worker_2" {
   instance_id            = tostring(hcloud_server.worker_2.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  nix_options            = { "access-tokens" = "github.com=${var.github_token}" }
 }
 
 resource "hcloud_server" "agent" {
@@ -123,5 +120,4 @@ module "install_agent" {
   instance_id            = tostring(hcloud_server.agent.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  nix_options            = { "access-tokens" = "github.com=${var.github_token}" }
 }
