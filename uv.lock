@@ -2822,6 +2822,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "hatchling" },
+    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -2832,6 +2833,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "hatchling", specifier = ">=1.27" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.25" },
     { name = "ruff", specifier = ">=0.15" },
