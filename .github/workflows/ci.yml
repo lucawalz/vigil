@@ -21,6 +21,23 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check .
 
+  python-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+      - name: Pytest (agents)
+        env:
+          LLM_MODEL_NAME: test-model
+          LLM_BASE_URL: http://localhost:1/v1
+          LLM_API_KEY: sk-test
+          VIGIL_WEBHOOK_SECRET: test-secret
+        run: uv run pytest tests/agents/ -x --tb=short -q
+
   detect-go-modules:
     runs-on: ubuntu-latest
     outputs:

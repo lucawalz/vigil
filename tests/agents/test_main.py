@@ -75,6 +75,7 @@ def _alertmanager_payload() -> dict:
 @pytest.fixture
 def test_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """Build a FastAPI app that skips MCP boot and stubs state with mocks."""
+    monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "test-secret")
 
     @asynccontextmanager
     async def _noop_lifespan(app: FastAPI) -> AsyncIterator[None]:
