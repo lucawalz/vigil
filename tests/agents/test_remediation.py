@@ -47,9 +47,7 @@ def test_remediation_prompt_mandates_flux_suspend_first() -> None:
     assert "suspend_kustomization" in mod_source
     assert "resume_kustomization" in mod_source
     # At least one uppercase-emphasised ordering word must appear.
-    has_emphasis = any(
-        kw in mod_source for kw in ("FIRST", "MANDATORY", "MUST")
-    )
+    has_emphasis = any(kw in mod_source for kw in ("FIRST", "MANDATORY", "MUST"))
     assert has_emphasis, "Prompt must emphasise suspend_kustomization ordering"
 
 

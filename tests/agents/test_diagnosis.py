@@ -51,8 +51,7 @@ def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:
     """System prompt must never name a symptom as root cause."""
     source = inspect.getsource(_diag_module)
     has_symptom_clause = any(
-        term in source
-        for term in ("CrashLoopBackOff", "ImagePullBackOff", "OOMKilled")
+        term in source for term in ("CrashLoopBackOff", "ImagePullBackOff", "OOMKilled")
     )
     assert has_symptom_clause, "System prompt must forbid K8s symptoms as root causes"
 

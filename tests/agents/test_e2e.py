@@ -61,6 +61,7 @@ async def test_webhook_to_audit_log_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "e2e-secret")
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -123,9 +124,7 @@ async def test_webhook_to_audit_log_end_to_end(
     }
 
     transport = httpx.ASGITransport(app=test_app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post(
             "/webhook",
             json=payload,

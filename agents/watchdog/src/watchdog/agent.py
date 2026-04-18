@@ -97,9 +97,7 @@ def _health_degraded(baseline: HealthSnapshot, current: HealthSnapshot) -> bool:
     return False
 
 
-async def run_watchdog(
-    deps: WatchdogDeps, baseline: HealthSnapshot
-) -> WatchdogResult:
+async def run_watchdog(deps: WatchdogDeps, baseline: HealthSnapshot) -> WatchdogResult:
     """Poll cluster health for up to WATCHDOG_WINDOW_S seconds.
 
     Returns WatchdogResult(degraded=True, snapshot=<first degraded obs>) on
