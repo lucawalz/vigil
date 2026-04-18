@@ -15,10 +15,19 @@ ROLE="${ROLE:-${1:-unknown}}"
 root="$(mktemp -d)"
 trap 'rm -rf "${root}"' EXIT
 
+HETZNER_HOST_KEYS_DIR="${HETZNER_HOST_KEYS_DIR:-${HOME}/.ssh/hetzner-host-keys}"
+STABLE_KEY="${HETZNER_HOST_KEYS_DIR}/${ROLE}_ed25519"
+
 install -d -m 700 "${root}/etc/ssh"
-ssh-keygen -t ed25519 -N "" \
-  -f "${root}/etc/ssh/ssh_host_ed25519_key" \
-  -C "root@${ROLE}" >&2
+if [[ -r "${STABLE_KEY}" && -r "${STABLE_KEY}.pub" ]]; then
+  install -m 600 "${STABLE_KEY}"     "${root}/etc/ssh/ssh_host_ed25519_key"
+  install -m 644 "${STABLE_KEY}.pub" "${root}/etc/ssh/ssh_host_ed25519_key.pub"
+else
+  ssh-keygen -t ed25519 -N "" \
+    -f "${root}/etc/ssh/ssh_host_ed25519_key" \
+    -C "root@${ROLE}" >&2
+  echo "warning: no stable host key at ${STABLE_KEY}; agenix decryption will fail unless this fresh key's pubkey is added to nixos-homelab/secrets/secrets.nix" >&2
+fi
 
 install -d -m 700 "${root}/etc/sops/age"
 install -m 600 "${SOPS_AGE_KEY_FILE}" "${root}/etc/sops/age/keys.txt"
