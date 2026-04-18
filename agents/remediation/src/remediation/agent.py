@@ -17,7 +17,8 @@ from pydantic_ai.usage import Usage, UsageLimits
 
 from .models import RemediationDeps, RemediationResult
 
-_SYSTEM_PROMPT = """You are a Kubernetes remediation agent operating through MCP tool calls only.
+_SYSTEM_PROMPT = """\
+You are a Kubernetes remediation agent operating through MCP tool calls only.
 
 MANDATORY TOOL CALL ORDER:
 1. FIRST call: suspend_kustomization for the SPECIFIC Kustomization named in the
@@ -31,15 +32,17 @@ MANDATORY TOOL CALL ORDER:
    if the repair was wrong, which is the Watchdog's signal to trigger rollback).
 
 Return a RemediationResult with:
-- success: True only if the repair tool returned success AND resume_kustomization was called.
+- success: True only if the repair tool returned success AND
+  resume_kustomization was called.
 - actions_taken: ordered list of tool names called (e.g., ["suspend_kustomization",
   "apply_patch", "resume_kustomization"]).
 - tool_calls_count: total count of tool calls including suspend/resume.
-- destructive_repair: True if any mutation tool (apply_patch, rollout_undo, rebuild_nixos)
-  was invoked -- used for audit/safety tracking by the Orchestrator.
+- destructive_repair: True if any mutation tool (apply_patch, rollout_undo,
+  rebuild_nixos) was invoked -- used for audit/safety tracking by the Orchestrator.
 
 Do not call any tool from ssh-mcp; it is not in your toolset.
-Do not call any kubectl mutation before suspend_kustomization for the target resource."""
+Do not call any kubectl mutation before suspend_kustomization for the target
+resource."""
 
 
 remediation_agent: Agent[RemediationDeps, RemediationResult] = Agent(

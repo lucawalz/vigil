@@ -29,7 +29,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --locked --all-extras --dev
+        run: uv sync --locked --all-extras --dev --all-packages
       - name: Pytest (agents)
         env:
           LLM_MODEL_NAME: test-model
@@ -48,7 +48,8 @@ jobs:
         with:
           go-version: "1.23"
       - id: set-modules
-        run: echo "modules=$(go list -m -json | jq -s '.' | jq -c '[.[].Dir]')" >> $GITHUB_OUTPUT
+        run: |
+          echo "modules=$(grep -E '^\s+\./' go.work | tr -d '\t ' | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> $GITHUB_OUTPUT
 
   go-lint:
     needs: detect-go-modules
