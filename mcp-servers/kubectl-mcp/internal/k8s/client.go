@@ -159,9 +159,9 @@ func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deployment
 	ready := dep.Status.ReadyReplicas
 	available := dep.Status.AvailableReplicas
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Deployment: %s/%s\n", namespace, deploymentName))
-	sb.WriteString(fmt.Sprintf("Desired:    %d\n", desiredCount))
-	sb.WriteString(fmt.Sprintf("Updated:    %d\n", updated))
+	fmt.Fprintf(&sb, "Deployment: %s/%s\n", namespace, deploymentName)
+	fmt.Fprintf(&sb, "Desired:    %d\n", desiredCount)
+	fmt.Fprintf(&sb, "Updated:    %d\n", updated)
 	sb.WriteString(fmt.Sprintf("Ready:      %d\n", ready))
 	sb.WriteString(fmt.Sprintf("Available:  %d\n", available))
 	if ready == desiredCount && updated == desiredCount {
