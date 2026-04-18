@@ -56,8 +56,8 @@ func (c *realK8sClient) GetPods(ctx context.Context, namespace string) (string, 
 				ready++
 			}
 		}
-		sb.WriteString(fmt.Sprintf("%s\t%s\t%s\t%d/%d\n",
-			pod.Namespace, pod.Name, string(pod.Status.Phase), ready, total))
+		fmt.Fprintf(&sb, "%s\t%s\t%s\t%d/%d\n",
+			pod.Namespace, pod.Name, string(pod.Status.Phase), ready, total)
 	}
 	return sb.String(), nil
 }
@@ -68,20 +68,20 @@ func (c *realK8sClient) DescribePod(ctx context.Context, namespace, name string)
 		return "", fmt.Errorf("get pod: %w", err)
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Name:      %s\n", pod.Name))
-	sb.WriteString(fmt.Sprintf("Namespace: %s\n", pod.Namespace))
-	sb.WriteString(fmt.Sprintf("Node:      %s\n", pod.Spec.NodeName))
-	sb.WriteString(fmt.Sprintf("Status:    %s\n", string(pod.Status.Phase)))
-	sb.WriteString(fmt.Sprintf("IP:        %s\n", pod.Status.PodIP))
+	fmt.Fprintf(&sb, "Name:      %s\n", pod.Name)
+	fmt.Fprintf(&sb, "Namespace: %s\n", pod.Namespace)
+	fmt.Fprintf(&sb, "Node:      %s\n", pod.Spec.NodeName)
+	fmt.Fprintf(&sb, "Status:    %s\n", string(pod.Status.Phase))
+	fmt.Fprintf(&sb, "IP:        %s\n", pod.Status.PodIP)
 	sb.WriteString("Containers:\n")
 	for _, c := range pod.Spec.Containers {
-		sb.WriteString(fmt.Sprintf("  %s:\n    Image: %s\n", c.Name, c.Image))
+		fmt.Fprintf(&sb, "  %s:\n    Image: %s\n", c.Name, c.Image)
 	}
 	if len(pod.Status.ContainerStatuses) > 0 {
 		sb.WriteString("ContainerStatuses:\n")
 		for _, cs := range pod.Status.ContainerStatuses {
-			sb.WriteString(fmt.Sprintf("  %s: Ready=%v RestartCount=%d\n",
-				cs.Name, cs.Ready, cs.RestartCount))
+			fmt.Fprintf(&sb, "  %s: Ready=%v RestartCount=%d\n",
+				cs.Name, cs.Ready, cs.RestartCount)
 		}
 	}
 	return sb.String(), nil
@@ -96,7 +96,7 @@ func (c *realK8sClient) GetLogs(ctx context.Context, namespace, name, container 
 	if err != nil {
 		return "", fmt.Errorf("get logs: %w", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	data, err := io.ReadAll(stream)
 	if err != nil {
 		return "", fmt.Errorf("read logs: %w", err)
@@ -159,11 +159,11 @@ func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deployment
 	ready := dep.Status.ReadyReplicas
 	available := dep.Status.AvailableReplicas
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Deployment: %s/%s\n", namespace, deploymentName))
-	sb.WriteString(fmt.Sprintf("Desired:    %d\n", desiredCount))
-	sb.WriteString(fmt.Sprintf("Updated:    %d\n", updated))
-	sb.WriteString(fmt.Sprintf("Ready:      %d\n", ready))
-	sb.WriteString(fmt.Sprintf("Available:  %d\n", available))
+	fmt.Fprintf(&sb, "Deployment: %s/%s\n", namespace, deploymentName)
+	fmt.Fprintf(&sb, "Desired:    %d\n", desiredCount)
+	fmt.Fprintf(&sb, "Updated:    %d\n", updated)
+	fmt.Fprintf(&sb, "Ready:      %d\n", ready)
+	fmt.Fprintf(&sb, "Available:  %d\n", available)
 	if ready == desiredCount && updated == desiredCount {
 		sb.WriteString("Status:     Rolled out successfully\n")
 	} else {

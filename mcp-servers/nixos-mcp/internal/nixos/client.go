@@ -83,21 +83,21 @@ func (c *realNixOSClient) runSSH(host, cmd string) (string, error) {
 		return "", err
 	}
 	cfg := &gossh.ClientConfig{
-		User: c.user,
-		Auth: []gossh.AuthMethod{gossh.PublicKeys(c.signer)},
+		User:            c.user,
+		Auth:            []gossh.AuthMethod{gossh.PublicKeys(c.signer)},
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(), //nolint:gosec
 	}
 	conn, err := gossh.Dial("tcp", host+":22", cfg)
 	if err != nil {
 		return "", fmt.Errorf("ssh dial %s: %w", host, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	session, err := conn.NewSession()
 	if err != nil {
 		return "", fmt.Errorf("ssh session: %w", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	out, err := session.CombinedOutput(cmd)
 	return string(out), err

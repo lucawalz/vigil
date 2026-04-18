@@ -83,13 +83,13 @@ func (c *realSSHClient) RunAllowedCommand(ctx context.Context, host, binary stri
 	if err != nil {
 		return "", fmt.Errorf("ssh dial %s: %w", host, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	session, err := conn.NewSession()
 	if err != nil {
 		return "", fmt.Errorf("ssh session: %w", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	cmd := binary
 	if len(args) > 0 {

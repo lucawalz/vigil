@@ -18,14 +18,11 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 
 def build_model() -> OpenAIChatModel:
-    """Return a pydantic-ai model configured from environment variables.
-
-    Raises KeyError if any required env var is missing.
-    """
+    """Return a pydantic-ai model configured from environment variables."""
     return OpenAIChatModel(
-        os.environ["LLM_MODEL_NAME"],
+        os.environ.get("LLM_MODEL_NAME", "test"),
         provider=OpenAIProvider(
-            base_url=os.environ["LLM_BASE_URL"],
-            api_key=os.environ["LLM_API_KEY"],
+            base_url=os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"),
+            api_key=os.environ.get("LLM_API_KEY", "nokey"),
         ),
     )

@@ -8,8 +8,8 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/lucawalz/vigil/mcp-servers/ssh-mcp/internal/config"
-	"github.com/lucawalz/vigil/mcp-servers/ssh-mcp/internal/ssh"
 	mcpserver "github.com/lucawalz/vigil/mcp-servers/ssh-mcp/internal/server"
+	"github.com/lucawalz/vigil/mcp-servers/ssh-mcp/internal/ssh"
 )
 
 func main() {
