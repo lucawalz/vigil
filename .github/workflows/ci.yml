@@ -102,8 +102,6 @@ jobs:
         with:
           go-version: "1.25"
           cache: true
-      - name: Configure Go private module access
-        run: git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
       - name: govulncheck (${{ matrix.module }})
         uses: golang/govulncheck-action@v1
         with:
