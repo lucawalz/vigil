@@ -52,7 +52,47 @@ jobs:
           version: v2.11.4
           working-directory: ${{ matrix.module }}
 
+  go-test:
+    needs: detect-go-modules
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.detect-go-modules.outputs.modules) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+          cache: true
+      - name: go test (${{ matrix.module }})
+        run: go test ./... -count=1
+        working-directory: ${{ matrix.module }}
+        env:
+          CGO_ENABLED: "0"
+
+  govulncheck:
+    needs: detect-go-modules
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.detect-go-modules.outputs.modules) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+          cache: true
+      - name: govulncheck (${{ matrix.module }})
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: "1.23"
+          go-package: ./...
+          work-dir: ${{ matrix.module }}
+
   go-build:
+    needs: [go-test, go-lint]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -62,3 +102,5 @@ jobs:
           cache: true
       - name: Build all modules
         run: go build github.com/lucawalz/vigil/...
+        env:
+          CGO_ENABLED: "0"
