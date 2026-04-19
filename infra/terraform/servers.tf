@@ -3,7 +3,6 @@ resource "hcloud_server" "master" {
   server_type = "cx33"
   image       = "debian-12"
   location    = "nbg1"
-  rescue      = "linux64"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -27,7 +26,6 @@ module "install_master" {
   instance_id            = tostring(hcloud_server.master.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  copy_host_keys         = true
   extra_environment = {
     ROLE = "hetzner-master"
   }
@@ -38,7 +36,6 @@ resource "hcloud_server" "worker_1" {
   server_type = "cx23"
   image       = "debian-12"
   location    = "nbg1"
-  rescue      = "linux64"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -62,7 +59,6 @@ module "install_worker_1" {
   instance_id            = tostring(hcloud_server.worker_1.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  copy_host_keys         = true
   extra_environment = {
     ROLE = "hetzner-worker-1"
   }
@@ -73,7 +69,6 @@ resource "hcloud_server" "worker_2" {
   server_type = "cx23"
   image       = "debian-12"
   location    = "nbg1"
-  rescue      = "linux64"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -97,7 +92,6 @@ module "install_worker_2" {
   instance_id            = tostring(hcloud_server.worker_2.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  copy_host_keys         = true
   extra_environment = {
     ROLE = "hetzner-worker-2"
   }
@@ -108,7 +102,6 @@ resource "hcloud_server" "agent" {
   server_type = "cx23"
   image       = "debian-12"
   location    = "nbg1"
-  rescue      = "linux64"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -132,7 +125,6 @@ module "install_agent" {
   instance_id            = tostring(hcloud_server.agent.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  copy_host_keys         = true
   extra_environment = {
     ROLE = "hetzner-agent"
   }
