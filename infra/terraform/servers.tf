@@ -41,9 +41,13 @@ resource "null_resource" "k3s_token_master" {
 
   provisioner "remote-exec" {
     inline = [
-      "mkdir -p /etc/k3s",
+      "mkdir -p /etc/k3s /etc/rancher/k3s",
       "echo '${random_password.k3s_token.result}' > /etc/k3s/token",
-      "chmod 400 /etc/k3s/token"
+      "chmod 400 /etc/k3s/token",
+      "printf 'tls-san:\\n  - ${hcloud_server.master.ipv4_address}\\n' > /etc/rancher/k3s/config.yaml",
+      "systemctl stop k3s || true",
+      "rm -f /var/lib/rancher/k3s/server/tls/dynamic-cert.json",
+      "systemctl start k3s",
     ]
   }
 }
