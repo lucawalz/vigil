@@ -182,3 +182,26 @@ module "install_agent" {
   debug_logging          = true
   install_bootloader     = true
 }
+
+resource "null_resource" "kubeconfig" {
+  depends_on = [null_resource.k3s_token_master]
+
+  triggers = {
+    master_ip = hcloud_server.master.ipv4_address
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${hcloud_server.master.ipv4_address} \
+        "kubectl get nodes" > /dev/null 2>&1; do sleep 5; done
+      ssh root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
+        | sed 's|https://127.0.0.1:6443|https://${hcloud_server.master.ipv4_address}:6443|' \
+        | sed 's/name: default/name: hetzner-vigil/g' \
+        | sed 's/cluster: default/cluster: hetzner-vigil/g' \
+        | sed 's/user: default/user: hetzner-vigil/g' \
+        | sed 's/current-context: default/current-context: hetzner-vigil/' \
+        > ~/.kube/hetzner-vigil
+      chmod 600 ~/.kube/hetzner-vigil
+    EOF
+  }
+}

@@ -29,3 +29,7 @@ output "agent_public_ip" {
 output "agent_private_ip" {
   value = "10.0.0.40"
 }
+
+output "kubeconfig_hint" {
+  value = "KUBECONFIG=~/.kube/hetzner-vigil kubectl get nodes  # context: hetzner-vigil"
+}
