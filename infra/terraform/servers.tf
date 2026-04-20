@@ -194,7 +194,7 @@ resource "null_resource" "kubeconfig" {
     command = <<-EOF
       until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${hcloud_server.master.ipv4_address} \
         "kubectl get nodes" > /dev/null 2>&1; do sleep 5; done
-      ssh root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
+      ssh -o StrictHostKeyChecking=no root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
         | sed 's|https://127.0.0.1:6443|https://${hcloud_server.master.ipv4_address}:6443|' \
         | sed 's/name: default/name: hetzner-vigil/g' \
         | sed 's/cluster: default/cluster: hetzner-vigil/g' \
