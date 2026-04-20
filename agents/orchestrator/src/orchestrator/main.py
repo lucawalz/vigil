@@ -89,7 +89,11 @@ async def healthz() -> dict[str, str]:
 
 
 @app.post("/webhook", dependencies=[Depends(_check_auth)])
-async def webhook(request: Request) -> dict[str, str]:
+async def webhook(
+    request: Request,
+    scenario: str = "k8s-1",
+    seed: int | None = None,
+) -> dict[str, str]:
     payload = await request.json()
     if not payload.get("alerts"):
         raise HTTPException(
@@ -103,5 +107,7 @@ async def webhook(request: Request) -> dict[str, str]:
         flux_mcp=request.app.state.flux_mcp,
         ssh_mcp=request.app.state.ssh_mcp,
         nixos_mcp=request.app.state.nixos_mcp,
+        scenario=scenario,
+        seed=seed,
     )
     return {"run_id": record.run_id, "outcome": record.outcome}
