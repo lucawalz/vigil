@@ -9,11 +9,6 @@ variable "ssh_public_key_path" {
   default = "~/.ssh/id_ed25519.pub"
 }
 
-variable "k3s_token" {
-  type      = string
-  sensitive = true
-}
-
 variable "vigil_branch" {
   type    = string
   default = "feat/hetzner-infra-terraform"

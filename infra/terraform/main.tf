@@ -4,7 +4,16 @@ terraform {
       source  = "hetznercloud/hcloud"
       version = "~> 1.60"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
+}
+
+resource "random_password" "k3s_token" {
+  length  = 64
+  special = false
 }
 
 provider "hcloud" {

@@ -27,9 +27,24 @@ module "install_master" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
-  extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  extra_environment = {
-    K3S_TOKEN = var.k3s_token
+}
+
+resource "null_resource" "k3s_token_master" {
+  depends_on = [module.install_master]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.master.ipv4_address
+    user        = "root"
+    private_key = file(pathexpand("~/.ssh/id_ed25519"))
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /etc/k3s",
+      "echo '${random_password.k3s_token.result}' > /etc/k3s/token",
+      "chmod 400 /etc/k3s/token"
+    ]
   }
 }
 
@@ -62,9 +77,24 @@ module "install_worker_1" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
-  extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  extra_environment = {
-    K3S_TOKEN = var.k3s_token
+}
+
+resource "null_resource" "k3s_token_worker_1" {
+  depends_on = [module.install_worker_1]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.worker_1.ipv4_address
+    user        = "root"
+    private_key = file(pathexpand("~/.ssh/id_ed25519"))
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /etc/k3s",
+      "echo '${random_password.k3s_token.result}' > /etc/k3s/token",
+      "chmod 400 /etc/k3s/token"
+    ]
   }
 }
 
@@ -97,9 +127,24 @@ module "install_worker_2" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
-  extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  extra_environment = {
-    K3S_TOKEN = var.k3s_token
+}
+
+resource "null_resource" "k3s_token_worker_2" {
+  depends_on = [module.install_worker_2]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.worker_2.ipv4_address
+    user        = "root"
+    private_key = file(pathexpand("~/.ssh/id_ed25519"))
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /etc/k3s",
+      "echo '${random_password.k3s_token.result}' > /etc/k3s/token",
+      "chmod 400 /etc/k3s/token"
+    ]
   }
 }
 
@@ -132,6 +177,4 @@ module "install_agent" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
-  extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  extra_environment = {}
 }
