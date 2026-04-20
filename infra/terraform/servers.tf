@@ -25,6 +25,8 @@ module "install_master" {
   target_host            = hcloud_server.master.ipv4_address
   instance_id            = tostring(hcloud_server.master.id)
   build_on_remote        = true
+  debug_logging          = true
+  install_bootloader     = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
   extra_environment = {
     K3S_TOKEN = var.k3s_token
@@ -58,6 +60,8 @@ module "install_worker_1" {
   target_host            = hcloud_server.worker_1.ipv4_address
   instance_id            = tostring(hcloud_server.worker_1.id)
   build_on_remote        = true
+  debug_logging          = true
+  install_bootloader     = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
   extra_environment = {
     K3S_TOKEN = var.k3s_token
@@ -91,6 +95,8 @@ module "install_worker_2" {
   target_host            = hcloud_server.worker_2.ipv4_address
   instance_id            = tostring(hcloud_server.worker_2.id)
   build_on_remote        = true
+  debug_logging          = true
+  install_bootloader     = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
   extra_environment = {
     K3S_TOKEN = var.k3s_token
@@ -124,6 +130,8 @@ module "install_agent" {
   target_host            = hcloud_server.agent.ipv4_address
   instance_id            = tostring(hcloud_server.agent.id)
   build_on_remote        = true
+  debug_logging          = true
+  install_bootloader     = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
   extra_environment = {}
 }
