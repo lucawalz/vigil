@@ -13,3 +13,9 @@ variable "vigil_branch" {
   type    = string
   default = "feat/hetzner-infra-terraform"
 }
+
+variable "github_token" {
+  type        = string
+  sensitive   = true
+  description = "GitHub PAT with repo scope — used by flux bootstrap to create deploy key (set via TF_VAR_github_token)"
+}
