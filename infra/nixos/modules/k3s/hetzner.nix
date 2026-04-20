@@ -1,7 +1,7 @@
 { privateIp, ... }:
 {
   services.k3s.extraFlags = [
-    "--flannel-iface=eth0"
+    "--flannel-iface=enp7s0"
     "--node-ip=${privateIp}"
   ];
 }
