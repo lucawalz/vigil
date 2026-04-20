@@ -1,0 +1,14 @@
+id: k8s-5
+name: pvc-pending-bad-storageclass
+layer: k8s
+
+root_cause_layer: k8s
+root_cause_component: "PersistentVolumeClaim/vigil-app-data references nonexistent StorageClass 'does-not-exist'"
+correct_action_class: apply_patch
+expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (recreate PVC with local-path) -> watchdog_confirm -> flux_resume"
+
+inject_params:
+  namespace: default
+  pvc: vigil-app-data
+  good_storageclass: local-path
+  bad_storageclass: does-not-exist

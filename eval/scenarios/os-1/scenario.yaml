@@ -1,0 +1,12 @@
+id: os-1
+name: nixos-broken-config
+layer: os
+
+root_cause_layer: os
+root_cause_component: "Broken module imported in NixOS configuration.nix on worker-1"
+correct_action_class: rebuild_nixos
+expected_resolution_path: "diagnosis -> escalate (requires_os_level=true) -> nixos_mcp rebuild_test (dead-mans-switch) -> watchdog_confirm"
+
+inject_params:
+  target_host: hetzner-worker-1
+  fault_type: broken-module-import

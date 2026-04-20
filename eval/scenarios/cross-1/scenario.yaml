@@ -1,0 +1,13 @@
+id: cross-1
+name: kubelet-down-pods-notready
+layer: cross
+
+root_cause_layer: os
+root_cause_component: "k3s-agent on worker-1 stopped; all pods on node transition to NotReady"
+correct_action_class: rebuild_nixos
+expected_resolution_path: "diagnosis starts at k8s layer (pod NotReady) -> escalates to os (node NotReady, kubelet down) -> nixos_mcp rebuild_test or ssh_mcp systemctl start -> watchdog_confirm"
+
+inject_params:
+  target_host: hetzner-worker-1
+  unit: k3s-agent.service
+  affected_namespace: default
