@@ -21,4 +21,22 @@ OnActiveSec: 33s (`ceil(max * 1.5)`)
 
 ## Hetzner
 
-Don't reuse these on cloud VMs; run the script again there when those nodes exist.
+Measured on CX33 (master) and CX23 (worker-1, worker-2). Sample 1 on each node is
+inflated by cold Nix store download on a fresh VM (~5 min to fetch packages never
+seen before). Samples 2–3 reflect steady-state activation time (warm store), which
+is the relevant scenario for the rollback gate.
+
+| Run | Host | Type | s |
+|-----|------|------|---|
+| 1 | hetzner-master | CX33 | 297 |
+| 2 | hetzner-master | CX33 | 14 |
+| 3 | hetzner-master | CX33 | 14 |
+| 1 | hetzner-worker-1 | CX23 | 258 |
+| 2 | hetzner-worker-1 | CX23 | 15 |
+| 3 | hetzner-worker-1 | CX23 | 14 |
+| 1 | hetzner-worker-2 | CX23 | 312 |
+| 2 | hetzner-worker-2 | CX23 | 16 |
+| 3 | hetzner-worker-2 | CX23 | 14 |
+
+Steady-state max (samples 2–3): 16s (hetzner-worker-2 run 2)
+OnActiveSec: 24s (`ceil(16 * 1.5)`)
