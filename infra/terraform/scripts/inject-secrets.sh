@@ -26,7 +26,7 @@ else
   ssh-keygen -t ed25519 -N "" \
     -f "${root}/etc/ssh/ssh_host_ed25519_key" \
     -C "root@${ROLE}" >&2
-  echo "warning: no stable host key at ${STABLE_KEY}; agenix decryption will fail unless this fresh key's pubkey is added to nixos-homelab/secrets/secrets.nix" >&2
+  echo "warning: no stable host key at ${STABLE_KEY}; agenix decryption will fail unless this fresh key's pubkey is added to infra/nixos/secrets/secrets.nix" >&2
 fi
 
 install -d -m 700 "${root}/etc/sops/age"

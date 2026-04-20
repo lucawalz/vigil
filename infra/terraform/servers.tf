@@ -20,8 +20,8 @@ resource "hcloud_server" "master" {
 module "install_master" {
   source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one"
 
-  nixos_system_attr      = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-master.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-master.config.system.build.diskoScript"
+  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-master.config.system.build.toplevel"
+  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-master.config.system.build.diskoScript"
   target_host            = hcloud_server.master.ipv4_address
   instance_id            = tostring(hcloud_server.master.id)
   build_on_remote        = true
@@ -53,8 +53,8 @@ resource "hcloud_server" "worker_1" {
 module "install_worker_1" {
   source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one"
 
-  nixos_system_attr      = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-worker-1.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-worker-1.config.system.build.diskoScript"
+  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-1.config.system.build.toplevel"
+  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-1.config.system.build.diskoScript"
   target_host            = hcloud_server.worker_1.ipv4_address
   instance_id            = tostring(hcloud_server.worker_1.id)
   build_on_remote        = true
@@ -86,8 +86,8 @@ resource "hcloud_server" "worker_2" {
 module "install_worker_2" {
   source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one"
 
-  nixos_system_attr      = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-worker-2.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-worker-2.config.system.build.diskoScript"
+  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-2.config.system.build.toplevel"
+  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-2.config.system.build.diskoScript"
   target_host            = hcloud_server.worker_2.ipv4_address
   instance_id            = tostring(hcloud_server.worker_2.id)
   build_on_remote        = true
@@ -119,8 +119,8 @@ resource "hcloud_server" "agent" {
 module "install_agent" {
   source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one"
 
-  nixos_system_attr      = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-agent.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/nixos-homelab/${var.nixos_homelab_branch}#nixosConfigurations.hetzner-agent.config.system.build.diskoScript"
+  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-agent.config.system.build.toplevel"
+  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-agent.config.system.build.diskoScript"
   target_host            = hcloud_server.agent.ipv4_address
   instance_id            = tostring(hcloud_server.agent.id)
   build_on_remote        = true
