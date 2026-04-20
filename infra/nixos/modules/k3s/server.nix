@@ -1,4 +1,4 @@
-{ config, pkgs, meta, secretsDir ? ../../secrets, ... }:
+{ pkgs, meta, ... }:
 {
   imports = [ ./common.nix ];
 
@@ -11,7 +11,7 @@
       "--disable=traefik"
       "--disable=local-storage"
     ];
-    tokenFile = config.age.secrets.k3s-token.path;
+    tokenFile = "/etc/k3s/token";
     clusterInit = true;
   };
 

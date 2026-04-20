@@ -1,16 +1,14 @@
-{ nixpkgs, self, disko, agenix, ... }:
+{ nixpkgs, self, disko, ... }:
 {
   mkHetznerMaster = { privateIp ? "10.0.0.10", system ? "x86_64-linux" }:
     nixpkgs.lib.nixosSystem {
       inherit system;
       specialArgs = {
         meta = { hostname = "hetzner-master"; };
-        secretsDir = "${self}/secrets";
         inherit privateIp;
       };
       modules = [
         disko.nixosModules.disko
-        agenix.nixosModules.default
         ../hosts/hetzner-master
       ];
     };
@@ -23,12 +21,10 @@
       inherit system;
       specialArgs = {
         meta = { inherit hostname; };
-        secretsDir = "${self}/secrets";
         inherit privateIp diskDevice;
       };
       modules = [
         disko.nixosModules.disko
-        agenix.nixosModules.default
         ../hosts/hetzner-worker-${toString workerId}
       ];
     };
@@ -38,12 +34,10 @@
       inherit system;
       specialArgs = {
         meta = { hostname = "hetzner-agent"; };
-        secretsDir = "${self}/secrets";
         inherit privateIp;
       };
       modules = [
         disko.nixosModules.disko
-        agenix.nixosModules.default
         ../hosts/hetzner-agent
       ];
     };

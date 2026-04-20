@@ -7,15 +7,11 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    agenix = {
-      url = "github:ryantm/agenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, disko, agenix, ... }:
+  outputs = { self, nixpkgs, disko, ... }:
   let
-    lib = import ./lib { inherit nixpkgs self disko agenix; };
+    lib = import ./lib { inherit nixpkgs self disko; };
   in {
     nixosConfigurations = {
       hetzner-master   = lib.mkHetznerMaster {};

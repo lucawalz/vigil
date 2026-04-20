@@ -1,4 +1,4 @@
-{ config, lib, pkgs, meta, secretsDir ? ../../secrets, ... }:
+{ lib, meta, ... }:
 {
   imports = [ ./common.nix ];
 
@@ -6,7 +6,7 @@
     enable = true;
     role = "agent";
     serverAddr = lib.mkDefault "https://10.0.0.10:6443";
-    tokenFile = config.age.secrets.k3s-token.path;
+    tokenFile = "/etc/k3s/token";
   };
 
   networking.firewall.allowedTCPPorts = [ 10250 ];

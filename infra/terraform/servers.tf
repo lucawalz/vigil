@@ -27,7 +27,7 @@ module "install_master" {
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
   extra_environment = {
-    ROLE = "hetzner-master"
+    K3S_TOKEN = var.k3s_token
   }
 }
 
@@ -60,7 +60,7 @@ module "install_worker_1" {
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
   extra_environment = {
-    ROLE = "hetzner-worker-1"
+    K3S_TOKEN = var.k3s_token
   }
 }
 
@@ -93,7 +93,7 @@ module "install_worker_2" {
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
   extra_environment = {
-    ROLE = "hetzner-worker-2"
+    K3S_TOKEN = var.k3s_token
   }
 }
 
@@ -125,7 +125,5 @@ module "install_agent" {
   instance_id            = tostring(hcloud_server.agent.id)
   build_on_remote        = true
   extra_files_script     = "${path.module}/scripts/inject-secrets.sh"
-  extra_environment = {
-    ROLE = "hetzner-agent"
-  }
+  extra_environment = {}
 }

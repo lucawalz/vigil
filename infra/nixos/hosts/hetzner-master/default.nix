@@ -10,15 +10,6 @@
     ../../modules/services/rollback-gate.nix
   ];
 
-  boot.loader.systemd-boot.enable = lib.mkForce false;
-  boot.loader.grub = {
-    enable = true;
-    devices = lib.mkForce [ "/dev/sda" ];
-    efiSupport = lib.mkForce false;
-    efiInstallAsRemovable = lib.mkForce false;
-  };
-  boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
-
   boot.initrd.availableKernelModules = [
     "ahci"
     "sd_mod"
