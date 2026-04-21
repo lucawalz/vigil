@@ -1,4 +1,5 @@
 """Tests for ScenarioDefinition model and load_scenarios() loader."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,9 +24,18 @@ def test_load_all_scenarios(real_scenarios: list[ScenarioDefinition]) -> None:
     assert len(real_scenarios) == 12
     ids = [s.id for s in real_scenarios]
     assert sorted(ids) == [
-        "boundary-1", "cross-1", "cross-2", "cross-3",
-        "k8s-1", "k8s-2", "k8s-3", "k8s-4", "k8s-5",
-        "os-1", "os-2", "os-3",
+        "boundary-1",
+        "cross-1",
+        "cross-2",
+        "cross-3",
+        "k8s-1",
+        "k8s-2",
+        "k8s-3",
+        "k8s-4",
+        "k8s-5",
+        "os-1",
+        "os-2",
+        "os-3",
     ]
 
 

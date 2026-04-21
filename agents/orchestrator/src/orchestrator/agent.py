@@ -121,9 +121,7 @@ async def run_orchestration(
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()
 
-    diagnosis_deps = DiagnosisDeps(
-        kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp
-    )
+    diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp)
     remediation_deps = RemediationDeps(
         kubectl_mcp=kubectl_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
     )

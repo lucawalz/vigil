@@ -1,4 +1,5 @@
 """Static validation for K8s scenario injection/reset scripts (EVAL-02, EVAL-03)."""
+
 from __future__ import annotations
 
 import stat
@@ -43,9 +44,7 @@ def test_all_k8s_scripts_have_safety_flags(scenarios_dir: Path) -> None:
 def test_all_k8s_scripts_accept_seed_arg(scenarios_dir: Path) -> None:
     for path in _scripts_for(scenarios_dir):
         body = path.read_text()
-        assert 'SEED="${1:-1}"' in body, (
-            f'{path}: missing SEED="${{1:-1}}" convention'
-        )
+        assert 'SEED="${1:-1}"' in body, f'{path}: missing SEED="${{1:-1}}" convention'
 
 
 def test_all_k8s_scripts_executable(scenarios_dir: Path) -> None:

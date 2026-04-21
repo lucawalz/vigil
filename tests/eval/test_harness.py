@@ -1,4 +1,5 @@
 """Tests for the eval harness: reset->inject->POST->poll flow."""
+
 from __future__ import annotations
 
 import asyncio
@@ -46,6 +47,7 @@ def _make_fake_subprocess_run(returncode: int = 0):
         result.returncode = returncode
         result.stderr = ""
         return result
+
     return fake_run
 
 
@@ -72,10 +74,12 @@ async def test_reset_runs_before_inject(
     monkeypatch.setattr(harness_mod.subprocess, "run", fake_run)
 
     run_id = "k8s-3_1_test-model_abc1234"
+
     async def fake_trigger(*args, **kwargs) -> Path:
         result_file = tmp_path / "runs" / f"{run_id}.json"
         result_file.parent.mkdir(parents=True, exist_ok=True)
         import json
+
         result_file.write_text(json.dumps(_make_run_record(run_id)))
         return result_file
 

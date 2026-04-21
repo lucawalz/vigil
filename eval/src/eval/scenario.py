@@ -1,4 +1,5 @@
 """Scenario definitions for the vigil eval framework."""
+
 from __future__ import annotations
 
 from pathlib import Path

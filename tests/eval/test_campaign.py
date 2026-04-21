@@ -1,4 +1,5 @@
 """Tests for campaign.py: completed_run_ids + combinations + CLI error paths."""
+
 from __future__ import annotations
 
 import json
@@ -34,10 +35,12 @@ def test_completed_run_ids_ignores_blank_lines(tmp_path: Path) -> None:
 
     index = tmp_path / "runs_index.jsonl"
     index.write_text(
-        json.dumps({"run_id": "k8s-1_1_m1_abc"}) + "\n"
+        json.dumps({"run_id": "k8s-1_1_m1_abc"})
+        + "\n"
         + "\n"
         + "   \n"
-        + json.dumps({"run_id": "k8s-2_2_m1_abc"}) + "\n"
+        + json.dumps({"run_id": "k8s-2_2_m1_abc"})
+        + "\n"
     )
     result = completed_run_ids(index)
     assert result == {"k8s-1_1_m1_abc", "k8s-2_2_m1_abc"}
@@ -76,11 +79,16 @@ def test_cli_timeout_maps_to_nonzero_exit(tmp_path: Path) -> None:
             cli,
             [
                 "run",
-                "--scenario", "k8s-1",
-                "--seed", "1",
-                "--model", "test-model",
-                "--scenarios-dir", str(tmp_path),
-                "--runs-dir", str(tmp_path / "runs"),
+                "--scenario",
+                "k8s-1",
+                "--seed",
+                "1",
+                "--model",
+                "test-model",
+                "--scenarios-dir",
+                str(tmp_path),
+                "--runs-dir",
+                str(tmp_path / "runs"),
             ],
         )
     assert result.exit_code != 0
@@ -95,11 +103,16 @@ def test_cli_runtime_error_also_nonzero_exit(tmp_path: Path) -> None:
             cli,
             [
                 "run",
-                "--scenario", "k8s-1",
-                "--seed", "1",
-                "--model", "test-model",
-                "--scenarios-dir", str(tmp_path),
-                "--runs-dir", str(tmp_path / "runs"),
+                "--scenario",
+                "k8s-1",
+                "--seed",
+                "1",
+                "--model",
+                "test-model",
+                "--scenarios-dir",
+                str(tmp_path),
+                "--runs-dir",
+                str(tmp_path / "runs"),
             ],
         )
     assert result.exit_code != 0

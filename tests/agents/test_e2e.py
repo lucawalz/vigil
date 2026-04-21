@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
@@ -132,6 +133,10 @@ async def test_webhook_to_audit_log_end_to_end(
         )
     assert r.status_code == 200
     run_id = r.json()["run_id"]
+
+    pending = {t for t in asyncio.all_tasks() if t is not asyncio.current_task()}
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
     written = (tmp_path / "runs" / f"{run_id}.json").read_text()
     assert json.loads(written)["outcome"] == "success"

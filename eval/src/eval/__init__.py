@@ -1,4 +1,5 @@
 """Vigil eval harness package."""
+
 from __future__ import annotations
 
 from eval.campaign import combinations, completed_run_ids
