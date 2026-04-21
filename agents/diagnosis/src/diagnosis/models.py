@@ -27,8 +27,7 @@ class DiagnosisReport(BaseModel):
 
 @dataclass(frozen=True)
 class DiagnosisDeps:
-    """kubectl + ssh + nixos scope only. No flux client."""
+    """kubectl + nixos scope only. ssh-mcp excluded to prevent tool confusion."""
 
     kubectl_mcp: MCPServerStdio
-    ssh_mcp: MCPServerStdio
     nixos_mcp: MCPServerStdio

@@ -1,7 +1,8 @@
-"""Diagnosis agent: ReAct loop over kubectl/ssh/nixos MCP tools.
+"""Diagnosis agent: ReAct loop over kubectl/nixos MCP tools.
 
 Emits a structured DiagnosisReport per run.
-Tool scope: kubectl, ssh, and nixos MCP clients only.
+Tool scope: kubectl-mcp and nixos-mcp only; ssh-mcp is excluded to prevent the
+model from confusing run_allowed_command with kubectl operations.
 Loop capped at 20 requests.
 """
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 
 _SYSTEM_PROMPT = """You are a Kubernetes SRE diagnosis agent operating on a K3s cluster.
-Your only actions are tool calls to kubectl-mcp, ssh-mcp, and nixos-mcp.
+Your only actions are tool calls to kubectl-mcp and nixos-mcp.
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
@@ -32,7 +33,7 @@ Rules:
 - requires_os_level=True only when kubectl evidence is insufficient and the fault
   involves a node condition or NixOS service. Do not escalate for pure K8s faults.
 - confidence below 0.6 means you need more evidence before recommending an action.
-- Use kubectl-mcp tools directly for all Kubernetes operations — never pass MCP server names as commands to run_allowed_command."""
+- Use kubectl-mcp tools directly for all Kubernetes operations."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
@@ -59,7 +60,7 @@ async def run_diagnosis(
     result = await diagnosis_agent.run(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
-        toolsets=[deps.kubectl_mcp, deps.ssh_mcp, deps.nixos_mcp],
+        toolsets=[deps.kubectl_mcp, deps.nixos_mcp],
         usage_limits=UsageLimits(request_limit=20),
     )
     return result.output, result.usage()

@@ -122,7 +122,7 @@ async def run_orchestration(
     breaker = _CircuitBreaker()
 
     diagnosis_deps = DiagnosisDeps(
-        kubectl_mcp=kubectl_mcp, ssh_mcp=ssh_mcp, nixos_mcp=nixos_mcp
+        kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp
     )
     remediation_deps = RemediationDeps(
         kubectl_mcp=kubectl_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
