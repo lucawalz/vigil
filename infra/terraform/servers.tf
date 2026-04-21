@@ -27,6 +27,7 @@ module "install_master" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
+  nix_options            = { "tarball-ttl" = "0" }
 }
 
 resource "null_resource" "k3s_token_master" {
@@ -81,6 +82,7 @@ module "install_worker_1" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
+  nix_options            = { "tarball-ttl" = "0" }
 }
 
 resource "null_resource" "k3s_token_worker_1" {
@@ -131,6 +133,7 @@ module "install_worker_2" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
+  nix_options            = { "tarball-ttl" = "0" }
 }
 
 resource "null_resource" "k3s_token_worker_2" {
@@ -181,6 +184,7 @@ module "install_agent" {
   build_on_remote        = true
   debug_logging          = true
   install_bootloader     = true
+  nix_options            = { "tarball-ttl" = "0" }
 }
 
 resource "null_resource" "kubeconfig" {
