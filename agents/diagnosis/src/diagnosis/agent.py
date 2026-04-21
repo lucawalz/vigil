@@ -31,7 +31,8 @@ Rules:
 - evidence must be a verbatim log line or event quoted from tool output.
 - requires_os_level=True only when kubectl evidence is insufficient and the fault
   involves a node condition or NixOS service. Do not escalate for pure K8s faults.
-- confidence below 0.6 means you need more evidence before recommending an action."""
+- confidence below 0.6 means you need more evidence before recommending an action.
+- Use kubectl-mcp tools directly for all Kubernetes operations — never pass MCP server names as commands to run_allowed_command."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
