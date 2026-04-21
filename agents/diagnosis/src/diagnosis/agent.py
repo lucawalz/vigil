@@ -65,6 +65,6 @@ async def run_diagnosis(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
         toolsets=[deps.kubectl_mcp, deps.nixos_mcp],
-        usage_limits=UsageLimits(request_limit=20),
+        usage_limits=UsageLimits(request_limit=40),
     )
     return result.output, result.usage()
