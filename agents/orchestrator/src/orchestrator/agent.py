@@ -230,4 +230,6 @@ async def run_orchestration(
         return record
     except Exception:
         log.exception("run %s aborted: unhandled exception", run_id)
-        raise
+        record = _abort_record("unhandled_exception")
+        _write_run_record(record)
+        return record
