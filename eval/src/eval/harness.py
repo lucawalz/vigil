@@ -90,6 +90,7 @@ async def trigger_and_wait(
         run_id = resp.json()["run_id"]
 
     result_path = runs_dir / f"{run_id}.json"
+    result_path.unlink(missing_ok=True)
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout_s
     while loop.time() < deadline:
