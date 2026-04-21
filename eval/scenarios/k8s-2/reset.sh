@@ -6,7 +6,12 @@ NAMESPACE="default"
 DEPLOYMENT="vigil-app"
 MANIFEST_DIR="$(cd "$(dirname "$0")" && pwd)/manifests"
 
-# Baseline re-apply always clears the env patch. Idempotent by design.
+kubectl patch "deployment/${DEPLOYMENT}" \
+  -n "${NAMESPACE}" \
+  --type='json' \
+  -p='[{"op":"remove","path":"/spec/template/spec/containers/0/env"}]' \
+  2>/dev/null || true
+
 kubectl apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 
 kubectl rollout status "deployment/${DEPLOYMENT}" \
