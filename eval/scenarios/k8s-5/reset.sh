@@ -7,8 +7,10 @@ PVC="vigil-app-data"
 DEPLOYMENT="vigil-app"
 MANIFEST_DIR="$(cd "$(dirname "$0")" && pwd)/manifests"
 
-kubectl delete pvc "${PVC}" -n "${NAMESPACE}" --ignore-not-found --wait=false
 kubectl delete pod -n "${NAMESPACE}" -l app=vigil-app --ignore-not-found --wait=false
+kubectl wait --for=delete pod -n "${NAMESPACE}" -l app=vigil-app --timeout=60s 2>/dev/null || true
+
+kubectl delete pvc "${PVC}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s
 
 kubectl apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 
