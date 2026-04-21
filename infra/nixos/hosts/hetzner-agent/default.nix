@@ -19,6 +19,14 @@
 
   networking.firewall.allowedTCPPorts = [ 22 9099 ];
 
+  environment.systemPackages = with pkgs; [
+    uv
+    python312
+    kubectl
+    jq
+    curl
+  ];
+
   services.openssh = {
     enable = true;
     settings = {
