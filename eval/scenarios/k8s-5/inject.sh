@@ -6,10 +6,12 @@ NAMESPACE="default"
 PVC="vigil-app-data"
 DEPLOYMENT="vigil-app"
 
-kubectl delete pvc "${PVC}" -n "${NAMESPACE}" --ignore-not-found --wait=false
 kubectl delete pod -n "${NAMESPACE}" -l app=vigil-app --ignore-not-found --wait=false
+kubectl wait --for=delete pod -n "${NAMESPACE}" -l app=vigil-app --timeout=60s 2>/dev/null || true
 
-cat <<'EOF' | kubectl apply -n "${NAMESPACE}" -f -
+kubectl delete pvc "${PVC}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s
+
+cat <<'EOF' | kubectl create -n "${NAMESPACE}" -f -
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
