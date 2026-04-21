@@ -1,6 +1,6 @@
 { ... }:
 {
-  documentation.doc.enable = false;
+  documentation.enable = false;
 
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];
