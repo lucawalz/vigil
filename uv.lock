@@ -2887,12 +2887,18 @@ source = { editable = "agents/orchestrator" }
 dependencies = [
     { name = "fastapi" },
     { name = "vigil-common" },
+    { name = "vigil-diagnosis" },
+    { name = "vigil-remediation" },
+    { name = "vigil-watchdog" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "vigil-common", editable = "agents/common" },
+    { name = "vigil-diagnosis", editable = "agents/diagnosis" },
+    { name = "vigil-remediation", editable = "agents/remediation" },
+    { name = "vigil-watchdog", editable = "agents/watchdog" },
 ]
 
 [[package]]

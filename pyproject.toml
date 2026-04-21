@@ -8,6 +8,9 @@ members = ["agents/*", "eval/"]
 
 [tool.uv.sources]
 vigil-common = { workspace = true }
+vigil-diagnosis = { workspace = true }
+vigil-remediation = { workspace = true }
+vigil-watchdog = { workspace = true }
 
 [dependency-groups]
 dev = ["ruff>=0.15", "hatchling>=1.27", "pytest>=8.3", "pytest-asyncio>=0.25", "httpx>=0.27.0"]
