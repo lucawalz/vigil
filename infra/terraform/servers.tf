@@ -205,3 +205,21 @@ resource "null_resource" "kubeconfig" {
     EOF
   }
 }
+
+resource "null_resource" "kubeconfig_agent" {
+  depends_on = [null_resource.kubeconfig, module.install_agent]
+
+  triggers = {
+    master_ip = hcloud_server.master.ipv4_address
+    agent_ip  = hcloud_server.agent.ipv4_address
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      ssh -o StrictHostKeyChecking=no root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
+        | sed 's|https://127.0.0.1:6443|https://10.0.0.10:6443|' \
+        | ssh -o StrictHostKeyChecking=no root@${hcloud_server.agent.ipv4_address} \
+          "mkdir -p ~/.kube && cat > ~/.kube/config && chmod 600 ~/.kube/config"
+    EOF
+  }
+}
