@@ -25,6 +25,7 @@
     kubectl
     jq
     curl
+    go
   ];
 
   services.openssh = {
