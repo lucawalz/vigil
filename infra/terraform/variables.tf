@@ -19,3 +19,9 @@ variable "github_token" {
   sensitive   = true
   description = "GitHub PAT with repo scope — used by flux bootstrap to create deploy key (set via TF_VAR_github_token)"
 }
+
+variable "vigil_webhook_secret" {
+  type        = string
+  sensitive   = true
+  description = "Bearer token for the vigil orchestrator webhook"
+}

@@ -223,3 +223,24 @@ resource "null_resource" "kubeconfig_agent" {
     EOF
   }
 }
+
+resource "null_resource" "vigil_agent_setup" {
+  depends_on = [null_resource.kubeconfig_agent]
+
+  triggers = {
+    agent_ip       = hcloud_server.agent.ipv4_address
+    branch         = var.vigil_branch
+    webhook_secret = var.vigil_webhook_secret
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      ssh -o StrictHostKeyChecking=no root@${hcloud_server.agent.ipv4_address} \
+        "mkdir -p /etc/vigil && \
+         echo '${var.vigil_branch}' > /etc/vigil/branch && \
+         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\n' > /etc/vigil/env && \
+         chmod 600 /etc/vigil/env && \
+         systemctl start vigil-orchestrator.service"
+    EOF
+  }
+}
