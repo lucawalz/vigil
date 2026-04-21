@@ -216,9 +216,11 @@ resource "null_resource" "kubeconfig_agent" {
 
   provisioner "local-exec" {
     command = <<-EOF
-      ssh -o StrictHostKeyChecking=no root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
         | sed 's|https://127.0.0.1:6443|https://10.0.0.10:6443|' \
-        | ssh -o StrictHostKeyChecking=no root@${hcloud_server.agent.ipv4_address} \
+        | ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          root@${hcloud_server.agent.ipv4_address} \
           "mkdir -p ~/.kube && cat > ~/.kube/config && chmod 600 ~/.kube/config"
     EOF
   }
@@ -235,7 +237,8 @@ resource "null_resource" "vigil_agent_setup" {
 
   provisioner "local-exec" {
     command = <<-EOF
-      ssh -o StrictHostKeyChecking=no root@${hcloud_server.agent.ipv4_address} \
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.agent.ipv4_address} \
         "mkdir -p /etc/vigil && \
          echo '${var.vigil_branch}' > /etc/vigil/branch && \
          printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\n' > /etc/vigil/env && \
