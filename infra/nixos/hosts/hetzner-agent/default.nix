@@ -90,6 +90,7 @@
       NIXOS_MCP_CMD = "/usr/local/bin/nixos-mcp";
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
+      KUBECONFIG = "/root/.kube/config";
     };
     serviceConfig = {
       WorkingDirectory = "/root/vigil";
