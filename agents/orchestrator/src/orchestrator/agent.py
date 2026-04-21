@@ -12,9 +12,12 @@ Flow:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import subprocess
 from datetime import datetime, timezone
+
+log = logging.getLogger("vigil.orchestrator.agent")
 
 from diagnosis.agent import run_diagnosis
 from diagnosis.models import DiagnosisDeps
@@ -211,14 +214,20 @@ async def run_orchestration(
         return record
 
     except UsageLimitExceeded:
+        log.exception("run %s aborted: iteration_limit_20", run_id)
         record = _abort_record("iteration_limit_20")
         _write_run_record(record)
         return record
     except CircuitBreakerTripped:
+        log.exception("run %s aborted: circuit_breaker", run_id)
         record = _abort_record("circuit_breaker_3_consecutive_errors")
         _write_run_record(record)
         return record
     except UnexpectedModelBehavior as e:
+        log.exception("run %s aborted: model_error: %s", run_id, e)
         record = _abort_record(f"model_error: {e}")
         _write_run_record(record)
         return record
+    except Exception:
+        log.exception("run %s aborted: unhandled exception", run_id)
+        raise
