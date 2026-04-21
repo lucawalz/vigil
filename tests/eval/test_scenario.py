@@ -5,14 +5,16 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pydantic import ValidationError
-
 from eval.scenario import ScenarioDefinition, load_scenarios
+from pydantic import ValidationError
 
 
 @pytest.fixture()
 def real_scenarios(scenarios_dir: Path) -> list[ScenarioDefinition]:
-    if not scenarios_dir.exists() or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 12:
+    if (
+        not scenarios_dir.exists()
+        or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 12
+    ):
         pytest.skip("scenarios directory not fully populated yet")
     return load_scenarios(scenarios_dir)
 
@@ -27,7 +29,9 @@ def test_load_all_scenarios(real_scenarios: list[ScenarioDefinition]) -> None:
     ]
 
 
-def test_required_ground_truth_fields_present(real_scenarios: list[ScenarioDefinition]) -> None:
+def test_required_ground_truth_fields_present(
+    real_scenarios: list[ScenarioDefinition],
+) -> None:
     for s in real_scenarios:
         assert s.root_cause_layer, f"{s.id}: root_cause_layer is empty"
         assert s.root_cause_component, f"{s.id}: root_cause_component is empty"
@@ -92,9 +96,14 @@ def test_roundtrip_model_dump_validate() -> None:
         name="wrong-image-tag",
         layer="k8s",
         root_cause_layer="k8s",
-        root_cause_component="Deployment/vigil-app image nginx:bad-tag-v9 (ImagePullBackOff)",
+        root_cause_component=(
+            "Deployment/vigil-app image nginx:bad-tag-v9 (ImagePullBackOff)"
+        ),
         correct_action_class="rollout_undo",
-        expected_resolution_path="diagnosis -> flux_suspend -> rollout_undo -> watchdog_confirm -> flux_resume",
+        expected_resolution_path=(
+            "diagnosis -> flux_suspend -> rollout_undo"
+            " -> watchdog_confirm -> flux_resume"
+        ),
         inject_params={"namespace": "default", "deployment": "vigil-app"},
     )
     dumped = original.model_dump()

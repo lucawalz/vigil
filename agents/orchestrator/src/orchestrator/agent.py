@@ -17,8 +17,6 @@ import os
 import subprocess
 from datetime import datetime, timezone
 
-log = logging.getLogger("vigil.orchestrator.agent")
-
 from diagnosis.agent import run_diagnosis
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -30,6 +28,8 @@ from watchdog.agent import capture_health_snapshot, run_watchdog
 from watchdog.models import WatchdogDeps
 
 from .models import CircuitBreakerTripped, FaultEvent, RunRecord
+
+log = logging.getLogger("vigil.orchestrator.agent")
 
 
 class _CircuitBreaker:

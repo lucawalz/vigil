@@ -14,7 +14,6 @@ class ScenarioDefinition(BaseModel):
     layer: Literal["k8s", "os", "cross", "boundary"]
     root_cause_layer: Literal["k8s", "os", "cross", "boundary"]
     root_cause_component: str
-    # Regex matches DiagnosisReport.recommended_action vocabulary exactly — do not drift.
     correct_action_class: str = Field(
         pattern="^(apply_patch|rollout_undo|rebuild_nixos|escalate)$"
     )

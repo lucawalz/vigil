@@ -8,7 +8,6 @@ from typing import Any
 
 import httpx
 
-
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
 

@@ -41,7 +41,7 @@ resource "null_resource" "k3s_token_master" {
     type        = "ssh"
     host        = hcloud_server.master.ipv4_address
     user        = "root"
-    private_key = file(pathexpand("~/.ssh/id_ed25519"))
+    private_key = file(pathexpand(var.ssh_private_key_path))
   }
 
   provisioner "remote-exec" {
@@ -100,7 +100,7 @@ resource "null_resource" "k3s_token_worker_1" {
     type        = "ssh"
     host        = hcloud_server.worker_1.ipv4_address
     user        = "root"
-    private_key = file(pathexpand("~/.ssh/id_ed25519"))
+    private_key = file(pathexpand(var.ssh_private_key_path))
   }
 
   provisioner "remote-exec" {
@@ -155,7 +155,7 @@ resource "null_resource" "k3s_token_worker_2" {
     type        = "ssh"
     host        = hcloud_server.worker_2.ipv4_address
     user        = "root"
-    private_key = file(pathexpand("~/.ssh/id_ed25519"))
+    private_key = file(pathexpand(var.ssh_private_key_path))
   }
 
   provisioner "remote-exec" {

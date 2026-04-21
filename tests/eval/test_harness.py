@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import httpx
-import pytest
+from unittest.mock import MagicMock
 
 import eval.harness as harness_mod
+import httpx
+import pytest
 from eval.harness import run_one, trigger_and_wait
 from orchestrator.models import RunRecord
 
@@ -74,8 +72,6 @@ async def test_reset_runs_before_inject(
     monkeypatch.setattr(harness_mod.subprocess, "run", fake_run)
 
     run_id = "k8s-3_1_test-model_abc1234"
-    resp_data = {"run_id": run_id, "outcome": "success"}
-
     async def fake_trigger(*args, **kwargs) -> Path:
         result_file = tmp_path / "runs" / f"{run_id}.json"
         result_file.parent.mkdir(parents=True, exist_ok=True)
@@ -93,7 +89,9 @@ async def test_reset_runs_before_inject(
         timeout_s=5,
     )
 
-    assert call_order == ["reset", "inject"], f"Expected reset before inject, got: {call_order}"
+    assert call_order == ["reset", "inject"], (
+        f"Expected reset before inject, got: {call_order}"
+    )
 
 
 async def test_inject_subprocess_failure_aborts_run(
@@ -172,7 +170,7 @@ async def test_post_includes_scenario_and_seed_query_params(
 
     monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
 
-    result = await trigger_and_wait(
+    await trigger_and_wait(
         scenario_id="k8s-3",
         seed=1,
         orchestrator_url="http://localhost:9099",
@@ -252,7 +250,9 @@ async def test_uses_response_run_id_for_polling(
         async def post(self, url, **kwargs):
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
-            resp.json = MagicMock(return_value={"run_id": server_run_id, "outcome": "success"})
+            resp.json = MagicMock(
+                return_value={"run_id": server_run_id, "outcome": "success"}
+            )
             return resp
 
     monkeypatch.setattr(harness_mod.httpx, "AsyncClient", FakeClient)
@@ -298,7 +298,9 @@ async def test_timeout_when_result_file_never_appears(
         async def post(self, url, **kwargs):
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
-            resp.json = MagicMock(return_value={"run_id": "k8s-3_1_m_abc", "outcome": "success"})
+            resp.json = MagicMock(
+                return_value={"run_id": "k8s-3_1_m_abc", "outcome": "success"}
+            )
             return resp
 
     monkeypatch.setattr(harness_mod.httpx, "AsyncClient", FakeClient)

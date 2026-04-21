@@ -19,7 +19,9 @@ def cli() -> None:
 @cli.command("run")
 @click.option("--scenario", required=True, help="Scenario id, e.g. k8s-1")
 @click.option("--seed", required=True, type=int, help="Run counter (1, 2, 3)")
-@click.option("--model", required=True, help="Model identifier passed through to Orchestrator")
+@click.option(
+    "--model", required=True, help="Model identifier passed through to Orchestrator"
+)
 @click.option(
     "--timeout",
     "timeout_s",

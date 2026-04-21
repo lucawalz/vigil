@@ -3,7 +3,7 @@
 Emits a structured DiagnosisReport per run.
 Tool scope: kubectl-mcp and nixos-mcp only; ssh-mcp is excluded to prevent the
 model from confusing run_allowed_command with kubectl operations.
-Loop capped at 20 requests.
+Loop capped at 40 requests.
 """
 
 from __future__ import annotations
@@ -24,8 +24,10 @@ _SYSTEM_PROMPT = """You are a Kubernetes SRE diagnosis agent operating on a K3s 
 Your only actions are tool calls using the tools listed below. Do not invent tool names.
 
 Available tools:
-  kubectl-mcp: get_pods, describe_pod, get_logs, rollout_status, rollout_undo, apply_patch
-  nixos-mcp:   get_journal, get_systemd_status, get_generations, rebuild_test, switch_generation, etcd_snapshot_save
+  kubectl-mcp: get_pods, describe_pod, get_logs, rollout_status,
+               rollout_undo, apply_patch
+  nixos-mcp:   get_journal, get_systemd_status, get_generations,
+               rebuild_test, switch_generation, etcd_snapshot_save
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
@@ -43,11 +45,17 @@ apply_patch rules (avoid invalid patches):
 - ALWAYS include "name" in every containers[] entry you patch.
 - ALWAYS include "image" in every containers[] entry when using strategic merge patch.
 - To remove a specific env var, use JSON patch type with op=remove:
-    patch_type=json  patch=[{"op":"remove","path":"/spec/template/spec/containers/0/env/INDEX"}]
-  Find the correct INDEX first by calling describe_pod or get_pods to inspect current env.
+    patch_type=json
+    patch=[{"op":"remove","path":"/spec/template/spec/containers/0/env/INDEX"}]
+  Find the correct INDEX first by calling describe_pod or get_pods to
+  inspect current env.
 - To set/replace a resource limit or request, use JSON patch type:
-    patch_type=json  patch=[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"128Mi"}]
-- Never send a strategic merge patch for containers[] without both "name" and "image" fields."""
+    patch_type=json
+    patch=[{"op":"replace",
+            "path":"/spec/template/spec/containers/0/resources/limits/memory",
+            "value":"128Mi"}]
+- Never send a strategic merge patch for containers[] without both "name"
+  and "image" fields."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(

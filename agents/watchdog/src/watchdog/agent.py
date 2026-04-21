@@ -71,7 +71,9 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
     Called once to capture the pre-remediation baseline, then repeatedly
     inside run_watchdog's poll loop.
     """
-    pods_result = await deps.kubectl_mcp.direct_call_tool("get_pods", {"namespace": "default"})
+    pods_result = await deps.kubectl_mcp.direct_call_tool(
+        "get_pods", {"namespace": "default"}
+    )
     ready, total = _parse_pod_counts(pods_result)
     endpoints_healthy = ready > 0
     return HealthSnapshot(

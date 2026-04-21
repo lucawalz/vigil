@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import pytest
 from click.testing import CliRunner
 
 
@@ -25,7 +24,7 @@ def test_completed_run_ids_parses_jsonl(tmp_path: Path) -> None:
         {"run_id": "k8s-2_2_m1_abc1234"},
         {"run_id": "k8s-3_3_m2_abc1234"},
     ]
-    index.write_text("\n".join(json.dumps(l) for l in lines) + "\n")
+    index.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
     result = completed_run_ids(index)
     assert result == {"k8s-1_1_m1_abc1234", "k8s-2_2_m1_abc1234", "k8s-3_3_m2_abc1234"}
 
