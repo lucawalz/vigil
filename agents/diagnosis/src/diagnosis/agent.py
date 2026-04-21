@@ -37,7 +37,17 @@ Rules:
 - requires_os_level=True only when kubectl evidence is insufficient and the fault
   involves a node condition or NixOS service. Do not escalate for pure K8s faults.
 - confidence below 0.6 means you need more evidence before recommending an action.
-- Use kubectl-mcp tools directly for all Kubernetes operations."""
+- Use kubectl-mcp tools directly for all Kubernetes operations.
+
+apply_patch rules (avoid invalid patches):
+- ALWAYS include "name" in every containers[] entry you patch.
+- ALWAYS include "image" in every containers[] entry when using strategic merge patch.
+- To remove a specific env var, use JSON patch type with op=remove:
+    patch_type=json  patch=[{"op":"remove","path":"/spec/template/spec/containers/0/env/INDEX"}]
+  Find the correct INDEX first by calling describe_pod or get_pods to inspect current env.
+- To set/replace a resource limit or request, use JSON patch type:
+    patch_type=json  patch=[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"128Mi"}]
+- Never send a strategic merge patch for containers[] without both "name" and "image" fields."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
