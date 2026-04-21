@@ -48,7 +48,7 @@ class _CircuitBreaker:
         return self._consecutive
 
 
-def _build_run_id(
+def build_run_id(
     scenario: str,
     model: str,
     seed: int | None = None,
@@ -113,7 +113,7 @@ async def run_orchestration(
 ) -> RunRecord:
     """Drive one full diagnosis -> remediation -> verification cycle."""
     model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
-    run_id, seed_str, sha7 = _build_run_id(scenario, model_name, seed=seed)
+    run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()
