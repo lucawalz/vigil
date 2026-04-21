@@ -21,7 +21,6 @@
 
   environment.systemPackages = with pkgs; [
     uv
-    python312
     kubectl
     jq
     curl
