@@ -261,7 +261,7 @@ resource "null_resource" "vigil_agent_setup" {
         root@${hcloud_server.agent.ipv4_address} \
         "mkdir -p /etc/vigil && \
          echo '${var.vigil_branch}' > /etc/vigil/branch && \
-         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\n' > /etc/vigil/env && \
+         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=eval/runs\n' > /etc/vigil/env && \
          chmod 600 /etc/vigil/env && \
          systemctl start --no-block vigil-orchestrator.service"
     EOF

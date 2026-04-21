@@ -25,3 +25,16 @@ variable "vigil_webhook_secret" {
   sensitive   = true
   description = "Bearer token for the vigil orchestrator webhook"
 }
+
+variable "llm_api_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "llm_base_url" {
+  type = string
+}
+
+variable "llm_model_name" {
+  type = string
+}

@@ -21,6 +21,7 @@
 
   environment.systemPackages = with pkgs; [
     uv
+    python312
     kubectl
     jq
     curl
@@ -42,6 +43,10 @@
     wants = [ "network-online.target" ];
     wantedBy = [ "multi-user.target" ];
     unitConfig.ConditionPathExists = "/etc/vigil/branch";
+    environment = {
+      UV_PYTHON = "${pkgs.python312}/bin/python3.12";
+      UV_PYTHON_PREFERENCE = "only-system";
+    };
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -82,6 +87,8 @@
       FLUX_MCP_CMD = "/usr/local/bin/flux-mcp";
       SSH_MCP_CMD = "/usr/local/bin/ssh-mcp";
       NIXOS_MCP_CMD = "/usr/local/bin/nixos-mcp";
+      UV_PYTHON = "${pkgs.python312}/bin/python3.12";
+      UV_PYTHON_PREFERENCE = "only-system";
     };
     serviceConfig = {
       WorkingDirectory = "/root/vigil";
