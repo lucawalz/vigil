@@ -33,6 +33,10 @@ module "install_master" {
 resource "null_resource" "k3s_token_master" {
   depends_on = [module.install_master]
 
+  triggers = {
+    instance_id = tostring(hcloud_server.master.id)
+  }
+
   connection {
     type        = "ssh"
     host        = hcloud_server.master.ipv4_address
@@ -88,6 +92,10 @@ module "install_worker_1" {
 resource "null_resource" "k3s_token_worker_1" {
   depends_on = [module.install_worker_1]
 
+  triggers = {
+    instance_id = tostring(hcloud_server.worker_1.id)
+  }
+
   connection {
     type        = "ssh"
     host        = hcloud_server.worker_1.ipv4_address
@@ -138,6 +146,10 @@ module "install_worker_2" {
 
 resource "null_resource" "k3s_token_worker_2" {
   depends_on = [module.install_worker_2]
+
+  triggers = {
+    instance_id = tostring(hcloud_server.worker_2.id)
+  }
 
   connection {
     type        = "ssh"
@@ -196,9 +208,13 @@ resource "null_resource" "kubeconfig" {
 
   provisioner "local-exec" {
     command = <<-EOF
-      until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${hcloud_server.master.ipv4_address} \
-        "kubectl get nodes" > /dev/null 2>&1; do sleep 5; done
-      ssh -o StrictHostKeyChecking=no root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
+      DEADLINE=$(($(date +%s) + 600))
+      until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
+          root@${hcloud_server.master.ipv4_address} "kubectl get nodes" > /dev/null 2>&1; do
+        if [ $(date +%s) -gt $DEADLINE ]; then echo "K3s API not ready after 10 minutes"; exit 1; fi
+        sleep 5
+      done
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
         | sed 's|https://127.0.0.1:6443|https://${hcloud_server.master.ipv4_address}:6443|' \
         | sed 's/name: default/name: hetzner-vigil/g' \
         | sed 's/cluster: default/cluster: hetzner-vigil/g' \
@@ -247,7 +263,7 @@ resource "null_resource" "vigil_agent_setup" {
          echo '${var.vigil_branch}' > /etc/vigil/branch && \
          printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\n' > /etc/vigil/env && \
          chmod 600 /etc/vigil/env && \
-         systemctl start vigil-orchestrator.service"
+         systemctl start --no-block vigil-orchestrator.service"
     EOF
   }
 }
