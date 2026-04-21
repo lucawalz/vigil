@@ -21,7 +21,11 @@ if TYPE_CHECKING:
 
 
 _SYSTEM_PROMPT = """You are a Kubernetes SRE diagnosis agent operating on a K3s cluster.
-Your only actions are tool calls to kubectl-mcp and nixos-mcp.
+Your only actions are tool calls using the tools listed below. Do not invent tool names.
+
+Available tools:
+  kubectl-mcp: get_pods, describe_pod, get_logs, rollout_status, rollout_undo, apply_patch
+  nixos-mcp:   get_journal, get_systemd_status, get_generations, rebuild_test, switch_generation, etcd_snapshot_save
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
