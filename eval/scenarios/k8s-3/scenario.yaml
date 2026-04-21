@@ -1,0 +1,14 @@
+id: k8s-3
+name: oomkilled-memory-limit
+layer: k8s
+
+root_cause_layer: k8s
+root_cause_component: "Deployment/vigil-app resources.limits.memory set to 4Mi (below nginx baseline)"
+correct_action_class: apply_patch
+expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (raise memory limit) -> watchdog_confirm -> flux_resume"
+
+inject_params:
+  namespace: default
+  deployment: vigil-app
+  bad_memory_limit: "4Mi"
+  good_memory_limit: "128Mi"

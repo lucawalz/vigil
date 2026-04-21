@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vigil-app
+  namespace: default
+  labels:
+    app: vigil-app
+    eval-scenario: k8s-2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vigil-app
+  template:
+    metadata:
+      labels:
+        app: vigil-app
+    spec:
+      containers:
+        - name: vigil-app
+          image: nginx:stable
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ "${VIGIL_CRASH:-0}" = "1" ]; then
+                echo "VIGIL_CRASH=1 — exiting 1 on purpose"
+                exit 1
+              fi
+              exec nginx -g 'daemon off;'
+          ports:
+            - containerPort: 80

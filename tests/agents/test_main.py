@@ -145,3 +145,75 @@ async def test_webhook_rejects_empty_alerts_array(
             headers={"Authorization": "Bearer test-secret"},
         )
     assert r.status_code == 400
+
+
+async def test_webhook_default_scenario(
+    test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_run = AsyncMock(return_value=_canned_record())
+    monkeypatch.setattr(main_mod, "run_orchestration", mock_run)
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/webhook",
+            json=_alertmanager_payload(),
+            headers={"Authorization": "Bearer test-secret"},
+        )
+    assert r.status_code == 200
+    assert mock_run.call_args.kwargs["scenario"] == "k8s-1"
+    assert mock_run.call_args.kwargs["seed"] is None
+
+
+async def test_webhook_scenario_query_param(
+    test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_run = AsyncMock(return_value=_canned_record())
+    monkeypatch.setattr(main_mod, "run_orchestration", mock_run)
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/webhook",
+            params={"scenario": "k8s-3"},
+            json=_alertmanager_payload(),
+            headers={"Authorization": "Bearer test-secret"},
+        )
+    assert r.status_code == 200
+    assert mock_run.call_args.kwargs["scenario"] == "k8s-3"
+
+
+async def test_webhook_seed_query_param(
+    test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_run = AsyncMock(return_value=_canned_record())
+    monkeypatch.setattr(main_mod, "run_orchestration", mock_run)
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/webhook",
+            params={"scenario": "k8s-1", "seed": 5},
+            json=_alertmanager_payload(),
+            headers={"Authorization": "Bearer test-secret"},
+        )
+    assert r.status_code == 200
+    assert mock_run.call_args.kwargs["scenario"] == "k8s-1"
+    assert mock_run.call_args.kwargs["seed"] == 5
+    assert isinstance(mock_run.call_args.kwargs["seed"], int)
+
+
+async def test_webhook_returns_run_id_and_outcome(
+    test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        main_mod, "run_orchestration", AsyncMock(return_value=_canned_record())
+    )
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/webhook",
+            json=_alertmanager_payload(),
+            headers={"Authorization": "Bearer test-secret"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert "run_id" in body
+    assert "outcome" in body

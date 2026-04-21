@@ -1,0 +1,4 @@
+creation_rules:
+  - path_regex: kubernetes/clusters/hetzner/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age1sd72gjj4689pgw6lnzu7kac8dlstxt2elfxgr0urv5nml20569zsrkylka

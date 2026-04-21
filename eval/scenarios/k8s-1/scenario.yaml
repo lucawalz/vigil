@@ -1,0 +1,14 @@
+id: k8s-1
+name: wrong-image-tag
+layer: k8s
+
+root_cause_layer: k8s
+root_cause_component: "Deployment/vigil-app image nginx:bad-tag-v9 (ImagePullBackOff)"
+correct_action_class: rollout_undo
+expected_resolution_path: "diagnosis -> flux_suspend -> rollout_undo or apply_patch -> watchdog_confirm -> flux_resume"
+
+inject_params:
+  namespace: default
+  deployment: vigil-app
+  good_image: "nginx:stable"
+  bad_image: "nginx:bad-tag-v9"

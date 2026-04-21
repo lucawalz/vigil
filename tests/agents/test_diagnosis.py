@@ -35,16 +35,17 @@ def test_run_diagnosis_is_coroutine() -> None:
 
 
 def test_run_diagnosis_uses_only_diagnosis_scoped_toolsets() -> None:
-    """Diagnosis must receive only kubectl+ssh+nixos MCP clients."""
+    """Diagnosis uses kubectl+nixos MCP clients; ssh is excluded."""
     source = inspect.getsource(run_diagnosis)
-    assert "toolsets=[deps.kubectl_mcp, deps.ssh_mcp, deps.nixos_mcp]" in source
+    assert "toolsets=[deps.kubectl_mcp, deps.nixos_mcp]" in source
     assert "flux_mcp" not in source
+    assert "ssh_mcp" not in source
 
 
-def test_run_diagnosis_enforces_usage_limit_20() -> None:
-    """20-iteration ceiling via UsageLimits(request_limit=20)."""
+def test_run_diagnosis_enforces_usage_limit_40() -> None:
+    """40-iteration ceiling via UsageLimits(request_limit=40)."""
     source = inspect.getsource(run_diagnosis)
-    assert "UsageLimits(request_limit=20)" in source
+    assert "UsageLimits(request_limit=40)" in source
 
 
 def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:

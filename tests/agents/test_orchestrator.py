@@ -11,7 +11,7 @@ import json
 import os
 import re
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,7 +21,7 @@ os.environ.setdefault("LLM_API_KEY", "sk-test")
 
 from diagnosis.models import DiagnosisReport
 from orchestrator import agent as orch_mod
-from orchestrator.agent import run_orchestration
+from orchestrator.agent import build_run_id, run_orchestration
 from orchestrator.models import FaultEvent, RunRecord
 from pydantic_ai.usage import Usage
 from remediation.models import RemediationResult
@@ -244,3 +244,65 @@ async def test_run_orchestration_run_id_format(
     assert re.match(pattern, record.run_id), (
         f"run_id {record.run_id!r} does not match expected pattern"
     )
+
+
+def test_build_run_id_uses_explicit_integer_seed() -> None:
+    run_id, seed_str, sha7 = build_run_id("k8s-1", "claude-sonnet-4-5", seed=3)
+    assert seed_str == "3"
+    assert re.match(r"^k8s-1_3_claude-sonnet-4-5_[a-f0-9]{7}$", run_id), run_id
+
+
+def test_build_run_id_seed_kwarg_is_stringified() -> None:
+    _, seed_str, _ = build_run_id("k8s-2", "m1", seed=7)
+    assert seed_str == "7"
+
+
+def test_build_run_id_seed_none_falls_back_to_timestamp() -> None:
+    _, seed_str, _ = build_run_id("k8s-1", "m1")
+    assert seed_str.startswith("seed-")
+    assert re.match(r"^seed-\d{8}T\d{6}Z$", seed_str), seed_str
+
+
+async def test_run_orchestration_forwards_seed_to_run_id(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "run_diagnosis",
+        AsyncMock(return_value=(_canned_report(), Usage())),
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_remediation",
+        AsyncMock(return_value=(_canned_remediation(), Usage())),
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+    spy = MagicMock(wraps=build_run_id)
+    monkeypatch.setattr(orch_mod, "build_run_id", spy)
+
+    await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        scenario="k8s-3",
+        seed=5,
+    )
+    spy.assert_called_once()
+    _, kwargs = spy.call_args
+    assert kwargs.get("seed") == 5

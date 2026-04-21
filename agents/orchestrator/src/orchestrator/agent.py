@@ -12,6 +12,7 @@ Flow:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -27,6 +28,8 @@ from watchdog.agent import capture_health_snapshot, run_watchdog
 from watchdog.models import WatchdogDeps
 
 from .models import CircuitBreakerTripped, FaultEvent, RunRecord
+
+log = logging.getLogger("vigil.orchestrator.agent")
 
 
 class _CircuitBreaker:
@@ -48,17 +51,30 @@ class _CircuitBreaker:
         return self._consecutive
 
 
-def _build_run_id(scenario: str, model: str) -> tuple[str, str, str]:
-    """Return (run_id, seed, sha7)."""
-    seed = f"seed-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+def build_run_id(
+    scenario: str,
+    model: str,
+    seed: int | None = None,
+) -> tuple[str, str, str]:
+    """Return (run_id, seed_str, sha7).
+
+    When `seed` is provided, it is stringified and used verbatim in the run_id
+    ({scenario}_{seed}_{model}_{sha7}). When `seed` is None, the legacy
+    UTC-timestamp fallback preserves backward compatibility for pre-Phase-7
+    callers that do not supply a seed (e.g., raw Alertmanager webhooks).
+    """
+    if seed is not None:
+        seed_str = str(seed)
+    else:
+        seed_str = f"seed-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     try:
         sha7 = subprocess.check_output(
             ["git", "rev-parse", "--short=7", "HEAD"], text=True
         ).strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         sha7 = "0000000"
-    run_id = f"{scenario}_{seed}_{model}_{sha7}"
-    return run_id, seed, sha7
+    run_id = f"{scenario}_{seed_str}_{model}_{sha7}"
+    return run_id, seed_str, sha7
 
 
 def _write_run_record(record: RunRecord) -> None:
@@ -96,17 +112,16 @@ async def run_orchestration(
     nixos_mcp: MCPServerStdio,
     *,
     scenario: str = "k8s-1",
+    seed: int | None = None,
 ) -> RunRecord:
     """Drive one full diagnosis -> remediation -> verification cycle."""
     model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
-    run_id, seed, sha7 = _build_run_id(scenario, model_name)
+    run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()
 
-    diagnosis_deps = DiagnosisDeps(
-        kubectl_mcp=kubectl_mcp, ssh_mcp=ssh_mcp, nixos_mcp=nixos_mcp
-    )
+    diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp)
     remediation_deps = RemediationDeps(
         kubectl_mcp=kubectl_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
     )
@@ -123,7 +138,7 @@ async def run_orchestration(
         return RunRecord(
             run_id=run_id,
             scenario=scenario,
-            seed=seed,
+            seed=seed_str,
             model=model_name,
             git_sha7=sha7,
             started_at=started_at,
@@ -175,7 +190,7 @@ async def run_orchestration(
         record = RunRecord(
             run_id=run_id,
             scenario=scenario,
-            seed=seed,
+            seed=seed_str,
             model=model_name,
             git_sha7=sha7,
             started_at=started_at,
@@ -197,14 +212,22 @@ async def run_orchestration(
         return record
 
     except UsageLimitExceeded:
+        log.exception("run %s aborted: iteration_limit_20", run_id)
         record = _abort_record("iteration_limit_20")
         _write_run_record(record)
         return record
     except CircuitBreakerTripped:
+        log.exception("run %s aborted: circuit_breaker", run_id)
         record = _abort_record("circuit_breaker_3_consecutive_errors")
         _write_run_record(record)
         return record
     except UnexpectedModelBehavior as e:
+        log.exception("run %s aborted: model_error: %s", run_id, e)
         record = _abort_record(f"model_error: {e}")
+        _write_run_record(record)
+        return record
+    except Exception:
+        log.exception("run %s aborted: unhandled exception", run_id)
+        record = _abort_record("unhandled_exception")
         _write_run_record(record)
         return record

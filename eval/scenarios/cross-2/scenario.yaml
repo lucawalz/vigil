@@ -1,0 +1,13 @@
+id: cross-2
+name: node-oom-kills-critical-pod
+layer: cross
+
+root_cause_layer: os
+root_cause_component: "Memory pressure on worker-2 OOM-kills the vigil-app pod repeatedly"
+correct_action_class: rebuild_nixos
+expected_resolution_path: "diagnosis starts at k8s (pod OOMKilled) -> escalates to os (node memory pressure) -> nixos_mcp rebuild_test (raise memory allocation) -> watchdog_confirm"
+
+inject_params:
+  target_host: hetzner-worker-2
+  fault_type: memory-pressure
+  target_deployment: vigil-app

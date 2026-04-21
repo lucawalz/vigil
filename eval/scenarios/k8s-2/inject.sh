@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SEED="${1:-1}"
+NAMESPACE="default"
+DEPLOYMENT="vigil-app"
+
+kubectl patch "deployment/${DEPLOYMENT}" \
+  -n "${NAMESPACE}" \
+  --type='json' \
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/env","value":[{"name":"VIGIL_CRASH","value":"1"}]}]'
+
+kubectl rollout status "deployment/${DEPLOYMENT}" \
+  -n "${NAMESPACE}" --timeout=30s 2>&1 || true
+
+echo "inject.sh: k8s-2 seed=${SEED} complete"

@@ -13,3 +13,14 @@ dist/
 
 # OS
 .DS_Store
+
+# Local env (direnv)
+.envrc
+
+# Terraform
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+infra/terraform/*.auto.tfvars
+infra/terraform/*.plan
