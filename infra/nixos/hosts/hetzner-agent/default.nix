@@ -45,6 +45,7 @@
     environment = {
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
+      GOPATH = "/root/go";
     };
     serviceConfig = {
       Type = "oneshot";
