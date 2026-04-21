@@ -6,7 +6,7 @@ NAMESPACE="default"
 PVC="vigil-app-data"
 DEPLOYMENT="vigil-app"
 
-kubectl delete pod -n "${NAMESPACE}" -l app=vigil-app --ignore-not-found --wait=false
+kubectl scale deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --replicas=0
 kubectl wait --for=delete pod -n "${NAMESPACE}" -l app=vigil-app --timeout=60s 2>/dev/null || true
 
 kubectl delete pvc "${PVC}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s
