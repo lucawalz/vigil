@@ -58,8 +58,7 @@
           ${pkgs.git}/bin/git reset --hard "origin/$BRANCH"
         fi
         cd /root/vigil
-        ${pkgs.uv}/bin/uv sync --locked \
-          --python ${pkgs.python312}/bin/python3.12
+        ${pkgs.uv}/bin/uv sync --locked
         CGO_ENABLED=0 ${pkgs.go}/bin/go build \
           -o /usr/local/bin/kubectl-mcp ./mcp-servers/kubectl-mcp/
         CGO_ENABLED=0 ${pkgs.go}/bin/go build \
