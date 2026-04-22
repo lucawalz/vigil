@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -11,6 +12,7 @@ import httpx
 
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
+_TRUNC = 300
 
 log = logging.getLogger(__name__)
 
@@ -75,12 +77,61 @@ async def _healthz_check(client: httpx.AsyncClient, orchestrator_url: str) -> No
         ) from e
 
 
+def _emit_trace_line(line: str) -> None:
+    try:
+        entry = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    phase = entry.get("phase", "?")
+    for part in entry.get("parts", []):
+        kind = part.get("part_kind") or part.get("type", "")
+        if kind == "tool-call":
+            args = part.get("args", {})
+            if isinstance(args, dict) and "args_dict" in args:
+                args = args["args_dict"]
+            args_s = json.dumps(args) if isinstance(args, dict) else str(args)
+            if len(args_s) > _TRUNC:
+                args_s = args_s[:_TRUNC] + "…"
+            log.info("[%s] → %s(%s)", phase, part.get("tool_name", "?"), args_s)
+        elif kind == "tool-return":
+            content = str(part.get("content", ""))
+            if len(content) > _TRUNC:
+                content = content[:_TRUNC] + "…"
+            log.debug("[%s] ← %s: %s", phase, part.get("tool_name", "?"), content)
+        elif kind == "text":
+            content = part.get("content", "").strip()
+            if content:
+                if len(content) > _TRUNC:
+                    content = content[:_TRUNC] + "…"
+                log.debug("[%s] model: %s", phase, content)
+
+
+async def _tail_trace(trace_path: Path, stop: asyncio.Event) -> None:
+    while not trace_path.exists():
+        if stop.is_set():
+            return
+        await asyncio.sleep(0.5)
+    offset = 0
+    while True:
+        with trace_path.open() as f:
+            f.seek(offset)
+            for raw in f:
+                raw = raw.strip()
+                if raw:
+                    _emit_trace_line(raw)
+            offset = f.tell()
+        if stop.is_set():
+            return
+        await asyncio.sleep(0.5)
+
+
 async def trigger_and_wait(
     scenario_id: str,
     seed: int,
     orchestrator_url: str,
     runs_dir: Path,
     timeout_s: int = DEFAULT_TIMEOUT_S,
+    verbose: bool = False,
 ) -> Path:
     webhook_secret = os.environ.get("VIGIL_WEBHOOK_SECRET", "")
     if not webhook_secret:
@@ -102,20 +153,31 @@ async def trigger_and_wait(
     log.info("run_id=%s — polling for result", run_id)
     result_path = runs_dir / f"{run_id}.json"
     result_path.unlink(missing_ok=True)
+
+    stop = asyncio.Event()
+    tail: asyncio.Task[None] | None = None
+    if verbose:
+        tail = asyncio.create_task(_tail_trace(runs_dir / f"{run_id}_trace.jsonl", stop))
+
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout_s
     last_log = loop.time()
-    while loop.time() < deadline:
-        if result_path.exists():
-            return result_path
-        await asyncio.sleep(2)
-        now = loop.time()
-        if now - last_log >= 30:
-            log.debug("still waiting for %s ... %.0fs elapsed", run_id, now - (deadline - timeout_s))
-            last_log = now
-    raise TimeoutError(
-        f"No result file for run_id={run_id} within {timeout_s}s at {result_path}"
-    )
+    try:
+        while loop.time() < deadline:
+            if result_path.exists():
+                return result_path
+            await asyncio.sleep(2)
+            now = loop.time()
+            if now - last_log >= 30:
+                log.debug("still waiting for %s ... %.0fs elapsed", run_id, now - (deadline - timeout_s))
+                last_log = now
+        raise TimeoutError(
+            f"No result file for run_id={run_id} within {timeout_s}s at {result_path}"
+        )
+    finally:
+        stop.set()
+        if tail is not None:
+            await tail
 
 
 async def run_one(
@@ -144,4 +206,5 @@ async def run_one(
         orchestrator_url=orchestrator_url,
         runs_dir=runs_dir,
         timeout_s=timeout_s,
+        verbose=verbose,
     )
