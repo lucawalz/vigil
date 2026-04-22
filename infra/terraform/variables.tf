@@ -16,7 +16,7 @@ variable "ssh_private_key_path" {
 
 variable "vigil_branch" {
   type    = string
-  default = "main"
+  default = "feat/os-layer-cross-layer-agent-paths"
 }
 
 variable "github_token" {
