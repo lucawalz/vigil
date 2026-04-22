@@ -34,7 +34,7 @@
     git
   ];
 
-  environment.systemPath = [ "/usr/local/bin" ];
+  environment.localBinInPath = true;
 
   system.activationScripts.vigil-ssh-key = lib.stringAfter [ "users" ] ''
     if [ ! -f /root/.ssh/id_ed25519 ]; then
