@@ -17,10 +17,10 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 
-def build_model() -> OpenAIChatModel:
+def build_model(model_name: str | None = None) -> OpenAIChatModel:
     """Return a pydantic-ai model configured from environment variables."""
     return OpenAIChatModel(
-        os.environ.get("LLM_MODEL_NAME", "test"),
+        model_name or os.environ.get("LLM_MODEL_NAME", "test"),
         provider=OpenAIProvider(
             base_url=os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"),
             api_key=os.environ.get("LLM_API_KEY", "nokey"),

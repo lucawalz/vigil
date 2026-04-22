@@ -18,6 +18,7 @@ import subprocess
 from datetime import datetime, timezone
 
 from common import trace
+from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -122,6 +123,7 @@ async def run_orchestration(
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()
+    model = build_model(model_name)
 
     diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp)
     remediation_deps = RemediationDeps(
@@ -164,7 +166,7 @@ async def run_orchestration(
     log.info("run %s started (scenario=%s model=%s)", run_id, scenario, model_name)
 
     try:
-        report, diag_usage, diag_msgs = await run_diagnosis(diagnosis_deps, event)
+        report, diag_usage, diag_msgs = await run_diagnosis(diagnosis_deps, event, model=model)
         total_usage = total_usage + diag_usage
         trace.log_messages(run_id, "diagnosis", diag_msgs)
         trace.write_trace(run_id, "diagnosis", diag_msgs)
@@ -175,7 +177,7 @@ async def run_orchestration(
 
         try:
             async with asyncio.TaskGroup() as tg:
-                rem_task = tg.create_task(run_remediation(remediation_deps, report))
+                rem_task = tg.create_task(run_remediation(remediation_deps, report, model=model))
                 wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
         except* (UsageLimitExceeded, UnexpectedModelBehavior, CircuitBreakerTripped) as eg:
             raise eg.exceptions[0]

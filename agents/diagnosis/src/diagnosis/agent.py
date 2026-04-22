@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from common.provider import build_model
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .models import DiagnosisDeps, DiagnosisReport
@@ -69,12 +70,15 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 
 
 async def run_diagnosis(
-    deps: DiagnosisDeps, fault: FaultEvent
+    deps: DiagnosisDeps,
+    fault: FaultEvent,
+    model: OpenAIChatModel | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
     result = await diagnosis_agent.run(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
         toolsets=[deps.kubectl_mcp, deps.nixos_mcp],
         usage_limits=UsageLimits(request_limit=40),
+        model=model,
     )
     return result.output, result.usage(), result.all_messages()
