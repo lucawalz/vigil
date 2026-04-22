@@ -2,15 +2,21 @@
 set -euo pipefail
 
 SEED="${1:-1}"
+TARGET_HOST="${TARGET_HOST:-hetzner-worker-2}"
+SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 NAMESPACE="default"
 DEPLOYMENT="vigil-app"
 MANIFEST_DIR="$(cd "$(dirname "$0")" && pwd)/manifests"
+
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
+  "systemctl start k3s.service || true && printf '{ }\n' > /opt/nixos-config/hosts/hetzner-worker-2/bad-module.nix"
+
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
+  "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-2"
 
 kubectl apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 
 kubectl rollout status "deployment/${DEPLOYMENT}" \
   -n "${NAMESPACE}" --timeout=120s
-
-flux resume kustomization flux-system -n flux-system 2>/dev/null || true
 
 echo "reset.sh: cross-2 seed=${SEED} — cluster at baseline"

@@ -2,15 +2,10 @@
 set -euo pipefail
 
 SEED="${1:-1}"
-NAMESPACE="default"
-DEPLOYMENT="vigil-app"
+TARGET_HOST="${TARGET_HOST:-hetzner-worker-2}"
+SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 
-kubectl patch "deployment/${DEPLOYMENT}" \
-  -n "${NAMESPACE}" \
-  --type='json' \
-  -p='[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"4Mi"},{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/memory","value":"4Mi"}]'
-
-kubectl rollout status "deployment/${DEPLOYMENT}" \
-  -n "${NAMESPACE}" --timeout=30s 2>&1 || true
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
+  "systemctl stop k3s.service"
 
 echo "inject.sh: cross-2 seed=${SEED} complete"
