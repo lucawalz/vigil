@@ -16,7 +16,7 @@ variable "ssh_private_key_path" {
 
 variable "vigil_branch" {
   type    = string
-  default = "feat/hetzner-infra-terraform"
+  default = "main"
 }
 
 variable "github_token" {
