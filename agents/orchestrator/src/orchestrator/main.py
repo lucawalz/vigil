@@ -16,6 +16,19 @@ from .models import FaultEvent
 log = logging.getLogger("vigil.orchestrator")
 
 
+def _configure_logging() -> None:
+    level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(name)-35s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%SZ",
+    ))
+    vigil_log = logging.getLogger("vigil")
+    vigil_log.setLevel(level)
+    vigil_log.addHandler(handler)
+    vigil_log.propagate = False
+
+
 def _mcp_commands() -> dict[str, list[str]]:
     return {
         "kubectl": os.environ.get("KUBECTL_MCP_CMD", "kubectl-mcp").split(),
@@ -27,6 +40,7 @@ def _mcp_commands() -> dict[str, list[str]]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _configure_logging()
     cmds = _mcp_commands()
     # MCPServerStdio defaults env=None which gives child processes an empty
     # environment, breaking KUBECONFIG, PATH, etc.

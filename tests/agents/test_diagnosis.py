@@ -71,4 +71,5 @@ def test_run_diagnosis_returns_tuple_with_usage() -> None:
     """Orchestrator needs usage tuple for token aggregation."""
     source = inspect.getsource(run_diagnosis)
     assert "result.usage()" in source
-    assert "return result.output, result.usage()" in source
+    assert "result.all_messages()" in source
+    assert "return result.output, result.usage(), result.all_messages()" in source

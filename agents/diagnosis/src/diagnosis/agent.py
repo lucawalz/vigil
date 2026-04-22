@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from common.provider import build_model
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .models import DiagnosisDeps, DiagnosisReport
@@ -69,20 +70,11 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 
 async def run_diagnosis(
     deps: DiagnosisDeps, fault: FaultEvent
-) -> tuple[DiagnosisReport, Usage]:
-    """Run the Diagnosis ReAct loop and return (report, usage).
-
-    The usage tuple captures token counts and request counts so the Orchestrator
-    can aggregate across sub-agents into the RunRecord.
-
-    Raises:
-        UsageLimitExceeded: When the ReAct loop exceeds 20 LLM requests.
-        UnexpectedModelBehavior: When Pydantic validation fails after all retries.
-    """
+) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
     result = await diagnosis_agent.run(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
         toolsets=[deps.kubectl_mcp, deps.nixos_mcp],
         usage_limits=UsageLimits(request_limit=40),
     )
-    return result.output, result.usage()
+    return result.output, result.usage(), result.all_messages()

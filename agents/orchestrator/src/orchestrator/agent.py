@@ -17,6 +17,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 
+from common import trace
 from diagnosis.agent import run_diagnosis
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -159,9 +160,13 @@ async def run_orchestration(
 
     total_usage = Usage()
 
+    log.info("run %s started (scenario=%s model=%s)", run_id, scenario, model_name)
+
     try:
-        report, diag_usage = await run_diagnosis(diagnosis_deps, event)
+        report, diag_usage, diag_msgs = await run_diagnosis(diagnosis_deps, event)
         total_usage = total_usage + diag_usage
+        trace.log_messages(run_id, "diagnosis", diag_msgs)
+        trace.write_trace(run_id, "diagnosis", diag_msgs)
         breaker.success()
         iteration_count += 1
 
@@ -173,9 +178,11 @@ async def run_orchestration(
                 wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
         except* (UsageLimitExceeded, UnexpectedModelBehavior, CircuitBreakerTripped) as eg:
             raise eg.exceptions[0]
-        remediation_result, rem_usage = rem_task.result()
+        remediation_result, rem_usage, rem_msgs = rem_task.result()
         watchdog_result = wtch_task.result()
         total_usage = total_usage + rem_usage
+        trace.log_messages(run_id, "remediation", rem_msgs)
+        trace.write_trace(run_id, "remediation", rem_msgs)
 
         destructive_repair = remediation_result.destructive_repair
         total_tool_calls = remediation_result.tool_calls_count
@@ -211,6 +218,7 @@ async def run_orchestration(
             iteration_count=iteration_count,
             autonomy_level="full",
         )
+        log.info("run %s finished outcome=success MTTR=%.1fs", run_id, mttr_s)
         _write_run_record(record)
         return record
 

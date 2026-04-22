@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+from pathlib import Path
+
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
+
+_log = logging.getLogger("vigil.agent.trace")
+_TRUNC = 300
+
+
+def _t(s: str) -> str:
+    return s[:_TRUNC] + "…" if len(s) > _TRUNC else s
+
+
+def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
+    for msg in messages:
+        if isinstance(msg, ModelResponse):
+            for part in msg.parts:
+                if isinstance(part, ToolCallPart):
+                    _log.info("[%s] [%s] → %s(%s)", run_id, phase, part.tool_name, _t(str(part.args)))
+                elif isinstance(part, TextPart) and part.content.strip():
+                    _log.debug("[%s] [%s] model: %s", run_id, phase, _t(part.content))
+        elif isinstance(msg, ModelRequest):
+            for part in msg.parts:
+                if isinstance(part, ToolReturnPart):
+                    _log.debug("[%s] [%s] ← %s: %s", run_id, phase, part.tool_name, _t(str(part.content)))
+
+
+def write_trace(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
+    runs_dir = os.environ.get("EVAL_RUNS_DIR", "eval/runs")
+    os.makedirs(runs_dir, exist_ok=True)
+    path = Path(runs_dir) / f"{run_id}_trace.jsonl"
+    serialized = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
+    with path.open("a") as f:
+        for item in serialized:
+            f.write(json.dumps({"phase": phase, **item}) + "\n")

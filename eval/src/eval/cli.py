@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -52,6 +53,12 @@ def cli() -> None:
     type=click.Path(file_okay=False, path_type=Path),
     help="Defaults to eval/runs (matches Orchestrator default).",
 )
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    default=False,
+    help="Stream script output and log progress to stderr.",
+)
 def run_cmd(
     scenario: str,
     seed: int,
@@ -60,8 +67,15 @@ def run_cmd(
     orchestrator_url: str,
     scenarios_dir: Path,
     runs_dir: Path | None,
+    verbose: bool,
 ) -> None:
     """Execute one eval run: reset -> inject -> POST -> poll -> print metrics."""
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.WARNING,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
     os.environ["LLM_MODEL_NAME"] = model
 
     try:
@@ -73,6 +87,7 @@ def run_cmd(
                 orchestrator_url=orchestrator_url,
                 runs_dir=runs_dir,
                 timeout_s=timeout_s,
+                verbose=verbose,
             )
         )
     except TimeoutError as e:

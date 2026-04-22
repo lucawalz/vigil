@@ -13,6 +13,7 @@ from __future__ import annotations
 from common.provider import build_model
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .models import RemediationDeps, RemediationResult
@@ -63,16 +64,7 @@ remediation_agent: Agent[RemediationDeps, RemediationResult] = Agent(
 
 async def run_remediation(
     deps: RemediationDeps, report: DiagnosisReport
-) -> tuple[RemediationResult, Usage]:
-    """Run the Remediation agent and return (result, usage).
-
-    The usage tuple captures token counts and request counts so the Orchestrator
-    can aggregate across sub-agents into the RunRecord.
-
-    Raises:
-        UsageLimitExceeded: When the agent exceeds 20 LLM requests.
-        UnexpectedModelBehavior: When Pydantic validation fails after all retries.
-    """
+) -> tuple[RemediationResult, Usage, list[ModelMessage]]:
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
         f"{report.model_dump_json()}. "
@@ -85,4 +77,4 @@ async def run_remediation(
         toolsets=[deps.kubectl_mcp, deps.flux_mcp, deps.nixos_mcp],
         usage_limits=UsageLimits(request_limit=20),
     )
-    return result.output, result.usage()
+    return result.output, result.usage(), result.all_messages()

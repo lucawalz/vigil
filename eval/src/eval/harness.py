@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -11,12 +12,14 @@ import httpx
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
 
+log = logging.getLogger(__name__)
+
 
 def _script_path(scenarios_dir: Path, scenario_id: str, name: str) -> Path:
     return scenarios_dir / scenario_id / name
 
 
-def _run_script(path: Path, seed: int) -> None:
+def _run_script(path: Path, seed: int, verbose: bool = False) -> None:
     if not path.is_file():
         raise FileNotFoundError(f"script not found: {path}")
     result = subprocess.run(
@@ -25,6 +28,11 @@ def _run_script(path: Path, seed: int) -> None:
         text=True,
         check=False,
     )
+    if verbose:
+        if result.stdout:
+            log.debug("%s stdout:\n%s", path.name, result.stdout.rstrip())
+        if result.stderr:
+            log.debug("%s stderr:\n%s", path.name, result.stderr.rstrip())
     if result.returncode != 0:
         raise RuntimeError(
             f"{path} exited {result.returncode}: {result.stderr.strip()}"
@@ -80,6 +88,7 @@ async def trigger_and_wait(
     fault_event = _build_fault_event(scenario_id)
     async with httpx.AsyncClient() as client:
         await _healthz_check(client, orchestrator_url)
+        log.info("triggering orchestrator webhook for %s", scenario_id)
         resp = await client.post(
             f"{orchestrator_url}/webhook",
             params={"scenario": scenario_id, "seed": seed},
@@ -90,14 +99,20 @@ async def trigger_and_wait(
         resp.raise_for_status()
         run_id = resp.json()["run_id"]
 
+    log.info("run_id=%s — polling for result", run_id)
     result_path = runs_dir / f"{run_id}.json"
     result_path.unlink(missing_ok=True)
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout_s
+    last_log = loop.time()
     while loop.time() < deadline:
         if result_path.exists():
             return result_path
         await asyncio.sleep(2)
+        now = loop.time()
+        if now - last_log >= 30:
+            log.debug("still waiting for %s ... %.0fs elapsed", run_id, now - (deadline - timeout_s))
+            last_log = now
     raise TimeoutError(
         f"No result file for run_id={run_id} within {timeout_s}s at {result_path}"
     )
@@ -110,6 +125,7 @@ async def run_one(
     orchestrator_url: str = DEFAULT_ORCHESTRATOR_URL,
     runs_dir: Path | None = None,
     timeout_s: int = DEFAULT_TIMEOUT_S,
+    verbose: bool = False,
 ) -> Path:
     if runs_dir is None:
         runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
@@ -117,8 +133,10 @@ async def run_one(
     reset_sh = _script_path(scenarios_dir, scenario_id, "reset.sh")
     inject_sh = _script_path(scenarios_dir, scenario_id, "inject.sh")
 
-    _run_script(reset_sh, seed)
-    _run_script(inject_sh, seed)
+    log.info("running reset.sh for %s", scenario_id)
+    _run_script(reset_sh, seed, verbose=verbose)
+    log.info("running inject.sh for %s", scenario_id)
+    _run_script(inject_sh, seed, verbose=verbose)
 
     return await trigger_and_wait(
         scenario_id=scenario_id,

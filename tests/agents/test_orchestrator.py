@@ -73,8 +73,8 @@ async def test_run_orchestration_happy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50))
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80))
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -117,8 +117,8 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20))
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30))
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -134,7 +134,7 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     )
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_kubectl_mcp.call_tool = AsyncMock(return_value={"content": "rolled back"})
+    mock_kubectl_mcp.direct_call_tool = AsyncMock(return_value={"content": "rolled back"})
 
     record = await run_orchestration(
         sample_fault_event,
@@ -147,7 +147,7 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     assert record.rollback_success is True
     calls = [
         c
-        for c in mock_kubectl_mcp.call_tool.call_args_list
+        for c in mock_kubectl_mcp.direct_call_tool.call_args_list
         if c.args and c.args[0] == "rollout_undo"
     ]
     assert len(calls) >= 1
@@ -163,8 +163,8 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50))
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80))
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -217,7 +217,7 @@ async def test_run_orchestration_run_id_format(
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
-        AsyncMock(return_value=(_canned_report(), Usage())),
+        AsyncMock(return_value=(_canned_report(), Usage(), [])),
     )
     monkeypatch.setattr(
         orch_mod,
@@ -227,7 +227,7 @@ async def test_run_orchestration_run_id_format(
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
-        AsyncMock(return_value=(_canned_remediation(), Usage())),
+        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
     )
     monkeypatch.setattr(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
@@ -276,7 +276,7 @@ async def test_run_orchestration_forwards_seed_to_run_id(
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
-        AsyncMock(return_value=(_canned_report(), Usage())),
+        AsyncMock(return_value=(_canned_report(), Usage(), [])),
     )
     monkeypatch.setattr(
         orch_mod,
@@ -286,7 +286,7 @@ async def test_run_orchestration_forwards_seed_to_run_id(
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
-        AsyncMock(return_value=(_canned_remediation(), Usage())),
+        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
     )
     monkeypatch.setattr(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
