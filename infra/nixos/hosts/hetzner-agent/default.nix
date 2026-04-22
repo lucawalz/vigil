@@ -101,6 +101,15 @@
     };
   };
 
+  programs.bash.shellInit = ''
+    if [ -f /etc/vigil/env ]; then
+      set -a
+      . /etc/vigil/env
+      set +a
+    fi
+    export PATH="/root/vigil/.venv/bin:$PATH"
+  '';
+
   services.openssh = {
     enable = true;
     settings = {
