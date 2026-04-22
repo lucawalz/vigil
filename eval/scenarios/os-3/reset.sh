@@ -10,6 +10,6 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "rm -f ${FILL_PATH}"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "nixos-rebuild switch"
+  "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1"
 
 echo "reset.sh: os-3 seed=${SEED} — node at baseline"

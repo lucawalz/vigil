@@ -9,6 +9,6 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "systemctl start systemd-resolved.service || true"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "nixos-rebuild switch"
+  "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1"
 
 echo "reset.sh: cross-3 seed=${SEED} — node at baseline"
