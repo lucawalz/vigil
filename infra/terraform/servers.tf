@@ -246,6 +246,30 @@ resource "null_resource" "kubeconfig_agent" {
   }
 }
 
+resource "null_resource" "worker_nixos_config" {
+  depends_on = [module.install_worker_1, module.install_worker_2]
+
+  triggers = {
+    worker_1_ip = hcloud_server.worker_1.ipv4_address
+    worker_2_ip = hcloud_server.worker_2.ipv4_address
+    branch      = var.vigil_branch
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      for IP in ${hcloud_server.worker_1.ipv4_address} ${hcloud_server.worker_2.ipv4_address}; do
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$IP \
+          "if [ ! -d /opt/vigil/.git ]; then
+            git clone --branch '${var.vigil_branch}' https://github.com/lucawalz/vigil /opt/vigil
+          else
+            cd /opt/vigil && git fetch origin && git checkout '${var.vigil_branch}' && git reset --hard origin/'${var.vigil_branch}'
+          fi
+          ln -sfn /opt/vigil/infra/nixos /opt/nixos-config"
+      done
+    EOF
+  }
+}
+
 resource "null_resource" "agent_ssh_auth" {
   depends_on = [null_resource.vigil_agent_setup]
 
