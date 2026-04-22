@@ -75,6 +75,8 @@ async def trigger_and_wait(
     timeout_s: int = DEFAULT_TIMEOUT_S,
 ) -> Path:
     webhook_secret = os.environ.get("VIGIL_WEBHOOK_SECRET", "")
+    if not webhook_secret:
+        raise ValueError("VIGIL_WEBHOOK_SECRET is not set")
     fault_event = _build_fault_event(scenario_id)
     async with httpx.AsyncClient() as client:
         await _healthz_check(client, orchestrator_url)
