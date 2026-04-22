@@ -253,6 +253,9 @@ resource "null_resource" "vigil_agent_setup" {
     agent_ip       = hcloud_server.agent.ipv4_address
     branch         = var.vigil_branch
     webhook_secret = var.vigil_webhook_secret
+    llm_api_key    = var.llm_api_key
+    llm_base_url   = var.llm_base_url
+    llm_model_name = var.llm_model_name
   }
 
   provisioner "local-exec" {
