@@ -17,6 +17,11 @@
   networking.hostName = "hetzner-agent";
   system.stateVersion = "25.05";
 
+  networking.extraHosts = ''
+    10.0.0.20 hetzner-worker-1
+    10.0.0.30 hetzner-worker-2
+  '';
+
   networking.firewall.allowedTCPPorts = [ 22 9099 ];
 
   environment.systemPackages = with pkgs; [
