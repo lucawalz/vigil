@@ -34,8 +34,6 @@
     git
   ];
 
-  environment.localBinInPath = true;
-
   system.activationScripts.vigil-ssh-key = lib.stringAfter [ "users" ] ''
     if [ ! -f /root/.ssh/id_ed25519 ]; then
       mkdir -p /root/.ssh
@@ -117,7 +115,7 @@
       . /etc/vigil/env
       set +a
     fi
-    export PATH="/root/vigil/.venv/bin:$PATH"
+    export PATH="/usr/local/bin:/root/vigil/.venv/bin:$PATH"
   '';
 
   services.openssh = {
