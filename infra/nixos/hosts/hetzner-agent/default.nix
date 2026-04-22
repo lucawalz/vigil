@@ -18,6 +18,7 @@
   system.stateVersion = "25.05";
 
   networking.extraHosts = ''
+    10.0.0.10 hetzner-master
     10.0.0.20 hetzner-worker-1
     10.0.0.30 hetzner-worker-2
   '';
