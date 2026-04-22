@@ -246,6 +246,35 @@ resource "null_resource" "kubeconfig_agent" {
   }
 }
 
+resource "null_resource" "agent_ssh_auth" {
+  depends_on = [null_resource.vigil_agent_setup]
+
+  triggers = {
+    agent_ip   = hcloud_server.agent.ipv4_address
+    worker_1_ip = hcloud_server.worker_1.ipv4_address
+    worker_2_ip = hcloud_server.worker_2.ipv4_address
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      DEADLINE=$(($(date +%s) + 120))
+      until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          root@${hcloud_server.agent.ipv4_address} "test -f /root/.ssh/id_ed25519.pub" 2>/dev/null; do
+        if [ $(date +%s) -gt $DEADLINE ]; then echo "Agent SSH key not ready after 2 minutes"; exit 1; fi
+        sleep 5
+      done
+      PUBKEY=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.agent.ipv4_address} "cat /root/.ssh/id_ed25519.pub")
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.worker_1.ipv4_address} \
+        "grep -qxF '$PUBKEY' /root/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /root/.ssh/authorized_keys"
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.worker_2.ipv4_address} \
+        "grep -qxF '$PUBKEY' /root/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /root/.ssh/authorized_keys"
+    EOF
+  }
+}
+
 resource "null_resource" "vigil_agent_setup" {
   depends_on = [null_resource.kubeconfig_agent]
 
