@@ -14,6 +14,7 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-2"
 
+kubectl delete deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --ignore-not-found=true
 kubectl apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 
 kubectl rollout status "deployment/${DEPLOYMENT}" \
