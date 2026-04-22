@@ -167,9 +167,12 @@ async def run_orchestration(
 
         baseline = await capture_health_snapshot(watchdog_deps)
 
-        async with asyncio.TaskGroup() as tg:
-            rem_task = tg.create_task(run_remediation(remediation_deps, report))
-            wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
+        try:
+            async with asyncio.TaskGroup() as tg:
+                rem_task = tg.create_task(run_remediation(remediation_deps, report))
+                wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
+        except* (UsageLimitExceeded, UnexpectedModelBehavior, CircuitBreakerTripped) as eg:
+            raise eg.exceptions[0]
         remediation_result, rem_usage = rem_task.result()
         watchdog_result = wtch_task.result()
         total_usage = total_usage + rem_usage

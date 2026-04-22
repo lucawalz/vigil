@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -9,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_ai.mcp import MCPServerStdio
 
-from .agent import run_orchestration
+from .agent import build_run_id, run_orchestration
 from .models import FaultEvent
 
 log = logging.getLogger("vigil.orchestrator")
@@ -82,6 +83,9 @@ def _check_auth(
 
 app = FastAPI(title="Vigil Orchestrator", lifespan=lifespan)
 
+# Holds references to in-flight background tasks so they are not GC'd.
+_active_tasks: set[asyncio.Task] = set()
+
 
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
@@ -101,13 +105,19 @@ async def webhook(
             detail="payload has no alerts",
         )
     event = FaultEvent.model_validate(payload)
-    record = await run_orchestration(
-        event,
-        kubectl_mcp=request.app.state.kubectl_mcp,
-        flux_mcp=request.app.state.flux_mcp,
-        ssh_mcp=request.app.state.ssh_mcp,
-        nixos_mcp=request.app.state.nixos_mcp,
-        scenario=scenario,
-        seed=seed,
+    model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
+    run_id, _, _ = build_run_id(scenario, model_name, seed=seed)
+    task = asyncio.create_task(
+        run_orchestration(
+            event,
+            kubectl_mcp=request.app.state.kubectl_mcp,
+            flux_mcp=request.app.state.flux_mcp,
+            ssh_mcp=request.app.state.ssh_mcp,
+            nixos_mcp=request.app.state.nixos_mcp,
+            scenario=scenario,
+            seed=seed,
+        )
     )
-    return {"run_id": record.run_id, "outcome": record.outcome}
+    _active_tasks.add(task)
+    task.add_done_callback(_active_tasks.discard)
+    return {"run_id": run_id}
