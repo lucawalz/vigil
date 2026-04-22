@@ -8,7 +8,7 @@ metadata:
 spec:
   interval: 1m0s
   ref:
-    branch: feat/hetzner-infra-terraform
+    branch: main
   secretRef:
     name: flux-system
   url: ssh://git@github.com/lucawalz/vigil
