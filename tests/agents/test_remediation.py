@@ -86,3 +86,21 @@ def test_run_remediation_returns_tuple_with_usage() -> None:
     source = inspect.getsource(run_remediation)
     assert "result.usage()" in source
     assert "return result.output, result.usage()" in source
+
+
+def test_remediation_prompt_os_branch() -> None:
+    """OS fault path must not suspend Kustomization: OS-only repairs do not involve Flux."""
+    mod_source = inspect.getsource(_rem_agent_mod)
+    assert "requires_os_level" in mod_source
+    assert "requires_os_level is True" in mod_source
+    assert "requires_os_level is False" in mod_source
+    os_branch = mod_source.split("requires_os_level is True", 1)[1]
+    os_branch = os_branch.split("Return a RemediationResult", 1)[0]
+    assert "suspend_kustomization" not in os_branch
+    assert "resume_kustomization" not in os_branch
+
+
+def test_remediation_prompt_rebuild_test() -> None:
+    """OS repair path must reference rebuild_test as the nixos-mcp entry point."""
+    mod_source = inspect.getsource(_rem_agent_mod)
+    assert "rebuild_test" in mod_source
