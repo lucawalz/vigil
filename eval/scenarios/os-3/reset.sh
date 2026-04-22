@@ -7,7 +7,7 @@ SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 FILL_PATH="/var/lib/rancher/k3s/eval-fill.img"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "rm -f ${FILL_PATH}"
+  "rm -f ${FILL_PATH} && printf '{ }\n' > /opt/nixos-config/hosts/hetzner-worker-1/bad-module.nix"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1"

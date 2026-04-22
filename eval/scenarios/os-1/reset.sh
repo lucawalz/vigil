@@ -7,10 +7,7 @@ SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 CONFIG_DIR="/opt/nixos-config/hosts/hetzner-worker-1"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "rm -f ${CONFIG_DIR}/bad-module.nix"
-
-ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "sed -i '/bad-module.nix/d' ${CONFIG_DIR}/default.nix || true"
+  "printf '{ }\n' > ${CONFIG_DIR}/bad-module.nix && sed -i '/bad-module.nix/d' ${CONFIG_DIR}/default.nix || true"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1"
