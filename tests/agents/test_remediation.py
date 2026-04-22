@@ -89,7 +89,7 @@ def test_run_remediation_returns_tuple_with_usage() -> None:
 
 
 def test_remediation_prompt_os_branch() -> None:
-    """OS fault path must not suspend Kustomization: OS-only repairs do not involve Flux."""
+    """OS fault path must not involve Flux: OS-only repairs skip suspension entirely."""
     mod_source = inspect.getsource(_rem_agent_mod)
     assert "requires_os_level" in mod_source
     assert "requires_os_level is True" in mod_source
