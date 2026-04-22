@@ -85,7 +85,7 @@ async def trigger_and_wait(
             params={"scenario": scenario_id, "seed": seed},
             json=fault_event,
             headers={"Authorization": f"Bearer {webhook_secret}"},
-            timeout=30,
+            timeout=720,
         )
         resp.raise_for_status()
         run_id = resp.json()["run_id"]
