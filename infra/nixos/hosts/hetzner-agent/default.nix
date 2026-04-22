@@ -109,7 +109,7 @@
     };
   };
 
-  programs.bash.shellInit = ''
+  programs.bash.loginShellInit = ''
     if [ -f /etc/vigil/env ]; then
       set -a
       . /etc/vigil/env
