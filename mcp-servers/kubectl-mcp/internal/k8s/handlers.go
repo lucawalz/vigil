@@ -128,7 +128,7 @@ func HandleRolloutStatus(client K8sClient, maxBytes int) server.ToolHandlerFunc 
 		}
 		output, err := client.RolloutStatus(ctx, ns, deployment)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("RolloutStatus: %v", err)), nil
+			return mcp.NewToolResultText(fmt.Sprintf("RolloutStatus: %v", err)), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
