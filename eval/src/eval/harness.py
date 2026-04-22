@@ -130,6 +130,7 @@ async def trigger_and_wait(
     seed: int,
     orchestrator_url: str,
     runs_dir: Path,
+    model: str,
     timeout_s: int = DEFAULT_TIMEOUT_S,
     verbose: bool = False,
 ) -> Path:
@@ -142,7 +143,7 @@ async def trigger_and_wait(
         log.info("triggering orchestrator webhook for %s", scenario_id)
         resp = await client.post(
             f"{orchestrator_url}/webhook",
-            params={"scenario": scenario_id, "seed": seed},
+            params={"scenario": scenario_id, "seed": seed, "model": model},
             json=fault_event,
             headers={"Authorization": f"Bearer {webhook_secret}"},
             timeout=720,
@@ -184,6 +185,7 @@ async def run_one(
     scenario_id: str,
     seed: int,
     scenarios_dir: Path,
+    model: str,
     orchestrator_url: str = DEFAULT_ORCHESTRATOR_URL,
     runs_dir: Path | None = None,
     timeout_s: int = DEFAULT_TIMEOUT_S,
@@ -205,6 +207,7 @@ async def run_one(
         seed=seed,
         orchestrator_url=orchestrator_url,
         runs_dir=runs_dir,
+        model=model,
         timeout_s=timeout_s,
         verbose=verbose,
     )

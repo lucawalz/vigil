@@ -114,9 +114,10 @@ async def run_orchestration(
     *,
     scenario: str = "k8s-1",
     seed: int | None = None,
+    model_name: str | None = None,
 ) -> RunRecord:
     """Drive one full diagnosis -> remediation -> verification cycle."""
-    model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
+    model_name = model_name or os.environ.get("LLM_MODEL_NAME", "unknown")
     run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     t0 = asyncio.get_event_loop().time()

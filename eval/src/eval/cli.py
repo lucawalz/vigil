@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -76,13 +75,12 @@ def run_cmd(
         datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
-    os.environ["LLM_MODEL_NAME"] = model
-
     try:
         result_path = asyncio.run(
             run_one(
                 scenario_id=scenario,
                 seed=seed,
+                model=model,
                 scenarios_dir=scenarios_dir,
                 orchestrator_url=orchestrator_url,
                 runs_dir=runs_dir,

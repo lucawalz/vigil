@@ -111,6 +111,7 @@ async def webhook(
     request: Request,
     scenario: str = "k8s-1",
     seed: int | None = None,
+    model: str | None = None,
 ) -> dict[str, str]:
     payload = await request.json()
     if not payload.get("alerts"):
@@ -119,7 +120,7 @@ async def webhook(
             detail="payload has no alerts",
         )
     event = FaultEvent.model_validate(payload)
-    model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
+    model_name = model or os.environ.get("LLM_MODEL_NAME", "unknown")
     run_id, _, _ = build_run_id(scenario, model_name, seed=seed)
     task = asyncio.create_task(
         run_orchestration(
@@ -130,6 +131,7 @@ async def webhook(
             nixos_mcp=request.app.state.nixos_mcp,
             scenario=scenario,
             seed=seed,
+            model_name=model_name,
         )
     )
     _active_tasks.add(task)
