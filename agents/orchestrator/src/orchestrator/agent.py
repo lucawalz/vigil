@@ -96,8 +96,8 @@ async def _issue_rollback(
     all_ok = True
     for resource in affected_resources:
         try:
-            await kubectl_mcp.call_tool(
-                "rollout_undo", arguments={"resource": resource}
+            await kubectl_mcp.direct_call_tool(
+                "rollout_undo", {"resource": resource}
             )
         except Exception:
             all_ok = False
