@@ -6,13 +6,15 @@ import (
 )
 
 var allowList = map[string]map[string]bool{
-	"journalctl": {},
-	"systemctl":  {"status": true, "is-active": true, "is-failed": true},
-	"free":       {},
-	"df":         {},
-	"uptime":     {},
-	"ip":         {"addr": true, "route": true, "link": true},
-	"ss":         {},
+	"journalctl":    {},
+	"systemctl":     {"status": true, "is-active": true, "is-failed": true, "stop": true, "start": true},
+	"free":          {},
+	"df":            {},
+	"uptime":        {},
+	"ip":            {"addr": true, "route": true, "link": true},
+	"ss":            {},
+	"fallocate":     {},
+	"nixos-rebuild": {"switch": true},
 }
 
 var shellMetaRE = regexp.MustCompile(`[;&|$` + "`" + `(){}<>\n\r]`)
