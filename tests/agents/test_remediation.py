@@ -60,7 +60,7 @@ def test_remediation_prompt_references_affected_resources() -> None:
 def test_run_remediation_signature() -> None:
     sig = inspect.signature(run_remediation)
     params = list(sig.parameters.values())
-    assert len(params) == 2
+    assert len(params) == 3
     assert params[0].name == "deps"
     assert params[1].name == "report"
     # Second param annotation is DiagnosisReport (class or forward-ref string).
@@ -68,6 +68,9 @@ def test_run_remediation_signature() -> None:
     assert ann_report is DiagnosisReport or (
         isinstance(ann_report, str) and "DiagnosisReport" in ann_report
     )
+    # Third param is optional model override for multi-model eval.
+    assert params[2].name == "model"
+    assert params[2].default is None
 
 
 def test_remediation_result_fields_stable() -> None:
