@@ -14,6 +14,7 @@ from common.provider import build_model
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .models import DiagnosisDeps, DiagnosisReport
@@ -26,8 +27,7 @@ _SYSTEM_PROMPT = """You are a Kubernetes SRE diagnosis agent operating on a K3s 
 Your only actions are tool calls using the tools listed below. Do not invent tool names.
 
 Available tools:
-  kubectl-mcp: get_nodes, get_pods, describe_pod, get_logs, rollout_status,
-               rollout_undo, apply_patch
+  kubectl-mcp: get_nodes, get_pods, describe_pod, get_logs, rollout_status
   nixos-mcp:   get_journal, get_systemd_status, get_generations,
                rebuild_test, switch_generation, etcd_snapshot_save
 
@@ -50,21 +50,7 @@ OS-level fault rules:
 - When requires_os_level=True, set target_host to the value from the "node" label.
 - Call get_nodes first to confirm which node is NotReady before touching nixos-mcp.
 
-apply_patch rules (avoid invalid patches):
-- ALWAYS include "name" in every containers[] entry you patch.
-- ALWAYS include "image" in every containers[] entry when using strategic merge patch.
-- To remove a specific env var, use JSON patch type with op=remove:
-    patch_type=json
-    patch=[{"op":"remove","path":"/spec/template/spec/containers/0/env/INDEX"}]
-  Find the correct INDEX first by calling describe_pod or get_pods to
-  inspect current env.
-- To set/replace a resource limit or request, use JSON patch type:
-    patch_type=json
-    patch=[{"op":"replace",
-            "path":"/spec/template/spec/containers/0/resources/limits/memory",
-            "value":"128Mi"}]
-- Never send a strategic merge patch for containers[] without both "name"
-  and "image" fields."""
+Do not call apply_patch or rollout_undo. Those are remediation actions; diagnosis is read-only."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
@@ -81,10 +67,15 @@ async def run_diagnosis(
     fault: FaultEvent,
     model: OpenAIChatModel | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
+    _write_tools = frozenset({"apply_patch", "rollout_undo"})
+    kubectl_readonly = FilteredToolset(
+        deps.kubectl_mcp,
+        filter_func=lambda _ctx, tool_def: tool_def.name not in _write_tools,
+    )
     result = await diagnosis_agent.run(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
-        toolsets=[deps.kubectl_mcp, deps.nixos_mcp],
+        toolsets=[kubectl_readonly, deps.nixos_mcp],
         usage_limits=UsageLimits(request_limit=40),
         model=model,
     )
