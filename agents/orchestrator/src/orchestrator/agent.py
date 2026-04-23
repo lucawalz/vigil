@@ -23,6 +23,7 @@ from diagnosis.agent import run_diagnosis
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import Usage
 from remediation.agent import run_remediation
 from remediation.models import RemediationDeps
@@ -51,6 +52,14 @@ class _CircuitBreaker:
     @property
     def consecutive(self) -> int:
         return self._consecutive
+
+
+def _count_tool_calls(msgs: list[ModelMessage]) -> int:
+    return sum(
+        1 for m in msgs
+        for p in getattr(m, "parts", [])
+        if getattr(p, "part_kind", None) == "tool-call"
+    )
 
 
 def build_run_id(
@@ -188,8 +197,8 @@ async def run_orchestration(
         trace.write_trace(run_id, "remediation", rem_msgs)
 
         destructive_repair = remediation_result.destructive_repair
-        total_tool_calls = remediation_result.tool_calls_count
-        iteration_count += remediation_result.tool_calls_count
+        total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+        iteration_count += _count_tool_calls(rem_msgs)
 
         if watchdog_result.degraded:
             rollback_triggered = True
