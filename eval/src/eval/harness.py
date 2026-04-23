@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 import httpx
 
 DEFAULT_TIMEOUT_S = 600
@@ -41,14 +43,17 @@ def _run_script(path: Path, seed: int, verbose: bool = False) -> None:
         )
 
 
-def _build_fault_event(scenario_id: str) -> dict[str, Any]:
+def _build_fault_event(scenario_id: str, target_host: str | None = None) -> dict[str, Any]:
+    labels: dict[str, str] = {"alertname": f"EvalHarness-{scenario_id}"}
+    if target_host:
+        labels["node"] = target_host
     return {
         "receiver": "vigil-webhook",
         "status": "firing",
         "alerts": [
             {
                 "status": "firing",
-                "labels": {"alertname": f"EvalHarness-{scenario_id}"},
+                "labels": labels,
                 "annotations": {"summary": f"eval harness trigger for {scenario_id}"},
                 "startsAt": "1970-01-01T00:00:00Z",
                 "endsAt": "",
@@ -57,7 +62,7 @@ def _build_fault_event(scenario_id: str) -> dict[str, Any]:
             }
         ],
         "groupLabels": {"alertname": f"EvalHarness-{scenario_id}"},
-        "commonLabels": {"alertname": f"EvalHarness-{scenario_id}"},
+        "commonLabels": labels,
         "commonAnnotations": {},
         "externalURL": "",
         "version": "4",
@@ -133,11 +138,12 @@ async def trigger_and_wait(
     model: str,
     timeout_s: int = DEFAULT_TIMEOUT_S,
     verbose: bool = False,
+    target_host: str | None = None,
 ) -> Path:
     webhook_secret = os.environ.get("VIGIL_WEBHOOK_SECRET", "")
     if not webhook_secret:
         raise ValueError("VIGIL_WEBHOOK_SECRET is not set")
-    fault_event = _build_fault_event(scenario_id)
+    fault_event = _build_fault_event(scenario_id, target_host=target_host)
     async with httpx.AsyncClient() as client:
         await _healthz_check(client, orchestrator_url)
         log.info("triggering orchestrator webhook for %s", scenario_id)
@@ -202,6 +208,13 @@ async def run_one(
     log.info("running inject.sh for %s", scenario_id)
     _run_script(inject_sh, seed, verbose=verbose)
 
+    target_host: str | None = None
+    scenario_yaml = scenarios_dir / scenario_id / "scenario.yaml"
+    if scenario_yaml.exists():
+        with scenario_yaml.open() as f:
+            data = yaml.safe_load(f)
+        target_host = (data.get("inject_params") or {}).get("target_host")
+
     return await trigger_and_wait(
         scenario_id=scenario_id,
         seed=seed,
@@ -210,4 +223,5 @@ async def run_one(
         model=model,
         timeout_s=timeout_s,
         verbose=verbose,
+        target_host=target_host,
     )

@@ -20,6 +20,7 @@ import (
 // client-go; tests inject a fake struct. The Go compiler enforces that
 // internal/ packages can only be used within this module.
 type K8sClient interface {
+	GetNodes(ctx context.Context) (string, error)
 	GetPods(ctx context.Context, namespace string) (string, error)
 	DescribePod(ctx context.Context, namespace, name string) (string, error)
 	GetLogs(ctx context.Context, namespace, name, container string, tailLines int64) (string, error)
@@ -40,6 +41,32 @@ func NewRealK8sClient(cfg *rest.Config) K8sClient {
 		log.Fatalf("kubernetes.NewForConfig: %v", err)
 	}
 	return &realK8sClient{cs: cs}
+}
+
+func (c *realK8sClient) GetNodes(ctx context.Context) (string, error) {
+	list, err := c.cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("list nodes: %w", err)
+	}
+	var sb strings.Builder
+	sb.WriteString("NAME\tSTATUS\tROLES\tAGE\n")
+	for _, node := range list.Items {
+		status := "NotReady"
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+				status = "Ready"
+			}
+		}
+		roles := "<none>"
+		for label := range node.Labels {
+			if label == "node-role.kubernetes.io/master" || label == "node-role.kubernetes.io/control-plane" {
+				roles = "control-plane"
+			}
+		}
+		age := fmt.Sprintf("%.0fm", time.Since(node.CreationTimestamp.Time).Minutes())
+		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\n", node.Name, status, roles, age)
+	}
+	return sb.String(), nil
 }
 
 func (c *realK8sClient) GetPods(ctx context.Context, namespace string) (string, error) {

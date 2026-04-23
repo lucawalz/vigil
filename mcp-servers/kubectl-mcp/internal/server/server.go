@@ -14,6 +14,13 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 	)
 
 	s.AddTool(
+		mcp.NewTool("get_nodes",
+			mcp.WithDescription("List all nodes and their Ready status"),
+		),
+		k8s.HandleGetNodes(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
 		mcp.NewTool("get_pods",
 			mcp.WithDescription("List all pods in a namespace"),
 			mcp.WithString("namespace",

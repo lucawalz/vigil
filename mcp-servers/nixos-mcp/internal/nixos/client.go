@@ -104,7 +104,7 @@ func (c *realNixOSClient) runSSH(host, cmd string) (string, error) {
 }
 
 func (c *realNixOSClient) GetGenerations(_ context.Context, host string) (string, error) {
-	return c.runSSH(host, "nixos-rebuild list-generations")
+	return c.runSSH(host, "nix-env -p /nix/var/nix/profiles/system --list-generations")
 }
 
 func (c *realNixOSClient) SwitchGeneration(_ context.Context, host string, generation int) (string, error) {
