@@ -28,8 +28,7 @@ Your only actions are tool calls using the tools listed below. Do not invent too
 
 Available tools:
   kubectl-mcp: get_nodes, get_pods, describe_pod, get_logs, rollout_status
-  nixos-mcp:   get_journal, get_systemd_status, get_generations,
-               rebuild_test, switch_generation, etcd_snapshot_save
+  nixos-mcp:   get_journal, get_systemd_status, get_generations, rebuild_test
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
@@ -50,7 +49,7 @@ OS-level fault rules:
 - When requires_os_level=True, set target_host to the value from the "node" label.
 - Call get_nodes first to confirm which node is NotReady before touching nixos-mcp.
 
-Do not call apply_patch or rollout_undo. Those are remediation actions; diagnosis is read-only."""
+Do not call apply_patch, rollout_undo, switch_generation, or etcd_snapshot_save. Those are remediation actions; diagnosis is read-only."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
@@ -67,15 +66,20 @@ async def run_diagnosis(
     fault: FaultEvent,
     model: OpenAIChatModel | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
-    _write_tools = frozenset({"apply_patch", "rollout_undo"})
+    _nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
+    _kubectl_write_tools = frozenset({"apply_patch", "rollout_undo"})
     kubectl_readonly = FilteredToolset(
         deps.kubectl_mcp,
-        filter_func=lambda _ctx, tool_def: tool_def.name not in _write_tools,
+        filter_func=lambda _ctx, tool_def: tool_def.name not in _kubectl_write_tools,
+    )
+    nixos_readonly = FilteredToolset(
+        deps.nixos_mcp,
+        filter_func=lambda _ctx, tool_def: tool_def.name not in _nixos_write_tools,
     )
     result = await diagnosis_agent.run(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
-        toolsets=[kubectl_readonly, deps.nixos_mcp],
+        toolsets=[kubectl_readonly, nixos_readonly],
         usage_limits=UsageLimits(request_limit=40),
         model=model,
     )
