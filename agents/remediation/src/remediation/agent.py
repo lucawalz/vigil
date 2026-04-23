@@ -45,9 +45,11 @@ If DiagnosisReport.requires_os_level is True (OS fault):
      - Any other result → proceed to generation rollback (step 4).
   4. Generation rollback:
      a. Call get_generations(host=<target_host>) to list available generations.
-     b. Identify the most recent generation number before the current (broken) one.
-     c. Call switch_generation(host=<target_host>, generation=<prev_gen>) to roll back.
-     d. Return success=True if switch_generation completes without error.
+     b. If there is a previous (older) generation: call switch_generation(host, prev_gen).
+        If only one generation exists: call switch_generation(host, that_gen) anyway —
+        switch-to-configuration switch re-applies the config and restarts stopped services
+        even when the generation number does not change.
+     c. Return success=True if switch_generation completes without error.
 
 Return a RemediationResult with:
 - success: True only if the repair tool returned success.
