@@ -2,6 +2,7 @@ package nixos
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -143,7 +144,12 @@ func (c *realNixOSClient) GetSystemdStatus(_ context.Context, host, unit string)
 	if err := validateArg("unit", unit); err != nil {
 		return "", err
 	}
-	return c.runSSH(host, fmt.Sprintf("systemctl status %s --no-pager", unit))
+	out, err := c.runSSH(host, fmt.Sprintf("systemctl status %s --no-pager", unit))
+	var exitErr *gossh.ExitError
+	if errors.As(err, &exitErr) {
+		return out, nil
+	}
+	return out, err
 }
 
 func (c *realNixOSClient) EtcdSnapshotSave(_ context.Context, host, destPath string) (string, error) {
