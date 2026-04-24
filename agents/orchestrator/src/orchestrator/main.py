@@ -19,10 +19,12 @@ log = logging.getLogger("vigil.orchestrator")
 def _configure_logging() -> None:
     level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s %(name)-35s %(levelname)-8s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%SZ",
-    ))
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(name)-35s %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+        )
+    )
     vigil_log = logging.getLogger("vigil")
     vigil_log.setLevel(level)
     vigil_log.addHandler(handler)

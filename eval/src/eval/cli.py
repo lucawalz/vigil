@@ -53,7 +53,8 @@ def cli() -> None:
     help="Defaults to eval/runs (matches Orchestrator default).",
 )
 @click.option(
-    "--verbose", "-v",
+    "--verbose",
+    "-v",
     is_flag=True,
     default=False,
     help="Stream script output and log progress to stderr.",

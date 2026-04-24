@@ -56,7 +56,8 @@ class _CircuitBreaker:
 
 def _count_tool_calls(msgs: list[ModelMessage]) -> int:
     return sum(
-        1 for m in msgs
+        1
+        for m in msgs
         for p in getattr(m, "parts", [])
         if getattr(p, "part_kind", None) == "tool-call"
     )
@@ -107,9 +108,7 @@ async def _issue_rollback(
     all_ok = True
     for resource in affected_resources:
         try:
-            await kubectl_mcp.direct_call_tool(
-                "rollout_undo", {"resource": resource}
-            )
+            await kubectl_mcp.direct_call_tool("rollout_undo", {"resource": resource})
         except Exception:
             all_ok = False
     return all_ok
@@ -193,7 +192,9 @@ async def run_orchestration(
                 )
                 wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
         except* (
-            UsageLimitExceeded, UnexpectedModelBehavior, CircuitBreakerTripped
+            UsageLimitExceeded,
+            UnexpectedModelBehavior,
+            CircuitBreakerTripped,
         ) as eg:
             raise eg.exceptions[0]
         remediation_result, rem_usage, rem_msgs = rem_task.result()

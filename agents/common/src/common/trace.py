@@ -30,7 +30,10 @@ def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
                 if isinstance(part, ToolCallPart):
                     _log.info(
                         "[%s] [%s] → %s(%s)",
-                        run_id, phase, part.tool_name, _t(str(part.args)),
+                        run_id,
+                        phase,
+                        part.tool_name,
+                        _t(str(part.args)),
                     )
                 elif isinstance(part, TextPart) and part.content.strip():
                     _log.debug("[%s] [%s] model: %s", run_id, phase, _t(part.content))
@@ -39,7 +42,10 @@ def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
                 if isinstance(part, ToolReturnPart):
                     _log.debug(
                         "[%s] [%s] ← %s: %s",
-                        run_id, phase, part.tool_name, _t(str(part.content)),
+                        run_id,
+                        phase,
+                        part.tool_name,
+                        _t(str(part.content)),
                     )
 
 

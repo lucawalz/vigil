@@ -55,7 +55,7 @@ def test_health_degraded_false_when_improved() -> None:
 
 async def test_capture_health_snapshot_builds_snapshot() -> None:
     mock = AsyncMock()
-    mock.call_tool = AsyncMock(
+    mock.direct_call_tool = AsyncMock(
         return_value={"content": "pod/a Running\npod/b Running\npod/c Running"}
     )
     deps = WatchdogDeps(kubectl_mcp=mock)
@@ -65,7 +65,7 @@ async def test_capture_health_snapshot_builds_snapshot() -> None:
     assert snap.ready_pods == 3
     assert snap.endpoints_healthy is True
     assert snap.captured_at.endswith("Z")
-    mock.call_tool.assert_awaited()
+    mock.direct_call_tool.assert_awaited()
 
 
 async def test_run_watchdog_returns_degraded_when_pods_drop(
@@ -75,7 +75,7 @@ async def test_run_watchdog_returns_degraded_when_pods_drop(
     monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 2.0)
 
     mock = AsyncMock()
-    mock.call_tool = AsyncMock(return_value={"content": ""})  # zero ready pods
+    mock.direct_call_tool = AsyncMock(return_value={"content": ""})  # zero ready pods
     deps = WatchdogDeps(kubectl_mcp=mock)
     baseline = _snap(3, 3, True)
 
@@ -93,7 +93,7 @@ async def test_run_watchdog_returns_not_degraded_when_stable(
     monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 0.3)
 
     mock = AsyncMock()
-    mock.call_tool = AsyncMock(
+    mock.direct_call_tool = AsyncMock(
         return_value={"content": "pod/a Running\npod/b Running\npod/c Running"}
     )
     deps = WatchdogDeps(kubectl_mcp=mock)
