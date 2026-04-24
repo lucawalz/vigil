@@ -16,6 +16,7 @@ import logging
 import os
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 
 from common import trace
 from common.provider import build_model
@@ -79,25 +80,45 @@ def build_run_id(
         seed_str = str(seed)
     else:
         seed_str = f"seed-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    try:
-        sha7 = subprocess.check_output(
-            ["git", "rev-parse", "--short=7", "HEAD"], text=True
-        ).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        sha7 = "0000000"
+    sha7 = os.environ.get("GIT_SHA7", "").strip()
+    if not sha7:
+        try:
+            sha7 = subprocess.check_output(
+                ["git", "rev-parse", "--short=7", "HEAD"], text=True
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            sha7 = "0000000"
     run_id = f"{scenario}_{seed_str}_{model}_{sha7}"
     return run_id, seed_str, sha7
 
 
+_OS_LAYERS = frozenset({"os", "cross"})
+
+
+def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
+    # yaml.safe_load — no arbitrary code execution from scenario files.
+    import yaml
+
+    scenarios_dir = Path(os.environ.get("VIGIL_SCENARIOS_DIR", "eval/scenarios"))
+    scenario_yaml = scenarios_dir / scenario / "scenario.yaml"
+    if not scenario_yaml.exists():
+        return None
+    with scenario_yaml.open() as f:
+        data = yaml.safe_load(f) or {}
+    expected_layer = data.get("root_cause_layer")
+    if expected_layer is None:
+        return None
+    expected_os = expected_layer in _OS_LAYERS
+    return report.requires_os_level == expected_os
+
+
 def _write_run_record(record: RunRecord) -> None:
-    """Write {runs_dir}/{run_id}.json + append one line to runs_index.jsonl."""
-    runs_dir = os.environ.get("EVAL_RUNS_DIR", "eval/runs")
-    os.makedirs(runs_dir, exist_ok=True)
-    path = os.path.join(runs_dir, f"{record.run_id}.json")
-    with open(path, "w") as f:
-        f.write(record.model_dump_json(indent=2))
-    index_path = os.path.join(os.path.dirname(runs_dir) or ".", "runs_index.jsonl")
-    with open(index_path, "a") as f:
+    runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    (runs_dir / f"{record.run_id}.json").write_text(record.model_dump_json(indent=2))
+    index_parent = runs_dir.parent if str(runs_dir.parent) != "" else Path(".")
+    index_path = index_parent / "runs_index.jsonl"
+    with index_path.open("a") as f:
         f.write(record.model_dump_json() + "\n")
 
 
@@ -167,6 +188,8 @@ async def run_orchestration(
             total_tool_calls=total_tool_calls,
             iteration_count=iteration_count,
             autonomy_level="full",
+            actions_taken=[],
+            model_version=model_name,
         )
 
     total_usage = Usage()
@@ -226,7 +249,7 @@ async def run_orchestration(
             ended_at=ended_at,
             outcome="success",
             success_rate=remediation_result.success and not watchdog_result.degraded,
-            diagnosis_accuracy=None,
+            diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
             MTTR_s=mttr_s,
             destructive_repair=destructive_repair,
             rollback_triggered=rollback_triggered,
@@ -236,6 +259,8 @@ async def run_orchestration(
             total_tool_calls=total_tool_calls,
             iteration_count=iteration_count,
             autonomy_level="full",
+            actions_taken=remediation_result.actions_taken,
+            model_version=model_name,
         )
         log.info("run %s finished outcome=success MTTR=%.1fs", run_id, mttr_s)
         _write_run_record(record)

@@ -236,12 +236,14 @@ async def test_run_orchestration_run_id_format(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
     )
 
+    monkeypatch.delenv("GIT_SHA7", raising=False)
     record = await run_orchestration(
         sample_fault_event,
         kubectl_mcp=mock_kubectl_mcp,
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        model_name="test-model",
     )
     pattern = r"^k8s-1_seed-\d{8}T\d{6}Z_test-model_[0-9a-f]{7}$"
     assert re.match(pattern, record.run_id), (
