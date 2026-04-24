@@ -265,6 +265,46 @@ def test_build_run_id_seed_none_falls_back_to_timestamp() -> None:
     assert re.match(r"^seed-\d{8}T\d{6}Z$", seed_str), seed_str
 
 
+def _make_run_record(**overrides) -> RunRecord:
+    defaults = dict(
+        run_id="k8s-1_1_test-model_abc1234",
+        scenario="k8s-1",
+        seed="1",
+        model="test-model",
+        git_sha7="abc1234",
+        started_at="2026-04-24T00:00:00Z",
+        ended_at="2026-04-24T00:01:00Z",
+        outcome="success",
+        success_rate=True,
+        diagnosis_accuracy=None,
+        MTTR_s=60.0,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=100,
+        total_output_tokens=50,
+        total_tool_calls=3,
+        iteration_count=1,
+        autonomy_level="full",
+        actions_taken=[],
+    )
+    defaults.update(overrides)
+    return RunRecord(**defaults)
+
+
+def test_run_record_has_actions_taken_and_model_version_fields() -> None:
+    assert "actions_taken" in RunRecord.model_fields
+    assert "model_version" in RunRecord.model_fields
+
+    record = _make_run_record(
+        actions_taken=["suspend_kustomization", "apply_patch"],
+        model_version="qwen3-coder-next:cloud",
+    )
+    data = json.loads(record.model_dump_json())
+    assert data["actions_taken"] == ["suspend_kustomization", "apply_patch"]
+    assert data["model_version"] == "qwen3-coder-next:cloud"
+
+
 async def test_run_orchestration_forwards_seed_to_run_id(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
