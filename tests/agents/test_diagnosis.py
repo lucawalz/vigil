@@ -37,7 +37,7 @@ def test_run_diagnosis_is_coroutine() -> None:
 def test_run_diagnosis_uses_only_diagnosis_scoped_toolsets() -> None:
     """Diagnosis uses kubectl+nixos MCP clients; ssh is excluded."""
     source = inspect.getsource(run_diagnosis)
-    assert "toolsets=[deps.kubectl_mcp, deps.nixos_mcp]" in source
+    assert "toolsets=[kubectl_readonly, nixos_readonly]" in source
     assert "flux_mcp" not in source
     assert "ssh_mcp" not in source
 
@@ -58,10 +58,10 @@ def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:
 
 
 def test_run_diagnosis_signature_accepts_diagnosis_deps() -> None:
-    """run_diagnosis(deps: DiagnosisDeps, fault: FaultEvent) -> tuple."""
+    """run_diagnosis(deps, fault, model=None) -> tuple."""
     sig = inspect.signature(run_diagnosis)
     params = list(sig.parameters.values())
-    assert len(params) == 2
+    assert len(params) == 3
     assert params[0].name == "deps"
     ann = params[0].annotation
     assert ann is DiagnosisDeps or (isinstance(ann, str) and "DiagnosisDeps" in ann)

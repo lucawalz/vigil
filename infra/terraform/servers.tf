@@ -274,7 +274,7 @@ resource "null_resource" "agent_ssh_auth" {
   depends_on = [null_resource.vigil_agent_setup]
 
   triggers = {
-    agent_ip   = hcloud_server.agent.ipv4_address
+    agent_ip    = hcloud_server.agent.ipv4_address
     worker_1_ip = hcloud_server.worker_1.ipv4_address
     worker_2_ip = hcloud_server.worker_2.ipv4_address
   }

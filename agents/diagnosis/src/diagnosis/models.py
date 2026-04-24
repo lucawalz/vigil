@@ -25,7 +25,7 @@ class DiagnosisReport(BaseModel):
     requires_os_level: bool
     target_host: str | None = Field(
         default=None,
-        description="NixOS node hostname for SSH tools. Set when requires_os_level=True.",
+        description="NixOS hostname for OS tools. Set when requires_os_level=True.",
     )
 
 

@@ -49,7 +49,8 @@ OS-level fault rules:
 - When requires_os_level=True, set target_host to the value from the "node" label.
 - Call get_nodes first to confirm which node is NotReady before touching nixos-mcp.
 
-Do not call apply_patch, rollout_undo, switch_generation, or etcd_snapshot_save. Those are remediation actions; diagnosis is read-only."""
+Do not call apply_patch, rollout_undo, switch_generation, or etcd_snapshot_save.
+Those are remediation actions; diagnosis is read-only."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(

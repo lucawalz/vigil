@@ -95,7 +95,8 @@ def test_all_scripts_syntax_valid(
 
 
 def test_os_reset_scripts_call_nixos_rebuild(scenarios_dir: Path) -> None:
-    """OS and cross reset scripts must call nixos-rebuild switch to pin committed generation before next run."""
+    """OS and cross reset scripts must call nixos-rebuild switch
+    to pin committed generation before next run."""
     for sid in NIXOS_REBUILD_RESET_IDS:
         reset_sh = scenarios_dir / sid / "reset.sh"
         body = reset_sh.read_text()
@@ -116,7 +117,8 @@ def test_os_reset_scripts_no_kubectl_apply(scenarios_dir: Path) -> None:
 
 
 def test_os3_inject_fills_named_path(scenarios_dir: Path) -> None:
-    """os-3 must fill a named recovery file under /var/lib/rancher/k3s, not the Nix store or root filesystem."""
+    """os-3 must fill a named recovery file under /var/lib/rancher/k3s,
+    not the Nix store or root filesystem."""
     inject_sh = scenarios_dir / "os-3" / "inject.sh"
     body = inject_sh.read_text()
     assert "/var/lib/rancher/k3s/eval-fill.img" in body, (

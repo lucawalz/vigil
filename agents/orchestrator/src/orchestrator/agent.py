@@ -175,7 +175,9 @@ async def run_orchestration(
     log.info("run %s started (scenario=%s model=%s)", run_id, scenario, model_name)
 
     try:
-        report, diag_usage, diag_msgs = await run_diagnosis(diagnosis_deps, event, model=model)
+        report, diag_usage, diag_msgs = await run_diagnosis(
+            diagnosis_deps, event, model=model
+        )
         total_usage = total_usage + diag_usage
         trace.log_messages(run_id, "diagnosis", diag_msgs)
         trace.write_trace(run_id, "diagnosis", diag_msgs)
@@ -186,9 +188,13 @@ async def run_orchestration(
 
         try:
             async with asyncio.TaskGroup() as tg:
-                rem_task = tg.create_task(run_remediation(remediation_deps, report, model=model))
+                rem_task = tg.create_task(
+                    run_remediation(remediation_deps, report, model=model)
+                )
                 wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
-        except* (UsageLimitExceeded, UnexpectedModelBehavior, CircuitBreakerTripped) as eg:
+        except* (
+            UsageLimitExceeded, UnexpectedModelBehavior, CircuitBreakerTripped
+        ) as eg:
             raise eg.exceptions[0]
         remediation_result, rem_usage, rem_msgs = rem_task.result()
         watchdog_result = wtch_task.result()

@@ -41,14 +41,16 @@ If DiagnosisReport.requires_os_level is True (OS fault):
      Flux in a degraded state on failure.
   2. Use DiagnosisReport.target_host as the "host" argument for all nixos-mcp calls.
   3. Call rebuild_test(host=<target_host>) first. Parse the output:
-     - "nixos-rebuild exit: 0" AND "k8s-node-ready: True" → success; return success=True.
+     - "nixos-rebuild exit: 0" AND "k8s-node-ready: True" →
+       success; return success=True.
      - Any other result → proceed to generation rollback (step 4).
   4. Generation rollback:
      a. Call get_generations(host=<target_host>) to list available generations.
-     b. If there is a previous (older) generation: call switch_generation(host, prev_gen).
-        If only one generation exists: call switch_generation(host, that_gen) anyway —
-        switch-to-configuration switch re-applies the config and restarts stopped services
-        even when the generation number does not change.
+     b. If there is a previous (older) generation:
+        call switch_generation(host, prev_gen).
+        If only one generation exists: call switch_generation(host, that_gen)
+        anyway — switch-to-configuration switch re-applies the config and
+        restarts stopped services even when the generation number does not change.
      c. Return success=True if switch_generation completes without error.
 
 Return a RemediationResult with:

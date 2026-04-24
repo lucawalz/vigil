@@ -134,7 +134,9 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     )
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_kubectl_mcp.direct_call_tool = AsyncMock(return_value={"content": "rolled back"})
+    mock_kubectl_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "rolled back"}
+    )
 
     record = await run_orchestration(
         sample_fault_event,

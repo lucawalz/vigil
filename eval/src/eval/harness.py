@@ -8,9 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 import httpx
+import yaml
 
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
@@ -43,7 +42,9 @@ def _run_script(path: Path, seed: int, verbose: bool = False) -> None:
         )
 
 
-def _build_fault_event(scenario_id: str, target_host: str | None = None) -> dict[str, Any]:
+def _build_fault_event(
+    scenario_id: str, target_host: str | None = None
+) -> dict[str, Any]:
     labels: dict[str, str] = {"alertname": f"EvalHarness-{scenario_id}"}
     if target_host:
         labels["node"] = target_host
@@ -164,7 +165,9 @@ async def trigger_and_wait(
     stop = asyncio.Event()
     tail: asyncio.Task[None] | None = None
     if verbose:
-        tail = asyncio.create_task(_tail_trace(runs_dir / f"{run_id}_trace.jsonl", stop))
+        tail = asyncio.create_task(
+            _tail_trace(runs_dir / f"{run_id}_trace.jsonl", stop)
+        )
 
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout_s
@@ -176,7 +179,11 @@ async def trigger_and_wait(
             await asyncio.sleep(2)
             now = loop.time()
             if now - last_log >= 30:
-                log.debug("still waiting for %s ... %.0fs elapsed", run_id, now - (deadline - timeout_s))
+                log.debug(
+                    "still waiting for %s ... %.0fs elapsed",
+                    run_id,
+                    now - (deadline - timeout_s),
+                )
                 last_log = now
         raise TimeoutError(
             f"No result file for run_id={run_id} within {timeout_s}s at {result_path}"
