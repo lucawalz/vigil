@@ -17,10 +17,13 @@ import os
 import subprocess
 from datetime import datetime, timezone
 
+from common import trace
+from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import Usage
 from remediation.agent import run_remediation
 from remediation.models import RemediationDeps
@@ -49,6 +52,15 @@ class _CircuitBreaker:
     @property
     def consecutive(self) -> int:
         return self._consecutive
+
+
+def _count_tool_calls(msgs: list[ModelMessage]) -> int:
+    return sum(
+        1
+        for m in msgs
+        for p in getattr(m, "parts", [])
+        if getattr(p, "part_kind", None) == "tool-call"
+    )
 
 
 def build_run_id(
@@ -96,9 +108,7 @@ async def _issue_rollback(
     all_ok = True
     for resource in affected_resources:
         try:
-            await kubectl_mcp.call_tool(
-                "rollout_undo", arguments={"resource": resource}
-            )
+            await kubectl_mcp.direct_call_tool("rollout_undo", {"resource": resource})
         except Exception:
             all_ok = False
     return all_ok
@@ -113,13 +123,15 @@ async def run_orchestration(
     *,
     scenario: str = "k8s-1",
     seed: int | None = None,
+    model_name: str | None = None,
 ) -> RunRecord:
     """Drive one full diagnosis -> remediation -> verification cycle."""
-    model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
+    model_name = model_name or os.environ.get("LLM_MODEL_NAME", "unknown")
     run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()
+    model = build_model(model_name)
 
     diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp)
     remediation_deps = RemediationDeps(
@@ -159,24 +171,41 @@ async def run_orchestration(
 
     total_usage = Usage()
 
+    log.info("run %s started (scenario=%s model=%s)", run_id, scenario, model_name)
+
     try:
-        report, diag_usage = await run_diagnosis(diagnosis_deps, event)
+        report, diag_usage, diag_msgs = await run_diagnosis(
+            diagnosis_deps, event, model=model
+        )
         total_usage = total_usage + diag_usage
+        trace.log_messages(run_id, "diagnosis", diag_msgs)
+        trace.write_trace(run_id, "diagnosis", diag_msgs)
         breaker.success()
         iteration_count += 1
 
         baseline = await capture_health_snapshot(watchdog_deps)
 
-        async with asyncio.TaskGroup() as tg:
-            rem_task = tg.create_task(run_remediation(remediation_deps, report))
-            wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
-        remediation_result, rem_usage = rem_task.result()
+        try:
+            async with asyncio.TaskGroup() as tg:
+                rem_task = tg.create_task(
+                    run_remediation(remediation_deps, report, model=model)
+                )
+                wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
+        except* (
+            UsageLimitExceeded,
+            UnexpectedModelBehavior,
+            CircuitBreakerTripped,
+        ) as eg:
+            raise eg.exceptions[0]
+        remediation_result, rem_usage, rem_msgs = rem_task.result()
         watchdog_result = wtch_task.result()
         total_usage = total_usage + rem_usage
+        trace.log_messages(run_id, "remediation", rem_msgs)
+        trace.write_trace(run_id, "remediation", rem_msgs)
 
         destructive_repair = remediation_result.destructive_repair
-        total_tool_calls = remediation_result.tool_calls_count
-        iteration_count += remediation_result.tool_calls_count
+        total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+        iteration_count += _count_tool_calls(rem_msgs)
 
         if watchdog_result.degraded:
             rollback_triggered = True
@@ -208,6 +237,7 @@ async def run_orchestration(
             iteration_count=iteration_count,
             autonomy_level="full",
         )
+        log.info("run %s finished outcome=success MTTR=%.1fs", run_id, mttr_s)
         _write_run_record(record)
         return record
 

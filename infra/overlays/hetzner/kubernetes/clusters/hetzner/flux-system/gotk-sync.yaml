@@ -8,7 +8,7 @@ metadata:
 spec:
   interval: 1m0s
   ref:
-    branch: main
+    branch: feat/os-layer-cross-layer-agent-paths
   secretRef:
     name: flux-system
   url: ssh://git@github.com/lucawalz/vigil

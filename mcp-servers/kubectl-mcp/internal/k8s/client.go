@@ -9,6 +9,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -19,6 +20,7 @@ import (
 // client-go; tests inject a fake struct. The Go compiler enforces that
 // internal/ packages can only be used within this module.
 type K8sClient interface {
+	GetNodes(ctx context.Context) (string, error)
 	GetPods(ctx context.Context, namespace string) (string, error)
 	DescribePod(ctx context.Context, namespace, name string) (string, error)
 	GetLogs(ctx context.Context, namespace, name, container string, tailLines int64) (string, error)
@@ -39,6 +41,32 @@ func NewRealK8sClient(cfg *rest.Config) K8sClient {
 		log.Fatalf("kubernetes.NewForConfig: %v", err)
 	}
 	return &realK8sClient{cs: cs}
+}
+
+func (c *realK8sClient) GetNodes(ctx context.Context) (string, error) {
+	list, err := c.cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("list nodes: %w", err)
+	}
+	var sb strings.Builder
+	sb.WriteString("NAME\tSTATUS\tROLES\tAGE\n")
+	for _, node := range list.Items {
+		status := "NotReady"
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+				status = "Ready"
+			}
+		}
+		roles := "<none>"
+		for label := range node.Labels {
+			if label == "node-role.kubernetes.io/master" || label == "node-role.kubernetes.io/control-plane" {
+				roles = "control-plane"
+			}
+		}
+		age := fmt.Sprintf("%.0fm", time.Since(node.CreationTimestamp.Time).Minutes())
+		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\n", node.Name, status, roles, age)
+	}
+	return sb.String(), nil
 }
 
 func (c *realK8sClient) GetPods(ctx context.Context, namespace string) (string, error) {
@@ -147,27 +175,51 @@ func (c *realK8sClient) ApplyPatch(ctx context.Context, namespace, resourceType,
 
 func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deploymentName string) (string, error) {
 	dep, err := c.cs.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
-	if err != nil {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return "", fmt.Errorf("get deployment: %w", err)
 	}
-	desired := dep.Spec.Replicas
+	if err == nil {
+		desired := dep.Spec.Replicas
+		desiredCount := int32(0)
+		if desired != nil {
+			desiredCount = *desired
+		}
+		updated := dep.Status.UpdatedReplicas
+		ready := dep.Status.ReadyReplicas
+		available := dep.Status.AvailableReplicas
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Deployment: %s/%s\n", namespace, deploymentName)
+		fmt.Fprintf(&sb, "Desired:    %d\n", desiredCount)
+		fmt.Fprintf(&sb, "Updated:    %d\n", updated)
+		fmt.Fprintf(&sb, "Ready:      %d\n", ready)
+		fmt.Fprintf(&sb, "Available:  %d\n", available)
+		if ready == desiredCount && updated == desiredCount {
+			sb.WriteString("Status:     Rolled out successfully\n")
+		} else {
+			sb.WriteString("Status:     Rolling out...\n")
+		}
+		return sb.String(), nil
+	}
+	ss, ssErr := c.cs.AppsV1().StatefulSets(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if ssErr != nil {
+		return "", fmt.Errorf("%s not found as deployment or statefulset in namespace %s", deploymentName, namespace)
+	}
+	desired := ss.Spec.Replicas
 	desiredCount := int32(0)
 	if desired != nil {
 		desiredCount = *desired
 	}
-	updated := dep.Status.UpdatedReplicas
-	ready := dep.Status.ReadyReplicas
-	available := dep.Status.AvailableReplicas
+	ready := ss.Status.ReadyReplicas
+	updated := ss.Status.UpdatedReplicas
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Deployment: %s/%s\n", namespace, deploymentName)
-	fmt.Fprintf(&sb, "Desired:    %d\n", desiredCount)
-	fmt.Fprintf(&sb, "Updated:    %d\n", updated)
-	fmt.Fprintf(&sb, "Ready:      %d\n", ready)
-	fmt.Fprintf(&sb, "Available:  %d\n", available)
+	fmt.Fprintf(&sb, "StatefulSet: %s/%s\n", namespace, deploymentName)
+	fmt.Fprintf(&sb, "Desired:     %d\n", desiredCount)
+	fmt.Fprintf(&sb, "Updated:     %d\n", updated)
+	fmt.Fprintf(&sb, "Ready:       %d\n", ready)
 	if ready == desiredCount && updated == desiredCount {
-		sb.WriteString("Status:     Rolled out successfully\n")
+		sb.WriteString("Status:      Rolled out successfully\n")
 	} else {
-		sb.WriteString("Status:     Rolling out...\n")
+		sb.WriteString("Status:      Rolling out...\n")
 	}
 	return sb.String(), nil
 }

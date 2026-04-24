@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -9,10 +10,25 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_ai.mcp import MCPServerStdio
 
-from .agent import run_orchestration
+from .agent import build_run_id, run_orchestration
 from .models import FaultEvent
 
 log = logging.getLogger("vigil.orchestrator")
+
+
+def _configure_logging() -> None:
+    level = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(name)-35s %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+        )
+    )
+    vigil_log = logging.getLogger("vigil")
+    vigil_log.setLevel(level)
+    vigil_log.addHandler(handler)
+    vigil_log.propagate = False
 
 
 def _mcp_commands() -> dict[str, list[str]]:
@@ -26,6 +42,7 @@ def _mcp_commands() -> dict[str, list[str]]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _configure_logging()
     cmds = _mcp_commands()
     # MCPServerStdio defaults env=None which gives child processes an empty
     # environment, breaking KUBECONFIG, PATH, etc.
@@ -82,6 +99,9 @@ def _check_auth(
 
 app = FastAPI(title="Vigil Orchestrator", lifespan=lifespan)
 
+# Holds references to in-flight background tasks so they are not GC'd.
+_active_tasks: set[asyncio.Task] = set()
+
 
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
@@ -93,6 +113,7 @@ async def webhook(
     request: Request,
     scenario: str = "k8s-1",
     seed: int | None = None,
+    model: str | None = None,
 ) -> dict[str, str]:
     payload = await request.json()
     if not payload.get("alerts"):
@@ -101,13 +122,20 @@ async def webhook(
             detail="payload has no alerts",
         )
     event = FaultEvent.model_validate(payload)
-    record = await run_orchestration(
-        event,
-        kubectl_mcp=request.app.state.kubectl_mcp,
-        flux_mcp=request.app.state.flux_mcp,
-        ssh_mcp=request.app.state.ssh_mcp,
-        nixos_mcp=request.app.state.nixos_mcp,
-        scenario=scenario,
-        seed=seed,
+    model_name = model or os.environ.get("LLM_MODEL_NAME", "unknown")
+    run_id, _, _ = build_run_id(scenario, model_name, seed=seed)
+    task = asyncio.create_task(
+        run_orchestration(
+            event,
+            kubectl_mcp=request.app.state.kubectl_mcp,
+            flux_mcp=request.app.state.flux_mcp,
+            ssh_mcp=request.app.state.ssh_mcp,
+            nixos_mcp=request.app.state.nixos_mcp,
+            scenario=scenario,
+            seed=seed,
+            model_name=model_name,
+        )
     )
-    return {"run_id": record.run_id, "outcome": record.outcome}
+    _active_tasks.add(task)
+    task.add_done_callback(_active_tasks.discard)
+    return {"run_id": run_id}

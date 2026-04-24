@@ -23,6 +23,10 @@ class DiagnosisReport(BaseModel):
     )
     confidence: float = Field(ge=0.0, le=1.0)
     requires_os_level: bool
+    target_host: str | None = Field(
+        default=None,
+        description="NixOS hostname for OS tools. Set when requires_os_level=True.",
+    )
 
 
 @dataclass(frozen=True)

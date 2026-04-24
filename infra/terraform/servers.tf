@@ -246,6 +246,59 @@ resource "null_resource" "kubeconfig_agent" {
   }
 }
 
+resource "null_resource" "worker_nixos_config" {
+  depends_on = [module.install_worker_1, module.install_worker_2]
+
+  triggers = {
+    worker_1_ip = hcloud_server.worker_1.ipv4_address
+    worker_2_ip = hcloud_server.worker_2.ipv4_address
+    branch      = var.vigil_branch
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      for IP in ${hcloud_server.worker_1.ipv4_address} ${hcloud_server.worker_2.ipv4_address}; do
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$IP \
+          "if [ ! -d /opt/vigil/.git ]; then
+            git clone --branch '${var.vigil_branch}' https://github.com/lucawalz/vigil /opt/vigil
+          else
+            cd /opt/vigil && git fetch origin && git checkout '${var.vigil_branch}' && git reset --hard origin/'${var.vigil_branch}'
+          fi
+          ln -sfn /opt/vigil/infra/nixos /opt/nixos-config"
+      done
+    EOF
+  }
+}
+
+resource "null_resource" "agent_ssh_auth" {
+  depends_on = [null_resource.vigil_agent_setup]
+
+  triggers = {
+    agent_ip    = hcloud_server.agent.ipv4_address
+    worker_1_ip = hcloud_server.worker_1.ipv4_address
+    worker_2_ip = hcloud_server.worker_2.ipv4_address
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      DEADLINE=$(($(date +%s) + 120))
+      until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          root@${hcloud_server.agent.ipv4_address} "test -f /root/.ssh/id_ed25519.pub" 2>/dev/null; do
+        if [ $(date +%s) -gt $DEADLINE ]; then echo "Agent SSH key not ready after 2 minutes"; exit 1; fi
+        sleep 5
+      done
+      PUBKEY=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.agent.ipv4_address} "cat /root/.ssh/id_ed25519.pub")
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.worker_1.ipv4_address} \
+        "grep -qxF '$PUBKEY' /root/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /root/.ssh/authorized_keys"
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.worker_2.ipv4_address} \
+        "grep -qxF '$PUBKEY' /root/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /root/.ssh/authorized_keys"
+    EOF
+  }
+}
+
 resource "null_resource" "vigil_agent_setup" {
   depends_on = [null_resource.kubeconfig_agent]
 
@@ -253,6 +306,9 @@ resource "null_resource" "vigil_agent_setup" {
     agent_ip       = hcloud_server.agent.ipv4_address
     branch         = var.vigil_branch
     webhook_secret = var.vigil_webhook_secret
+    llm_api_key    = var.llm_api_key
+    llm_base_url   = var.llm_base_url
+    llm_model_name = var.llm_model_name
   }
 
   provisioner "local-exec" {
@@ -261,7 +317,7 @@ resource "null_resource" "vigil_agent_setup" {
         root@${hcloud_server.agent.ipv4_address} \
         "mkdir -p /etc/vigil && \
          echo '${var.vigil_branch}' > /etc/vigil/branch && \
-         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=eval/runs\n' > /etc/vigil/env && \
+         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=eval/runs\nSSH_HOSTS=hetzner-worker-1,hetzner-worker-2\nSSH_USER=root\nSSH_KEY_PATH=/root/.ssh/id_ed25519\n' > /etc/vigil/env && \
          chmod 600 /etc/vigil/env && \
          systemctl start --no-block vigil-orchestrator.service"
     EOF

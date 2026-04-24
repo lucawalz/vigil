@@ -20,6 +20,10 @@ func TestValidateCommand_AllowedCommands(t *testing.T) {
 		{"ip", []string{"route"}},
 		{"ip", []string{"link"}},
 		{"ss", []string{"-tlnp"}},
+		{"systemctl", []string{"stop", "k3s-agent"}},
+		{"systemctl", []string{"start", "k3s-agent"}},
+		{"fallocate", []string{"-l", "20G", "/var/lib/rancher/k3s/eval-fill.img"}},
+		{"nixos-rebuild", []string{"switch"}},
 	}
 	for _, c := range cases {
 		err := validateCommand(c.binary, c.args)
@@ -38,7 +42,6 @@ func TestValidateCommand_RejectedBinaries(t *testing.T) {
 		{"bash", []string{"-c", "echo pwned"}},
 		{"sh", []string{"-c", "id"}},
 		{"curl", []string{"http://evil.com"}},
-		{"nixos-rebuild", []string{"switch"}},
 		{"kubectl", []string{"delete", "pods", "--all"}},
 	}
 	for _, c := range cases {
@@ -58,10 +61,10 @@ func TestValidateCommand_RejectedSubcommands(t *testing.T) {
 		binary string
 		args   []string
 	}{
-		{"systemctl", []string{"stop", "k3s"}},
 		{"systemctl", []string{"restart", "k3s"}},
 		{"systemctl", []string{"disable", "sshd"}},
 		{"ip", []string{"flush", "dev", "eth0"}},
+		{"nixos-rebuild", []string{"test"}},
 	}
 	for _, c := range cases {
 		err := validateCommand(c.binary, c.args)

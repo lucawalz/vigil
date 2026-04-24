@@ -8,6 +8,16 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+func HandleGetNodes(client K8sClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		output, err := client.GetNodes(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("GetNodes: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
+	}
+}
+
 func HandleGetPods(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -128,7 +138,7 @@ func HandleRolloutStatus(client K8sClient, maxBytes int) server.ToolHandlerFunc 
 		}
 		output, err := client.RolloutStatus(ctx, ns, deployment)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("RolloutStatus: %v", err)), nil
+			return mcp.NewToolResultText(fmt.Sprintf("RolloutStatus: %v", err)), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}

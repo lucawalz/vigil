@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING
 
 from common.provider import build_model
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .models import DiagnosisDeps, DiagnosisReport
@@ -24,10 +27,8 @@ _SYSTEM_PROMPT = """You are a Kubernetes SRE diagnosis agent operating on a K3s 
 Your only actions are tool calls using the tools listed below. Do not invent tool names.
 
 Available tools:
-  kubectl-mcp: get_pods, describe_pod, get_logs, rollout_status,
-               rollout_undo, apply_patch
-  nixos-mcp:   get_journal, get_systemd_status, get_generations,
-               rebuild_test, switch_generation, etcd_snapshot_save
+  kubectl-mcp: get_nodes, get_pods, describe_pod, get_logs, rollout_status
+  nixos-mcp:   get_journal, get_systemd_status, get_generations, rebuild_test
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
@@ -41,21 +42,15 @@ Rules:
 - confidence below 0.6 means you need more evidence before recommending an action.
 - Use kubectl-mcp tools directly for all Kubernetes operations.
 
-apply_patch rules (avoid invalid patches):
-- ALWAYS include "name" in every containers[] entry you patch.
-- ALWAYS include "image" in every containers[] entry when using strategic merge patch.
-- To remove a specific env var, use JSON patch type with op=remove:
-    patch_type=json
-    patch=[{"op":"remove","path":"/spec/template/spec/containers/0/env/INDEX"}]
-  Find the correct INDEX first by calling describe_pod or get_pods to
-  inspect current env.
-- To set/replace a resource limit or request, use JSON patch type:
-    patch_type=json
-    patch=[{"op":"replace",
-            "path":"/spec/template/spec/containers/0/resources/limits/memory",
-            "value":"128Mi"}]
-- Never send a strategic merge patch for containers[] without both "name"
-  and "image" fields."""
+OS-level fault rules:
+- The alert labels include a "node" field with the exact SSH hostname (e.g.,
+  "hetzner-worker-1"). Use this value verbatim as the "host" argument for ALL
+  nixos-mcp calls. Never use the scenario ID (e.g., "os-1") as a host.
+- When requires_os_level=True, set target_host to the value from the "node" label.
+- Call get_nodes first to confirm which node is NotReady before touching nixos-mcp.
+
+Do not call apply_patch, rollout_undo, switch_generation, or etcd_snapshot_save.
+Those are remediation actions; diagnosis is read-only."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
@@ -68,21 +63,25 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 
 
 async def run_diagnosis(
-    deps: DiagnosisDeps, fault: FaultEvent
-) -> tuple[DiagnosisReport, Usage]:
-    """Run the Diagnosis ReAct loop and return (report, usage).
-
-    The usage tuple captures token counts and request counts so the Orchestrator
-    can aggregate across sub-agents into the RunRecord.
-
-    Raises:
-        UsageLimitExceeded: When the ReAct loop exceeds 20 LLM requests.
-        UnexpectedModelBehavior: When Pydantic validation fails after all retries.
-    """
+    deps: DiagnosisDeps,
+    fault: FaultEvent,
+    model: OpenAIChatModel | None = None,
+) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
+    _nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
+    _kubectl_write_tools = frozenset({"apply_patch", "rollout_undo"})
+    kubectl_readonly = FilteredToolset(
+        deps.kubectl_mcp,
+        filter_func=lambda _ctx, tool_def: tool_def.name not in _kubectl_write_tools,
+    )
+    nixos_readonly = FilteredToolset(
+        deps.nixos_mcp,
+        filter_func=lambda _ctx, tool_def: tool_def.name not in _nixos_write_tools,
+    )
     result = await diagnosis_agent.run(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
-        toolsets=[deps.kubectl_mcp, deps.nixos_mcp],
+        toolsets=[kubectl_readonly, nixos_readonly],
         usage_limits=UsageLimits(request_limit=40),
+        model=model,
     )
-    return result.output, result.usage()
+    return result.output, result.usage(), result.all_messages()

@@ -17,6 +17,12 @@
   networking.hostName = "hetzner-agent";
   system.stateVersion = "25.05";
 
+  networking.extraHosts = ''
+    10.0.0.10 hetzner-master
+    10.0.0.20 hetzner-worker-1
+    10.0.0.30 hetzner-worker-2
+  '';
+
   networking.firewall.allowedTCPPorts = [ 22 9099 ];
 
   environment.systemPackages = with pkgs; [
@@ -64,7 +70,9 @@
           ${pkgs.git}/bin/git reset --hard "origin/$BRANCH"
         fi
         cd /root/vigil
-        ${pkgs.uv}/bin/uv sync --locked
+        ${pkgs.uv}/bin/uv sync --locked --all-packages
+        mkdir -p /usr/local/bin
+        ln -sf /root/vigil/.venv/bin/vigil-eval /usr/local/bin/vigil-eval
         CGO_ENABLED=0 ${pkgs.go}/bin/go build \
           -o /usr/local/bin/kubectl-mcp ./mcp-servers/kubectl-mcp/
         CGO_ENABLED=0 ${pkgs.go}/bin/go build \
@@ -91,6 +99,7 @@
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
       KUBECONFIG = "/root/.kube/config";
+      PATH = lib.mkForce "/run/current-system/sw/bin:/usr/local/bin:/root/vigil/.venv/bin";
     };
     serviceConfig = {
       WorkingDirectory = "/root/vigil";
@@ -100,6 +109,15 @@
       RestartSec = "5s";
     };
   };
+
+  programs.bash.loginShellInit = ''
+    if [ -f /etc/vigil/env ]; then
+      set -a
+      . /etc/vigil/env
+      set +a
+    fi
+    export PATH="/usr/local/bin:/root/vigil/.venv/bin:$PATH"
+  '';
 
   services.openssh = {
     enable = true;

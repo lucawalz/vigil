@@ -2844,11 +2844,15 @@ name = "vigil-common"
 version = "0.1.0"
 source = { editable = "agents/common" }
 dependencies = [
+    { name = "openai" },
     { name = "pydantic-ai" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic-ai", specifier = ">=1.84.0" }]
+requires-dist = [
+    { name = "openai", specifier = ">=1.0.0" },
+    { name = "pydantic-ai", specifier = ">=1.84.0" },
+]
 
 [[package]]
 name = "vigil-diagnosis"

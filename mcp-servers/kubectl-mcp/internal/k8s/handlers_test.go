@@ -45,6 +45,10 @@ func (f *fakeK8sClient) ApplyPatch(_ context.Context, _, _, _, _ string) (string
 	return f.applyPatch, f.err
 }
 
+func (f *fakeK8sClient) GetNodes(_ context.Context) (string, error) {
+	return "", f.err
+}
+
 func (f *fakeK8sClient) RolloutStatus(_ context.Context, _, _ string) (string, error) {
 	return f.rolloutStatus, f.err
 }
