@@ -273,5 +273,45 @@ def _prune_failures(failures_path: Path, succeeded: set[tuple[str, int, str]]) -
         failures_path.unlink(missing_ok=True)
 
 
+@cli.command("aggregate")
+@click.option(
+    "--runs-dir",
+    default=None,
+    envvar="EVAL_RUNS_DIR",
+    show_envvar=True,
+    type=click.Path(file_okay=False, path_type=Path),
+)
+@click.option("--index", default=None,
+              help="Path to runs_index.jsonl (default: {runs_dir}/../runs_index.jsonl).")
+@click.option(
+    "--scenarios-dir",
+    default="eval/scenarios",
+    envvar="VIGIL_SCENARIOS_DIR",
+    show_envvar=True,
+    type=click.Path(file_okay=False, path_type=Path),
+)
+@click.option(
+    "--output-dir",
+    default="eval/results",
+    type=click.Path(file_okay=False, path_type=Path),
+)
+def aggregate_cmd(
+    runs_dir: Path | None,
+    index: str | None,
+    scenarios_dir: Path,
+    output_dir: Path,
+) -> None:
+    """Read completed run JSONs and produce summary.json and REPORT.md."""
+    from eval.aggregate import aggregate_runs, write_report
+
+    runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
+    index_path = Path(index) if index else (runs_dir.parent / "runs_index.jsonl")
+    output_dir = Path(output_dir)
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    write_report(summary, output_dir)
+    click.echo(f"Written: {output_dir}/summary.json, {output_dir}/REPORT.md")
+
+
 if __name__ == "__main__":
     cli()
