@@ -23,6 +23,7 @@ from diagnosis.models import DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import build_run_id, run_orchestration
 from orchestrator.models import FaultEvent, RunRecord
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import Usage
 from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
@@ -348,3 +349,200 @@ async def test_run_orchestration_forwards_seed_to_run_id(
     spy.assert_called_once()
     _, kwargs = spy.call_args
     assert kwargs.get("seed") == 5
+
+
+def test_build_run_id_uses_git_sha7_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_SHA7", "abc1234")
+    import subprocess as subprocess_mod
+
+    monkeypatch.setattr(
+        subprocess_mod,
+        "check_output",
+        MagicMock(side_effect=AssertionError("git should not be called")),
+    )
+    run_id, _, sha7 = build_run_id("k8s-1", "m", seed=1)
+    assert sha7 == "abc1234"
+    assert run_id.endswith("_abc1234")
+
+
+def test_build_run_id_falls_back_to_subprocess_when_env_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GIT_SHA7", raising=False)
+    run_id, _, sha7 = build_run_id("k8s-1", "m", seed=1)
+    assert re.match(r"^[0-9a-f]{7}$", sha7), f"expected 7-hex sha7, got {sha7!r}"
+
+
+def test_build_run_id_falls_back_to_0000000_when_env_empty_and_git_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_SHA7", "")
+    import subprocess as subprocess_mod
+
+    monkeypatch.setattr(
+        subprocess_mod,
+        "check_output",
+        MagicMock(side_effect=FileNotFoundError("git not found")),
+    )
+    _, _, sha7 = build_run_id("k8s-1", "m", seed=1)
+    assert sha7 == "0000000"
+
+
+def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.delenv("GIT_SHA7", raising=False)
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok()))
+
+
+async def test_run_record_has_actions_taken_populated(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _run_orch_setup(monkeypatch, tmp_path)
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+    )
+    assert record.actions_taken == [
+        "suspend_kustomization",
+        "apply_patch",
+        "resume_kustomization",
+    ]
+
+
+async def test_run_record_has_model_version_populated(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _run_orch_setup(monkeypatch, tmp_path)
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        model_name="qwen3-coder-next:cloud",
+    )
+    assert record.model_version == "qwen3-coder-next:cloud"
+
+
+async def test_diagnosis_accuracy_scored_true_for_k8s_scenario(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenarios_dir = tmp_path / "scenarios" / "k8s-1"
+    scenarios_dir.mkdir(parents=True)
+    (scenarios_dir / "scenario.yaml").write_text("root_cause_layer: k8s\n")
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
+    _run_orch_setup(monkeypatch, tmp_path)
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        scenario="k8s-1",
+    )
+    assert record.diagnosis_accuracy is True
+
+
+async def test_diagnosis_accuracy_scored_false_for_os_scenario_missed_escalation(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenarios_dir = tmp_path / "scenarios" / "os-1"
+    scenarios_dir.mkdir(parents=True)
+    (scenarios_dir / "scenario.yaml").write_text("root_cause_layer: os\n")
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
+    _run_orch_setup(monkeypatch, tmp_path)
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        scenario="os-1",
+    )
+    assert record.diagnosis_accuracy is False
+
+
+async def test_diagnosis_accuracy_none_when_scenario_yaml_absent(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
+    _run_orch_setup(monkeypatch, tmp_path)
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        scenario="nonexistent-scenario",
+    )
+    assert record.diagnosis_accuracy is None
+
+
+async def test_abort_record_also_carries_actions_taken_and_model_version(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "run_diagnosis",
+        AsyncMock(side_effect=UsageLimitExceeded("limit")),
+    )
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        model_name="qwen3-coder-next:cloud",
+    )
+    assert record.outcome == "abort"
+    assert record.actions_taken == []
+    assert record.model_version == "qwen3-coder-next:cloud"
