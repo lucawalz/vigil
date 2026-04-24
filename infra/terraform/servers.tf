@@ -299,6 +299,10 @@ resource "null_resource" "agent_ssh_auth" {
   }
 }
 
+data "external" "git_sha" {
+  program = ["bash", "-c", "echo '{\"sha\":\"'$(git rev-parse --short=7 HEAD 2>/dev/null || echo 0000000)'\"}'"]
+}
+
 resource "null_resource" "vigil_agent_setup" {
   depends_on = [null_resource.kubeconfig_agent]
 
@@ -309,6 +313,7 @@ resource "null_resource" "vigil_agent_setup" {
     llm_api_key    = var.llm_api_key
     llm_base_url   = var.llm_base_url
     llm_model_name = var.llm_model_name
+    git_sha7       = substr(try(data.external.git_sha.result.sha, "0000000"), 0, 7)
   }
 
   provisioner "local-exec" {
@@ -317,7 +322,7 @@ resource "null_resource" "vigil_agent_setup" {
         root@${hcloud_server.agent.ipv4_address} \
         "mkdir -p /etc/vigil && \
          echo '${var.vigil_branch}' > /etc/vigil/branch && \
-         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=eval/runs\nSSH_HOSTS=hetzner-worker-1,hetzner-worker-2\nSSH_USER=root\nSSH_KEY_PATH=/root/.ssh/id_ed25519\n' > /etc/vigil/env && \
+         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=/root/vigil/eval/runs\nVIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios\nGIT_SHA7=${data.external.git_sha.result.sha}\nSSH_HOSTS=hetzner-worker-1,hetzner-worker-2\nSSH_USER=root\nSSH_KEY_PATH=/root/.ssh/id_ed25519\n' > /etc/vigil/env && \
          chmod 600 /etc/vigil/env && \
          systemctl start --no-block vigil-orchestrator.service"
     EOF
