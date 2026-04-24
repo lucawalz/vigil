@@ -22,7 +22,7 @@ os.environ.setdefault("LLM_API_KEY", "sk-test")
 from diagnosis.models import DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import build_run_id, run_orchestration
-from orchestrator.models import FaultEvent, RunRecord
+from orchestrator.models import CircuitBreakerTripped, FaultEvent, RunRecord
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import Usage
 from remediation.models import RemediationResult
@@ -548,3 +548,87 @@ async def test_abort_record_also_carries_actions_taken_and_model_version(
     assert record.outcome == "abort"
     assert record.actions_taken == []
     assert record.model_version == "qwen3-coder-next:cloud"
+
+
+async def test_runs_index_written_on_abort_path_usage_limit(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "run_diagnosis",
+        AsyncMock(side_effect=UsageLimitExceeded("limit")),
+    )
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+    )
+    index = tmp_path / "runs_index.jsonl"
+    assert index.exists()
+    lines = index.read_text().strip().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["outcome"] == "abort"
+    assert json.loads(lines[0])["run_id"] == record.run_id
+
+
+async def test_runs_index_written_on_abort_path_circuit_breaker(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "run_diagnosis",
+        AsyncMock(side_effect=CircuitBreakerTripped("3 consecutive MCP errors")),
+    )
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+    )
+    index = tmp_path / "runs_index.jsonl"
+    assert index.exists()
+    lines = index.read_text().strip().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["outcome"] == "abort"
+    assert json.loads(lines[0])["run_id"] == record.run_id
+
+
+async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs_dir = tmp_path / "custom" / "runs"
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(runs_dir))
+    _run_orch_setup(monkeypatch, tmp_path)
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(runs_dir))
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+    )
+    assert (tmp_path / "custom" / "runs_index.jsonl").exists()
+    assert record.outcome == "success"

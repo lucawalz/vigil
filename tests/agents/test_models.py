@@ -78,6 +78,7 @@ def test_run_record_roundtrip() -> None:
         total_tool_calls=7,
         iteration_count=6,
         autonomy_level="full",
+        actions_taken=["apply_patch"],
     )
     j = record.model_dump_json()
     assert RunRecord.model_validate_json(j) == record

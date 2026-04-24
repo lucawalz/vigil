@@ -41,6 +41,7 @@ def _canned_record() -> RunRecord:
         total_tool_calls=2,
         iteration_count=2,
         autonomy_level="full",
+        actions_taken=[],
     )
 
 
