@@ -44,6 +44,8 @@ class RunRecord(BaseModel):
     total_tool_calls: int
     iteration_count: int
     autonomy_level: Literal["full", "supervised"]
+    actions_taken: list[str]
+    model_version: str | None = None
 
 
 class CircuitBreakerTripped(Exception):
