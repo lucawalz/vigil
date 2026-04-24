@@ -116,3 +116,63 @@ def test_cli_runtime_error_also_nonzero_exit(tmp_path: Path) -> None:
             ],
         )
     assert result.exit_code != 0
+
+
+def test_combinations_model_grouped_within_scenario() -> None:
+    from eval.campaign import combinations
+
+    scenarios = ["k8s-1", "k8s-2"]
+    seeds = [1, 2, 3]
+    models = ["qwen", "deepseek"]
+    result = list(combinations(scenarios, seeds, models))
+    assert result[:6] == [
+        ("k8s-1", 1, "qwen"),
+        ("k8s-1", 2, "qwen"),
+        ("k8s-1", 3, "qwen"),
+        ("k8s-1", 1, "deepseek"),
+        ("k8s-1", 2, "deepseek"),
+        ("k8s-1", 3, "deepseek"),
+    ]
+    assert result[6:] == [
+        ("k8s-2", 1, "qwen"),
+        ("k8s-2", 2, "qwen"),
+        ("k8s-2", 3, "qwen"),
+        ("k8s-2", 1, "deepseek"),
+        ("k8s-2", 2, "deepseek"),
+        ("k8s-2", 3, "deepseek"),
+    ]
+
+
+def test_combinations_no_scenario_crossover_before_all_models_done() -> None:
+    from eval.campaign import combinations
+
+    scenarios = ["a", "b", "c"]
+    seeds = [1, 2]
+    models = ["m1", "m2"]
+    result = list(combinations(scenarios, seeds, models))
+    for i in range(len(result) - 1):
+        if result[i][0] != result[i + 1][0]:
+            assert result[i] == (result[i][0], seeds[-1], models[-1])
+            assert result[i + 1] == (result[i + 1][0], seeds[0], models[0])
+
+
+def test_completed_run_ids_supports_resume_skip_by_prefix(tmp_path: Path) -> None:
+    from eval.campaign import combinations, completed_run_ids
+
+    index = tmp_path / "runs_index.jsonl"
+    done_ids = [
+        "k8s-1_1_qwen_abc1234",
+        "k8s-1_2_qwen_abc1234",
+        "k8s-1_3_qwen_abc1234",
+    ]
+    index.write_text("\n".join(json.dumps({"run_id": rid}) for rid in done_ids) + "\n")
+    done = completed_run_ids(index)
+
+    all_combos = list(combinations(["k8s-1"], [1, 2, 3], ["qwen", "deepseek"]))
+    remaining = [
+        (sc, sd, md)
+        for sc, sd, md in all_combos
+        if not any(rid.startswith(f"{sc}_{sd}_{md}_") for rid in done)
+    ]
+    assert len(remaining) == 3
+    assert all(md == "deepseek" for _, _, md in remaining)
