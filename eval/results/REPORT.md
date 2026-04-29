@@ -1,4 +1,4 @@
-# Phase 9 — Eval Campaign Aggregation Report
+# Eval Campaign Aggregation Report
 
 Total runs: 71 across 2 models and 12 scenarios.
 
