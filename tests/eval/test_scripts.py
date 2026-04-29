@@ -12,8 +12,13 @@ K8S_SCENARIO_IDS = ("k8s-1", "k8s-2", "k8s-3", "k8s-4", "k8s-5")
 OS_SCENARIO_IDS = ("os-1", "os-2", "os-3")
 CROSS_SCENARIO_IDS = ("cross-1", "cross-2", "cross-3")
 BOUNDARY_SCENARIO_IDS = ("boundary-1",)
+PROD_SIM_SCENARIO_IDS = ("pg-1", "redis-1", "ingress-1")
 ALL_SCENARIO_IDS = (
-    K8S_SCENARIO_IDS + OS_SCENARIO_IDS + CROSS_SCENARIO_IDS + BOUNDARY_SCENARIO_IDS
+    K8S_SCENARIO_IDS
+    + OS_SCENARIO_IDS
+    + CROSS_SCENARIO_IDS
+    + BOUNDARY_SCENARIO_IDS
+    + PROD_SIM_SCENARIO_IDS
 )
 NIXOS_REBUILD_RESET_IDS = OS_SCENARIO_IDS + ("cross-1", "cross-3")
 
@@ -125,3 +130,18 @@ def test_os3_inject_fills_named_path(scenarios_dir: Path) -> None:
         f"{inject_sh}: os-3 fill path must be /var/lib/rancher/k3s/eval-fill.img"
     )
     assert "/nix" not in body, f"{inject_sh}: must not touch Nix store"
+
+
+def test_load_scenarios_includes_prod_sim(scenarios_dir: Path) -> None:
+    from eval.scenario import load_scenarios
+
+    ids = {s.id for s in load_scenarios(scenarios_dir)}
+    for expected in ("pg-1", "redis-1", "ingress-1"):
+        assert expected in ids, f"scenario {expected} not found in load_scenarios output"
+
+
+def test_k8s2_inject_uses_app_crash_mode(scenarios_dir: Path) -> None:
+    inject_sh = scenarios_dir / "k8s-2" / "inject.sh"
+    content = inject_sh.read_text()
+    assert "APP_CRASH_MODE" in content
+    assert "VIGIL_CRASH" not in content
