@@ -122,8 +122,7 @@ def _write_run_record(record: RunRecord) -> None:
     runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
     runs_dir.mkdir(parents=True, exist_ok=True)
     (runs_dir / f"{record.run_id}.json").write_text(record.model_dump_json(indent=2))
-    index_parent = runs_dir.parent if str(runs_dir.parent) != "" else Path(".")
-    index_path = index_parent / "runs_index.jsonl"
+    index_path = runs_dir.parent / "runs_index.jsonl"
     with index_path.open("a") as f:
         f.write(record.model_dump_json() + "\n")
 
