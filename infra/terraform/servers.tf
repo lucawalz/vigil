@@ -203,7 +203,7 @@ resource "null_resource" "kubeconfig" {
   depends_on = [null_resource.k3s_token_master]
 
   triggers = {
-    master_ip = hcloud_server.master.ipv4_address
+    master_id = hcloud_server.master.id
   }
 
   provisioner "local-exec" {
@@ -230,8 +230,8 @@ resource "null_resource" "kubeconfig_agent" {
   depends_on = [null_resource.kubeconfig, module.install_agent]
 
   triggers = {
-    master_ip = hcloud_server.master.ipv4_address
-    agent_ip  = hcloud_server.agent.ipv4_address
+    master_id = hcloud_server.master.id
+    agent_id  = hcloud_server.agent.id
   }
 
   provisioner "local-exec" {
@@ -303,7 +303,7 @@ resource "null_resource" "vigil_agent_setup" {
   depends_on = [null_resource.kubeconfig_agent]
 
   triggers = {
-    agent_ip       = hcloud_server.agent.ipv4_address
+    agent_id       = hcloud_server.agent.id
     branch         = var.vigil_branch
     webhook_secret = var.vigil_webhook_secret
     llm_api_key    = var.llm_api_key
