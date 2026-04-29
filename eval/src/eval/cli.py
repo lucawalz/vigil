@@ -123,8 +123,12 @@ def run_cmd(
     show_envvar=True,
     type=click.Path(file_okay=False, path_type=Path),
 )
-@click.option("--models", required=True, multiple=True,
-              help="Model identifier(s). Repeat flag: --models m1 --models m2.")
+@click.option(
+    "--models",
+    required=True,
+    multiple=True,
+    help="Model identifier(s). Repeat flag: --models m1 --models m2.",
+)
 @click.option("--seeds", default=(1, 2, 3), multiple=True, type=int, show_default=True)
 @click.option(
     "--runs-dir",
@@ -141,7 +145,8 @@ def run_cmd(
     show_envvar=True,
 )
 @click.option(
-    "--index", default=None,
+    "--index",
+    default=None,
     help="Path to runs_index.jsonl (default: {runs_dir}/../runs_index.jsonl).",
 )
 @click.option(
@@ -152,8 +157,12 @@ def run_cmd(
     envvar="VIGIL_RUN_TIMEOUT_S",
     show_envvar=True,
 )
-@click.option("--retry-failed", is_flag=True, default=False,
-              help="Re-run only combinations listed in failures.jsonl.")
+@click.option(
+    "--retry-failed",
+    is_flag=True,
+    default=False,
+    help="Re-run only combinations listed in failures.jsonl.",
+)
 @click.option("--verbose", "-v", is_flag=True, default=False)
 def campaign_cmd(
     scenarios_dir: Path,
@@ -186,7 +195,8 @@ def campaign_cmd(
         all_combos = list(combinations(scenario_ids, list(seeds), list(models)))
         done = completed_run_ids(index_path)
         combos = [
-            (sc, sd, md) for sc, sd, md in all_combos
+            (sc, sd, md)
+            for sc, sd, md in all_combos
             if not any(rid.startswith(f"{sc}_{sd}_{md}_") for rid in done)
         ]
 
@@ -200,16 +210,18 @@ def campaign_cmd(
 
     for n, (scenario, seed, model) in enumerate(combos, start=1):
         try:
-            result_path = asyncio.run(run_one(
-                scenario_id=scenario,
-                seed=seed,
-                model=model,
-                scenarios_dir=scenarios_dir,
-                orchestrator_url=orchestrator_url,
-                runs_dir=runs_dir,
-                timeout_s=timeout_s,
-                verbose=verbose,
-            ))
+            result_path = asyncio.run(
+                run_one(
+                    scenario_id=scenario,
+                    seed=seed,
+                    model=model,
+                    scenarios_dir=scenarios_dir,
+                    orchestrator_url=orchestrator_url,
+                    runs_dir=runs_dir,
+                    timeout_s=timeout_s,
+                    verbose=verbose,
+                )
+            )
             record = json.loads(result_path.read_text())
             success = "SUCCESS" if record.get("success_rate") else "FAIL"
             mttr = record.get("MTTR_s")
@@ -285,7 +297,8 @@ def _prune_failures(failures_path: Path, succeeded: set[tuple[str, int, str]]) -
     type=click.Path(file_okay=False, path_type=Path),
 )
 @click.option(
-    "--index", default=None,
+    "--index",
+    default=None,
     help="Path to runs_index.jsonl (default: {runs_dir}/../runs_index.jsonl).",
 )
 @click.option(

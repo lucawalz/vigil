@@ -81,9 +81,9 @@ def aggregate_runs(
             "mean_output_tokens": _mean_std(
                 [r.get("total_output_tokens", 0) for r in runs]
             )[0],
-            "mean_tool_calls": _mean_std(
-                [r.get("total_tool_calls", 0) for r in runs]
-            )[0],
+            "mean_tool_calls": _mean_std([r.get("total_tool_calls", 0) for r in runs])[
+                0
+            ],
             "mean_iteration_count": _mean_std(
                 [r.get("iteration_count", 0) for r in runs]
             )[0],

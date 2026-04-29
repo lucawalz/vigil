@@ -212,7 +212,8 @@ async def run_orchestration(
             except asyncio.TimeoutError:
                 log.error(
                     "run %s aborted: diagnosis_timeout (%.0fs)",
-                    run_id, DIAGNOSIS_TIMEOUT_S,
+                    run_id,
+                    DIAGNOSIS_TIMEOUT_S,
                 )
                 record = _abort_record("diagnosis_timeout")
                 _write_run_record(record)
@@ -245,7 +246,8 @@ async def run_orchestration(
             except asyncio.TimeoutError:
                 log.error(
                     "run %s aborted: remediation_timeout (%.0fs)",
-                    run_id, REMEDIATION_TIMEOUT_S,
+                    run_id,
+                    REMEDIATION_TIMEOUT_S,
                 )
                 record = _abort_record("remediation_timeout")
                 _write_run_record(record)
@@ -258,8 +260,8 @@ async def run_orchestration(
             trace.write_trace(run_id, "remediation", rem_msgs)
 
             destructive_repair = remediation_result.destructive_repair
-            total_tool_calls = (
-                _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(
+                rem_msgs
             )
             iteration_count += _count_tool_calls(rem_msgs)
 

@@ -74,10 +74,14 @@ def test_aggregate_computes_per_model_means(tmp_path: Path) -> None:
         for model in ("qwen", "deepseek"):
             for seed, mttr in enumerate([10.0, 20.0, 30.0], start=1):
                 _write_run(
-                    runs_dir, index_path,
+                    runs_dir,
+                    index_path,
                     run_id=f"{scenario}_{seed}_{model}_abc",
-                    scenario=scenario, seed=seed, model=model,
-                    success=True, mttr=mttr,
+                    scenario=scenario,
+                    seed=seed,
+                    model=model,
+                    success=True,
+                    mttr=mttr,
                 )
 
     summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
@@ -97,10 +101,14 @@ def test_aggregate_computes_stdev_with_at_least_two_samples(tmp_path: Path) -> N
 
     for seed, mttr in enumerate([10.0, 20.0, 30.0], start=1):
         _write_run(
-            runs_dir, index_path,
+            runs_dir,
+            index_path,
             run_id=f"k8s-1_{seed}_qwen_abc",
-            scenario="k8s-1", seed=seed, model="qwen",
-            success=True, mttr=mttr,
+            scenario="k8s-1",
+            seed=seed,
+            model="qwen",
+            success=True,
+            mttr=mttr,
         )
 
     summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
@@ -113,10 +121,14 @@ def test_aggregate_computes_stdev_with_at_least_two_samples(tmp_path: Path) -> N
     runs_dir2.mkdir()
     index_path2 = tmp_path / "runs_index2.jsonl"
     _write_run(
-        runs_dir2, index_path2,
+        runs_dir2,
+        index_path2,
         run_id="k8s-1_1_qwen_abc",
-        scenario="k8s-1", seed=1, model="qwen",
-        success=True, mttr=15.0,
+        scenario="k8s-1",
+        seed=1,
+        model="qwen",
+        success=True,
+        mttr=15.0,
     )
     summary2 = aggregate_runs(runs_dir2, index_path2, scenarios_dir)
     assert summary2["by_model"]["qwen"]["std_MTTR_s"] is None
@@ -132,10 +144,15 @@ def test_aggregate_escalation_accuracy_marks_k8s_scenarios_na(tmp_path: Path) ->
     _make_scenarios_dir(scenarios_dir, "k8s-1", "k8s")
 
     _write_run(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="k8s-1_1_qwen_abc",
-        scenario="k8s-1", seed=1, model="qwen",
-        success=True, mttr=10.0, diagnosis_accuracy=True,
+        scenario="k8s-1",
+        seed=1,
+        model="qwen",
+        success=True,
+        mttr=10.0,
+        diagnosis_accuracy=True,
     )
 
     summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
@@ -153,10 +170,15 @@ def test_aggregate_escalation_accuracy_counts_os_scenarios(tmp_path: Path) -> No
 
     for seed, diag in enumerate([True, True, False], start=1):
         _write_run(
-            runs_dir, index_path,
+            runs_dir,
+            index_path,
             run_id=f"os-1_{seed}_qwen_abc",
-            scenario="os-1", seed=seed, model="qwen",
-            success=True, mttr=10.0, diagnosis_accuracy=diag,
+            scenario="os-1",
+            seed=seed,
+            model="qwen",
+            success=True,
+            mttr=10.0,
+            diagnosis_accuracy=diag,
         )
 
     summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
@@ -171,18 +193,25 @@ def test_write_report_produces_markdown_with_three_tables(tmp_path: Path) -> Non
     summary = {
         "by_model": {
             "qwen": {
-                "n_runs": 3, "success_rate": 1.0,
-                "mean_MTTR_s": 20.0, "std_MTTR_s": 10.0,
+                "n_runs": 3,
+                "success_rate": 1.0,
+                "mean_MTTR_s": 20.0,
+                "std_MTTR_s": 10.0,
                 "diagnosis_accuracy": None,
-                "destructive_repair_rate": 0.0, "rollback_triggered_rate": 0.0,
-                "mean_input_tokens": 100.0, "mean_output_tokens": 50.0,
-                "mean_tool_calls": 3.0, "mean_iteration_count": 3.0,
+                "destructive_repair_rate": 0.0,
+                "rollback_triggered_rate": 0.0,
+                "mean_input_tokens": 100.0,
+                "mean_output_tokens": 50.0,
+                "mean_tool_calls": 3.0,
+                "mean_iteration_count": 3.0,
             },
         },
         "by_scenario": {
             "k8s-1": {
-                "n_runs": 3, "success_rate": 1.0,
-                "mean_MTTR_s": 20.0, "std_MTTR_s": 10.0,
+                "n_runs": 3,
+                "success_rate": 1.0,
+                "mean_MTTR_s": 20.0,
+                "std_MTTR_s": 10.0,
             },
         },
         "escalation": {
@@ -199,9 +228,7 @@ def test_write_report_produces_markdown_with_three_tables(tmp_path: Path) -> Non
     assert "## Per-Scenario Summary" in report
     assert "## Cross-Layer Escalation Accuracy" in report
     assert (
-        "approximate" in report.lower()
-        or "3 seed" in report.lower()
-        or "n=3" in report
+        "approximate" in report.lower() or "3 seed" in report.lower() or "n=3" in report
     )
 
 
@@ -235,20 +262,31 @@ def test_aggregate_cmd_cli_writes_both_files(tmp_path: Path) -> None:
     output_dir = tmp_path / "results"
 
     _write_run(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="k8s-1_1_qwen_abc",
-        scenario="k8s-1", seed=1, model="qwen",
-        success=True, mttr=10.0,
+        scenario="k8s-1",
+        seed=1,
+        model="qwen",
+        success=True,
+        mttr=10.0,
     )
 
     runner = CliRunner()
-    result = runner.invoke(cli, [
-        "aggregate",
-        "--runs-dir", str(runs_dir),
-        "--index", str(index_path),
-        "--scenarios-dir", str(scenarios_dir),
-        "--output-dir", str(output_dir),
-    ])
+    result = runner.invoke(
+        cli,
+        [
+            "aggregate",
+            "--runs-dir",
+            str(runs_dir),
+            "--index",
+            str(index_path),
+            "--scenarios-dir",
+            str(scenarios_dir),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert (output_dir / "summary.json").exists()
     assert (output_dir / "REPORT.md").exists()

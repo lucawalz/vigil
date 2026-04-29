@@ -199,8 +199,10 @@ def test_campaign_cmd_skips_completed_run_ids(tmp_path: Path) -> None:
     runs_dir.mkdir()
     index_path = tmp_path / "runs_index.jsonl"
     index_path.write_text(
-        json.dumps({"run_id": "k8s-1_1_qwen_abc1234"}) + "\n"
-        + json.dumps({"run_id": "k8s-1_2_qwen_abc1234"}) + "\n"
+        json.dumps({"run_id": "k8s-1_1_qwen_abc1234"})
+        + "\n"
+        + json.dumps({"run_id": "k8s-1_2_qwen_abc1234"})
+        + "\n"
     )
 
     calls: list[tuple] = []
@@ -215,14 +217,26 @@ def test_campaign_cmd_skips_completed_run_ids(tmp_path: Path) -> None:
 
     runner = CliRunner()
     with patch("eval.cli.run_one", side_effect=fake_run_one):
-        result = runner.invoke(cli, [
-            "campaign",
-            "--scenarios-dir", str(scenarios_dir),
-            "--models", "qwen", "--models", "deepseek",
-            "--seeds", "1", "--seeds", "2",
-            "--runs-dir", str(runs_dir),
-            "--index", str(index_path),
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "campaign",
+                "--scenarios-dir",
+                str(scenarios_dir),
+                "--models",
+                "qwen",
+                "--models",
+                "deepseek",
+                "--seeds",
+                "1",
+                "--seeds",
+                "2",
+                "--runs-dir",
+                str(runs_dir),
+                "--index",
+                str(index_path),
+            ],
+        )
     assert result.exit_code == 0, result.output
     # (2 scenarios × 2 models × 2 seeds) − 2 completed = 6 calls
     assert len(calls) == 6
@@ -255,14 +269,26 @@ def test_campaign_cmd_logs_failure_and_continues(tmp_path: Path) -> None:
 
     runner = CliRunner()
     with patch("eval.cli.run_one", side_effect=fake_run_one):
-        result = runner.invoke(cli, [
-            "campaign",
-            "--scenarios-dir", str(scenarios_dir),
-            "--models", "qwen",
-            "--seeds", "1", "--seeds", "2", "--seeds", "3",
-            "--runs-dir", str(runs_dir),
-            "--index", str(index_path),
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "campaign",
+                "--scenarios-dir",
+                str(scenarios_dir),
+                "--models",
+                "qwen",
+                "--seeds",
+                "1",
+                "--seeds",
+                "2",
+                "--seeds",
+                "3",
+                "--runs-dir",
+                str(runs_dir),
+                "--index",
+                str(index_path),
+            ],
+        )
     assert result.exit_code == 0
     failures_path = runs_dir / "failures.jsonl"
     assert failures_path.exists()
@@ -294,14 +320,22 @@ def test_campaign_cmd_prints_progress_lines_to_stderr(tmp_path: Path) -> None:
 
     runner = CliRunner()
     with patch("eval.cli.run_one", side_effect=fake_run_one):
-        result = runner.invoke(cli, [
-            "campaign",
-            "--scenarios-dir", str(scenarios_dir),
-            "--models", "qwen",
-            "--seeds", "1",
-            "--runs-dir", str(runs_dir),
-            "--index", str(index_path),
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "campaign",
+                "--scenarios-dir",
+                str(scenarios_dir),
+                "--models",
+                "qwen",
+                "--seeds",
+                "1",
+                "--runs-dir",
+                str(runs_dir),
+                "--index",
+                str(index_path),
+            ],
+        )
     assert result.exit_code == 0
     # CliRunner mixes stdout+stderr into result.output in Click 8.x
     assert "[1/1] k8s-1/seed1/qwen — SUCCESS (MTTR=47s)" in result.output
@@ -317,8 +351,16 @@ def test_campaign_cmd_retry_failed_reruns_only_failures(tmp_path: Path) -> None:
     runs_dir.mkdir()
     failures_path = runs_dir / "failures.jsonl"
     failures_path.write_text(
-        json.dumps({"scenario": "k8s-2", "seed": 3, "model": "deepseek",
-                    "timestamp": "2026-04-24T00:00:00Z", "error": "timeout"}) + "\n"
+        json.dumps(
+            {
+                "scenario": "k8s-2",
+                "seed": 3,
+                "model": "deepseek",
+                "timestamp": "2026-04-24T00:00:00Z",
+                "error": "timeout",
+            }
+        )
+        + "\n"
     )
 
     calls: list[tuple] = []
@@ -333,14 +375,21 @@ def test_campaign_cmd_retry_failed_reruns_only_failures(tmp_path: Path) -> None:
 
     runner = CliRunner()
     with patch("eval.cli.run_one", side_effect=fake_run_one):
-        result = runner.invoke(cli, [
-            "campaign",
-            "--scenarios-dir", str(scenarios_dir),
-            "--models", "deepseek",
-            "--seeds", "3",
-            "--runs-dir", str(runs_dir),
-            "--retry-failed",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "campaign",
+                "--scenarios-dir",
+                str(scenarios_dir),
+                "--models",
+                "deepseek",
+                "--seeds",
+                "3",
+                "--runs-dir",
+                str(runs_dir),
+                "--retry-failed",
+            ],
+        )
     assert result.exit_code == 0
     assert calls == [("k8s-2", 3, "deepseek")]
     # entry removed on success
@@ -365,12 +414,20 @@ def test_campaign_cmd_exits_0_after_all_combinations_attempted_even_with_failure
 
     runner = CliRunner()
     with patch("eval.cli.run_one", side_effect=always_fails):
-        result = runner.invoke(cli, [
-            "campaign",
-            "--scenarios-dir", str(scenarios_dir),
-            "--models", "qwen",
-            "--seeds", "1",
-            "--runs-dir", str(runs_dir),
-            "--index", str(index_path),
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "campaign",
+                "--scenarios-dir",
+                str(scenarios_dir),
+                "--models",
+                "qwen",
+                "--seeds",
+                "1",
+                "--runs-dir",
+                str(runs_dir),
+                "--index",
+                str(index_path),
+            ],
+        )
     assert result.exit_code == 0
