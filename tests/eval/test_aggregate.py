@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import statistics
 from pathlib import Path
-from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -181,7 +180,10 @@ def test_write_report_produces_markdown_with_three_tables(tmp_path: Path) -> Non
             },
         },
         "by_scenario": {
-            "k8s-1": {"n_runs": 3, "success_rate": 1.0, "mean_MTTR_s": 20.0, "std_MTTR_s": 10.0},
+            "k8s-1": {
+                "n_runs": 3, "success_rate": 1.0,
+                "mean_MTTR_s": 20.0, "std_MTTR_s": 10.0,
+            },
         },
         "escalation": {
             "k8s-1": {"layer": "k8s", "accuracy": None},
@@ -196,7 +198,11 @@ def test_write_report_produces_markdown_with_three_tables(tmp_path: Path) -> Non
     assert "## Per-Model Summary" in report
     assert "## Per-Scenario Summary" in report
     assert "## Cross-Layer Escalation Accuracy" in report
-    assert "approximate" in report.lower() or "3 seed" in report.lower() or "n=3" in report
+    assert (
+        "approximate" in report.lower()
+        or "3 seed" in report.lower()
+        or "n=3" in report
+    )
 
 
 def test_write_report_produces_summary_json(tmp_path: Path) -> None:

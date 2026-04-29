@@ -30,7 +30,9 @@ def _layer_for_scenario(scenarios_dir: Path, scenario_id: str) -> str | None:
     return data.get("root_cause_layer")
 
 
-def aggregate_runs(runs_dir: Path, index_path: Path, scenarios_dir: Path) -> dict[str, Any]:
+def aggregate_runs(
+    runs_dir: Path, index_path: Path, scenarios_dir: Path
+) -> dict[str, Any]:
     """Compute per-model and per-scenario metric tables plus escalation accuracy."""
     records: list[dict] = []
     if not index_path.exists():
@@ -68,7 +70,9 @@ def aggregate_runs(runs_dir: Path, index_path: Path, scenarios_dir: Path) -> dic
             "success_rate": len(successes) / len(runs) if runs else 0.0,
             "mean_MTTR_s": mean_mttr,
             "std_MTTR_s": std_mttr,
-            "diagnosis_accuracy": len(diag_correct) / len(diag_acc) if diag_acc else None,
+            "diagnosis_accuracy": (
+                len(diag_correct) / len(diag_acc) if diag_acc else None
+            ),
             "destructive_repair_rate": len(dest) / len(runs) if runs else 0.0,
             "rollback_triggered_rate": len(rollbacks) / len(runs) if runs else 0.0,
             "mean_input_tokens": _mean_std(

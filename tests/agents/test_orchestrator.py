@@ -402,7 +402,9 @@ def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         AsyncMock(return_value=_canned_baseline()),
     )
     monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
-    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok()))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
 
 
 async def test_run_record_has_actions_taken_populated(

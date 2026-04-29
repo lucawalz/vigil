@@ -140,8 +140,10 @@ def run_cmd(
     envvar="VIGIL_ORCHESTRATOR_URL",
     show_envvar=True,
 )
-@click.option("--index", default=None,
-              help="Path to runs_index.jsonl (default: {runs_dir}/../runs_index.jsonl).")
+@click.option(
+    "--index", default=None,
+    help="Path to runs_index.jsonl (default: {runs_dir}/../runs_index.jsonl).",
+)
 @click.option(
     "--timeout",
     "timeout_s",
@@ -213,7 +215,8 @@ def campaign_cmd(
             mttr = record.get("MTTR_s")
             mttr_s = f"{mttr:.0f}s" if isinstance(mttr, (int, float)) else "?s"
             click.echo(
-                f"[{n}/{total}] {scenario}/seed{seed}/{model} — {success} (MTTR={mttr_s})",
+                f"[{n}/{total}] {scenario}/seed{seed}/{model}"
+                f" — {success} (MTTR={mttr_s})",
                 err=True,
             )
             succeeded_this_session.add((scenario, seed, model))
@@ -281,8 +284,10 @@ def _prune_failures(failures_path: Path, succeeded: set[tuple[str, int, str]]) -
     show_envvar=True,
     type=click.Path(file_okay=False, path_type=Path),
 )
-@click.option("--index", default=None,
-              help="Path to runs_index.jsonl (default: {runs_dir}/../runs_index.jsonl).")
+@click.option(
+    "--index", default=None,
+    help="Path to runs_index.jsonl (default: {runs_dir}/../runs_index.jsonl).",
+)
 @click.option(
     "--scenarios-dir",
     default="eval/scenarios",

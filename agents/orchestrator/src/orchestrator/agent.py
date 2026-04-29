@@ -35,7 +35,9 @@ from .models import CircuitBreakerTripped, FaultEvent, RunRecord
 
 log = logging.getLogger("vigil.orchestrator.agent")
 
-ORCHESTRATOR_RUN_TIMEOUT_S: float = float(os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "540"))
+ORCHESTRATOR_RUN_TIMEOUT_S: float = float(
+    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "540")
+)
 DIAGNOSIS_TIMEOUT_S: float = float(os.environ.get("DIAGNOSIS_TIMEOUT_S", "300"))
 REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "300"))
 
@@ -208,7 +210,10 @@ async def run_orchestration(
                         diagnosis_deps, event, model=model
                     )
             except asyncio.TimeoutError:
-                log.error("run %s aborted: diagnosis_timeout (%.0fs)", run_id, DIAGNOSIS_TIMEOUT_S)
+                log.error(
+                    "run %s aborted: diagnosis_timeout (%.0fs)",
+                    run_id, DIAGNOSIS_TIMEOUT_S,
+                )
                 record = _abort_record("diagnosis_timeout")
                 _write_run_record(record)
                 return record
@@ -228,7 +233,9 @@ async def run_orchestration(
                             rem_task = tg.create_task(
                                 run_remediation(remediation_deps, report, model=model)
                             )
-                            wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
+                            wtch_task = tg.create_task(
+                                run_watchdog(watchdog_deps, baseline)
+                            )
                     except* (
                         UsageLimitExceeded,
                         UnexpectedModelBehavior,
@@ -236,7 +243,10 @@ async def run_orchestration(
                     ) as eg:
                         raise eg.exceptions[0]
             except asyncio.TimeoutError:
-                log.error("run %s aborted: remediation_timeout (%.0fs)", run_id, REMEDIATION_TIMEOUT_S)
+                log.error(
+                    "run %s aborted: remediation_timeout (%.0fs)",
+                    run_id, REMEDIATION_TIMEOUT_S,
+                )
                 record = _abort_record("remediation_timeout")
                 _write_run_record(record)
                 return record
@@ -248,7 +258,9 @@ async def run_orchestration(
             trace.write_trace(run_id, "remediation", rem_msgs)
 
             destructive_repair = remediation_result.destructive_repair
-            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+            total_tool_calls = (
+                _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+            )
             iteration_count += _count_tool_calls(rem_msgs)
 
             if watchdog_result.degraded:
@@ -269,7 +281,9 @@ async def run_orchestration(
                 started_at=started_at,
                 ended_at=ended_at,
                 outcome="success",
-                success_rate=remediation_result.success and not watchdog_result.degraded,
+                success_rate=(
+                    remediation_result.success and not watchdog_result.degraded
+                ),
                 diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
                 MTTR_s=mttr_s,
                 destructive_repair=destructive_repair,
@@ -288,7 +302,9 @@ async def run_orchestration(
             return record
 
     except asyncio.TimeoutError:
-        log.error("run %s aborted: run_timeout (%.0fs)", run_id, ORCHESTRATOR_RUN_TIMEOUT_S)
+        log.error(
+            "run %s aborted: run_timeout (%.0fs)", run_id, ORCHESTRATOR_RUN_TIMEOUT_S
+        )
         record = _abort_record("run_timeout")
         _write_run_record(record)
         return record
