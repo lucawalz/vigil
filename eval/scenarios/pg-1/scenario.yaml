@@ -1,0 +1,14 @@
+id: pg-1
+name: postgresql-crashloop
+layer: k8s
+
+root_cause_layer: k8s
+root_cause_component: "StatefulSet/postgresql primary pod ImagePullBackOff (bad image tag)"
+correct_action_class: apply_patch
+expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (restore image) -> watchdog_confirm -> flux_resume"
+
+inject_params:
+  namespace: default
+  statefulset: postgresql
+  bad_image: "bitnami/postgresql:bogus-tag-v0"
+  good_image: "docker.io/bitnami/postgresql:16"
