@@ -223,12 +223,15 @@ def campaign_cmd(
                 )
             )
             record = json.loads(result_path.read_text())
+            run_id = record["run_id"]
+            trace_path = runs_dir / f"{run_id}_trace.jsonl"
             success = "SUCCESS" if record.get("success_rate") else "FAIL"
             mttr = record.get("MTTR_s")
             mttr_s = f"{mttr:.0f}s" if isinstance(mttr, (int, float)) else "?s"
             click.echo(
                 f"[{n}/{total}] {scenario}/seed{seed}/{model}"
-                f" — {success} (MTTR={mttr_s})",
+                f" — {success} (MTTR={mttr_s})"
+                f" | trace: {trace_path}",
                 err=True,
             )
             succeeded_this_session.add((scenario, seed, model))
