@@ -175,7 +175,7 @@ def campaign_cmd(
     retry_failed: bool,
     verbose: bool,
 ) -> None:
-    """Execute the full Cartesian product of (scenarios × models × seeds)."""
+    """Run all (scenarios × models × seeds) combinations; pause on quota exhaustion."""
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -223,6 +223,25 @@ def campaign_cmd(
                 )
             )
             record = json.loads(result_path.read_text())
+            if record.get("outcome") == "quota_exhausted":
+                checkpoint = {
+                    "stopped_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "reason": "quota_exhausted",
+                    "completed_n": n - 1,
+                    "remaining_combos": [
+                        {"scenario": sc, "seed": sd, "model": md}
+                        for sc, sd, md in combos[n - 1:]
+                    ],
+                }
+                checkpoint_path = runs_dir / "quota_checkpoint.json"
+                checkpoint_path.write_text(json.dumps(checkpoint, indent=2))
+                click.echo(
+                    f"[{n}/{total}] {scenario}/seed{seed}/{model} — QUOTA_EXHAUSTED: "
+                    f"campaign paused. Resume after Ollama Cloud quota resets with --resume "
+                    f"(checkpoint: {checkpoint_path})",
+                    err=True,
+                )
+                break
             run_id = record["run_id"]
             trace_path = runs_dir / f"{run_id}_trace.jsonl"
             success = "SUCCESS" if record.get("success_rate") else "FAIL"
