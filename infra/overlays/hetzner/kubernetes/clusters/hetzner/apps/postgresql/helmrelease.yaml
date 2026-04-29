@@ -1,0 +1,30 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: postgresql
+  namespace: default
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: postgresql
+      version: "18.x"
+      sourceRef:
+        kind: HelmRepository
+        name: bitnami
+        namespace: flux-system
+      interval: 24h
+  values:
+    auth:
+      postgresPassword: "vigil-eval"
+    primary:
+      persistence:
+        storageClass: longhorn
+        size: 1Gi
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3

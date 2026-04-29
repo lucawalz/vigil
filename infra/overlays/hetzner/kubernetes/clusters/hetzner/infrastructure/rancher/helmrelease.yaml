@@ -1,0 +1,29 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: rancher
+  namespace: cattle-system
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: rancher
+      version: "2.13.x"
+      sourceRef:
+        kind: HelmRepository
+        name: rancher
+        namespace: flux-system
+      interval: 24h
+  values:
+    hostname: rancher.eval.local
+    replicas: 1
+    resources:
+      requests:
+        memory: 512Mi
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
