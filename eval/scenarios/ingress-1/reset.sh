@@ -8,10 +8,8 @@ MANIFEST_DIR="$(cd "$(dirname "$0")" && pwd)/manifests"
 
 kubectl apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 
-kubectl wait --for=condition=Available \
-  "service/${SERVICE}" \
-  -n "${NAMESPACE}" \
-  --timeout=30s 2>/dev/null || true
+kubectl get service "${SERVICE}" -n "${NAMESPACE}" --no-headers \
+  || { echo "reset.sh: service ${SERVICE} not found after apply"; exit 1; }
 
 flux resume kustomization flux-system -n flux-system 2>/dev/null || true
 
