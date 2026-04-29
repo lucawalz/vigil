@@ -1,8 +1,8 @@
-# Running evals
+# Eval runbook
 
 SSH into the agent host, `cd ~/vigil`, then:
 
-```
+```bash
 vigil-eval run --scenario os-1 --seed 1 --model qwen3-coder-next:cloud
 ```
 
@@ -23,3 +23,15 @@ Check results:
 ```bash
 tail -n 20 eval/runs_index.jsonl | jq '{scenario, outcome, MTTR_s}'
 ```
+
+## Switching providers
+
+Set these environment variables before running:
+
+| Provider | `LLM_BASE_URL` | `LLM_MODEL_NAME` | Notes |
+|----------|---------------|-----------------|-------|
+| Ollama Cloud | `https://api.ollama.com/v1` | `qwen3-coder-next:cloud` | Eval campaign |
+| Anthropic | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` | Eval campaign |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | Dev iteration only |
+
+Set `LLM_API_KEY` to the corresponding provider API key.
