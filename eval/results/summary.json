@@ -1,0 +1,192 @@
+{
+  "by_model": {
+    "qwen3-coder-next:cloud": {
+      "n_runs": 35,
+      "success_rate": 0.17142857142857143,
+      "mean_MTTR_s": 157.99577769099997,
+      "std_MTTR_s": 78.12969586919645,
+      "diagnosis_accuracy": 1.0,
+      "destructive_repair_rate": 0.17142857142857143,
+      "rollback_triggered_rate": 0.05714285714285714,
+      "mean_input_tokens": 15853.42857142857,
+      "mean_output_tokens": 979.2,
+      "mean_tool_calls": 6.0285714285714285,
+      "mean_iteration_count": 2.2857142857142856
+    },
+    "deepseek-v3.2:cloud": {
+      "n_runs": 36,
+      "success_rate": 0.1111111111111111,
+      "mean_MTTR_s": 168.2236279777997,
+      "std_MTTR_s": 26.8548932995938,
+      "diagnosis_accuracy": 0.4,
+      "destructive_repair_rate": 0.1388888888888889,
+      "rollback_triggered_rate": 0.027777777777777776,
+      "mean_input_tokens": 8250.861111111111,
+      "mean_output_tokens": 705.7777777777778,
+      "mean_tool_calls": 2.25,
+      "mean_iteration_count": 0.9722222222222222
+    }
+  },
+  "by_scenario": {
+    "boundary-1": {
+      "n_runs": 6,
+      "success_rate": 0.16666666666666666,
+      "mean_MTTR_s": 159.1709617859999,
+      "std_MTTR_s": null
+    },
+    "cross-1": {
+      "n_runs": 6,
+      "success_rate": 0.16666666666666666,
+      "mean_MTTR_s": 188.628707245,
+      "std_MTTR_s": null
+    },
+    "cross-2": {
+      "n_runs": 5,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "cross-3": {
+      "n_runs": 6,
+      "success_rate": 0.16666666666666666,
+      "mean_MTTR_s": 324.11247662700043,
+      "std_MTTR_s": null
+    },
+    "k8s-1": {
+      "n_runs": 6,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 180.67576924980003,
+      "std_MTTR_s": 40.86338021249173
+    },
+    "k8s-2": {
+      "n_runs": 6,
+      "success_rate": 0.16666666666666666,
+      "mean_MTTR_s": 73.21453392700035,
+      "std_MTTR_s": 65.57168544436699
+    },
+    "k8s-3": {
+      "n_runs": 6,
+      "success_rate": 0.16666666666666666,
+      "mean_MTTR_s": 174.37738309299948,
+      "std_MTTR_s": null
+    },
+    "k8s-4": {
+      "n_runs": 6,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 156.7211005729996,
+      "std_MTTR_s": 26.06312595944468
+    },
+    "k8s-5": {
+      "n_runs": 6,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "os-1": {
+      "n_runs": 6,
+      "success_rate": 0.16666666666666666,
+      "mean_MTTR_s": 140.8710931079986,
+      "std_MTTR_s": null
+    },
+    "os-2": {
+      "n_runs": 6,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "os-3": {
+      "n_runs": 6,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "boundary-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "cross-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3-coder-next:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "cross-2": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "cross-3": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3-coder-next:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "k8s-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3-coder-next:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-2": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "os-3": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    }
+  },
+  "totals": {
+    "n": 71,
+    "n_models": 2,
+    "n_scenarios": 12
+  }
+}
