@@ -32,7 +32,7 @@ class RunRecord(BaseModel):
     git_sha7: str
     started_at: str
     ended_at: str
-    outcome: Literal["success", "abort"]
+    outcome: Literal["success", "abort", "quota_exhausted"]
     success_rate: bool
     diagnosis_accuracy: bool | None
     MTTR_s: float | None

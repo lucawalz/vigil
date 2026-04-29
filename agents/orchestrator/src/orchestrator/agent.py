@@ -220,6 +220,37 @@ async def run_orchestration(
                 return record
 
             total_usage = total_usage + diag_usage
+
+            # Ollama Cloud returns 0 output tokens when the per-window quota is exhausted.
+            if (total_usage.output_tokens or 0) == 0 and (total_usage.input_tokens or 0) == 0:
+                log.warning("run %s: zero-token response detected — quota exhausted", run_id)
+                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record = RunRecord(
+                    run_id=run_id,
+                    scenario=scenario,
+                    seed=seed_str,
+                    model=model_name,
+                    git_sha7=sha7,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    outcome="quota_exhausted",
+                    success_rate=False,
+                    diagnosis_accuracy=None,
+                    MTTR_s=None,
+                    destructive_repair=False,
+                    rollback_triggered=False,
+                    rollback_success=None,
+                    total_input_tokens=0,
+                    total_output_tokens=0,
+                    total_tool_calls=0,
+                    iteration_count=0,
+                    autonomy_level="full",
+                    actions_taken=[],
+                    model_version=model_name,
+                )
+                _write_run_record(record)
+                return record
+
             trace.log_messages(run_id, "diagnosis", diag_msgs)
             trace.write_trace(run_id, "diagnosis", diag_msgs)
             breaker.success()
