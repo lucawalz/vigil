@@ -42,10 +42,10 @@ def test_run_diagnosis_uses_only_diagnosis_scoped_toolsets() -> None:
     assert "ssh_mcp" not in source
 
 
-def test_run_diagnosis_enforces_usage_limit_40() -> None:
-    """40-iteration ceiling via UsageLimits(request_limit=40)."""
+def test_run_diagnosis_enforces_usage_limit_25() -> None:
+    """25-iteration ceiling via DIAGNOSIS_REQUEST_LIMIT env var (default 25)."""
     source = inspect.getsource(run_diagnosis)
-    assert "UsageLimits(request_limit=40)" in source
+    assert 'os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25")' in source
 
 
 def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:

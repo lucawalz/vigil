@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -209,7 +209,8 @@ def test_campaign_cmd_skips_completed_run_ids(tmp_path: Path) -> None:
         calls.append((kwargs["scenario_id"], kwargs["seed"], kwargs["model"]))
         run_id = f"{kwargs['scenario_id']}_{kwargs['seed']}_{kwargs['model']}_zzzzzzz"
         out = kwargs["runs_dir"] / f"{run_id}.json"
-        out.write_text(json.dumps({"run_id": run_id, "success_rate": True, "MTTR_s": 1.0}))
+        data = {"run_id": run_id, "success_rate": True, "MTTR_s": 1.0}
+        out.write_text(json.dumps(data))
         return out
 
     runner = CliRunner()
@@ -248,7 +249,8 @@ def test_campaign_cmd_logs_failure_and_continues(tmp_path: Path) -> None:
             raise TimeoutError("timed out")
         run_id = f"{kwargs['scenario_id']}_{kwargs['seed']}_{kwargs['model']}_zzzzzzz"
         out = kwargs["runs_dir"] / f"{run_id}.json"
-        out.write_text(json.dumps({"run_id": run_id, "success_rate": True, "MTTR_s": 5.0}))
+        data = {"run_id": run_id, "success_rate": True, "MTTR_s": 5.0}
+        out.write_text(json.dumps(data))
         return out
 
     runner = CliRunner()
@@ -286,7 +288,8 @@ def test_campaign_cmd_prints_progress_lines_to_stderr(tmp_path: Path) -> None:
     async def fake_run_one(**kwargs):
         run_id = f"{kwargs['scenario_id']}_{kwargs['seed']}_{kwargs['model']}_zzzzzzz"
         out = kwargs["runs_dir"] / f"{run_id}.json"
-        out.write_text(json.dumps({"run_id": run_id, "success_rate": True, "MTTR_s": 47.0}))
+        data = {"run_id": run_id, "success_rate": True, "MTTR_s": 47.0}
+        out.write_text(json.dumps(data))
         return out
 
     runner = CliRunner()
@@ -304,7 +307,7 @@ def test_campaign_cmd_prints_progress_lines_to_stderr(tmp_path: Path) -> None:
     assert "[1/1] k8s-1/seed1/qwen — SUCCESS (MTTR=47s)" in result.output
 
 
-def test_campaign_cmd_retry_failed_flag_reruns_only_failed_combinations(tmp_path: Path) -> None:
+def test_campaign_cmd_retry_failed_reruns_only_failures(tmp_path: Path) -> None:
     from eval.cli import cli
 
     scenarios_dir = tmp_path / "scenarios"
@@ -324,7 +327,8 @@ def test_campaign_cmd_retry_failed_flag_reruns_only_failed_combinations(tmp_path
         calls.append((kwargs["scenario_id"], kwargs["seed"], kwargs["model"]))
         run_id = f"{kwargs['scenario_id']}_{kwargs['seed']}_{kwargs['model']}_zzzzzzz"
         out = kwargs["runs_dir"] / f"{run_id}.json"
-        out.write_text(json.dumps({"run_id": run_id, "success_rate": True, "MTTR_s": 5.0}))
+        data = {"run_id": run_id, "success_rate": True, "MTTR_s": 5.0}
+        out.write_text(json.dumps(data))
         return out
 
     runner = CliRunner()
