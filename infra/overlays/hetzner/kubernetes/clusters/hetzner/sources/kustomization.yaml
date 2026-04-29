@@ -6,3 +6,4 @@ resources:
   - longhorn.yaml
   - ingress-nginx.yaml
   - cert-manager.yaml
+  - rancher.yaml
