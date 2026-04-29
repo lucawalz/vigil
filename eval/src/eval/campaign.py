@@ -24,5 +24,5 @@ def combinations(
     seeds: list[int],
     models: list[str],
 ) -> Iterator[tuple[str, int, str]]:
-    for scenario, seed, model in itertools.product(scenarios, seeds, models):
+    for scenario, model, seed in itertools.product(scenarios, models, seeds):
         yield (scenario, seed, model)

@@ -16,6 +16,7 @@ import logging
 import os
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 
 from common import trace
 from common.provider import build_model
@@ -33,6 +34,12 @@ from watchdog.models import WatchdogDeps
 from .models import CircuitBreakerTripped, FaultEvent, RunRecord
 
 log = logging.getLogger("vigil.orchestrator.agent")
+
+ORCHESTRATOR_RUN_TIMEOUT_S: float = float(
+    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "540")
+)
+DIAGNOSIS_TIMEOUT_S: float = float(os.environ.get("DIAGNOSIS_TIMEOUT_S", "300"))
+REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "300"))
 
 
 class _CircuitBreaker:
@@ -79,25 +86,45 @@ def build_run_id(
         seed_str = str(seed)
     else:
         seed_str = f"seed-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    try:
-        sha7 = subprocess.check_output(
-            ["git", "rev-parse", "--short=7", "HEAD"], text=True
-        ).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        sha7 = "0000000"
+    sha7 = os.environ.get("GIT_SHA7", "").strip()
+    if not sha7:
+        try:
+            sha7 = subprocess.check_output(
+                ["git", "rev-parse", "--short=7", "HEAD"], text=True
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            sha7 = "0000000"
     run_id = f"{scenario}_{seed_str}_{model}_{sha7}"
     return run_id, seed_str, sha7
 
 
+_OS_LAYERS = frozenset({"os", "cross"})
+
+
+def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
+    # yaml.safe_load — no arbitrary code execution from scenario files.
+    import yaml
+
+    scenarios_dir = Path(os.environ.get("VIGIL_SCENARIOS_DIR", "eval/scenarios"))
+    scenario_yaml = scenarios_dir / scenario / "scenario.yaml"
+    if not scenario_yaml.exists():
+        return None
+    with scenario_yaml.open() as f:
+        data = yaml.safe_load(f) or {}
+    expected_layer = data.get("root_cause_layer")
+    if expected_layer is None:
+        return None
+    expected_os = expected_layer in _OS_LAYERS
+    return report.requires_os_level == expected_os
+
+
 def _write_run_record(record: RunRecord) -> None:
-    """Write {runs_dir}/{run_id}.json + append one line to runs_index.jsonl."""
-    runs_dir = os.environ.get("EVAL_RUNS_DIR", "eval/runs")
-    os.makedirs(runs_dir, exist_ok=True)
-    path = os.path.join(runs_dir, f"{record.run_id}.json")
-    with open(path, "w") as f:
-        f.write(record.model_dump_json(indent=2))
-    index_path = os.path.join(os.path.dirname(runs_dir) or ".", "runs_index.jsonl")
-    with open(index_path, "a") as f:
+    runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    (runs_dir / f"{record.run_id}.json").write_text(record.model_dump_json(indent=2))
+    index_parent = runs_dir.parent if str(runs_dir.parent) != "" else Path(".")
+    index_path = index_parent / "runs_index.jsonl"
+    with index_path.open("a") as f:
         f.write(record.model_dump_json() + "\n")
 
 
@@ -167,6 +194,8 @@ async def run_orchestration(
             total_tool_calls=total_tool_calls,
             iteration_count=iteration_count,
             autonomy_level="full",
+            actions_taken=[],
+            model_version=model_name,
         )
 
     total_usage = Usage()
@@ -174,73 +203,113 @@ async def run_orchestration(
     log.info("run %s started (scenario=%s model=%s)", run_id, scenario, model_name)
 
     try:
-        report, diag_usage, diag_msgs = await run_diagnosis(
-            diagnosis_deps, event, model=model
-        )
-        total_usage = total_usage + diag_usage
-        trace.log_messages(run_id, "diagnosis", diag_msgs)
-        trace.write_trace(run_id, "diagnosis", diag_msgs)
-        breaker.success()
-        iteration_count += 1
-
-        baseline = await capture_health_snapshot(watchdog_deps)
-
-        try:
-            async with asyncio.TaskGroup() as tg:
-                rem_task = tg.create_task(
-                    run_remediation(remediation_deps, report, model=model)
+        async with asyncio.timeout(ORCHESTRATOR_RUN_TIMEOUT_S):
+            try:
+                async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
+                    report, diag_usage, diag_msgs = await run_diagnosis(
+                        diagnosis_deps, event, model=model
+                    )
+            except asyncio.TimeoutError:
+                log.error(
+                    "run %s aborted: diagnosis_timeout (%.0fs)",
+                    run_id,
+                    DIAGNOSIS_TIMEOUT_S,
                 )
-                wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
-        except* (
-            UsageLimitExceeded,
-            UnexpectedModelBehavior,
-            CircuitBreakerTripped,
-        ) as eg:
-            raise eg.exceptions[0]
-        remediation_result, rem_usage, rem_msgs = rem_task.result()
-        watchdog_result = wtch_task.result()
-        total_usage = total_usage + rem_usage
-        trace.log_messages(run_id, "remediation", rem_msgs)
-        trace.write_trace(run_id, "remediation", rem_msgs)
+                record = _abort_record("diagnosis_timeout")
+                _write_run_record(record)
+                return record
 
-        destructive_repair = remediation_result.destructive_repair
-        total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
-        iteration_count += _count_tool_calls(rem_msgs)
+            total_usage = total_usage + diag_usage
+            trace.log_messages(run_id, "diagnosis", diag_msgs)
+            trace.write_trace(run_id, "diagnosis", diag_msgs)
+            breaker.success()
+            iteration_count += 1
 
-        if watchdog_result.degraded:
-            rollback_triggered = True
-            rollback_success = await _issue_rollback(
-                kubectl_mcp, report.affected_resources
+            baseline = await capture_health_snapshot(watchdog_deps)
+
+            try:
+                async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+                    try:
+                        async with asyncio.TaskGroup() as tg:
+                            rem_task = tg.create_task(
+                                run_remediation(remediation_deps, report, model=model)
+                            )
+                            wtch_task = tg.create_task(
+                                run_watchdog(watchdog_deps, baseline)
+                            )
+                    except* (
+                        UsageLimitExceeded,
+                        UnexpectedModelBehavior,
+                        CircuitBreakerTripped,
+                    ) as eg:
+                        raise eg.exceptions[0]
+            except asyncio.TimeoutError:
+                log.error(
+                    "run %s aborted: remediation_timeout (%.0fs)",
+                    run_id,
+                    REMEDIATION_TIMEOUT_S,
+                )
+                record = _abort_record("remediation_timeout")
+                _write_run_record(record)
+                return record
+
+            remediation_result, rem_usage, rem_msgs = rem_task.result()
+            watchdog_result = wtch_task.result()
+            total_usage = total_usage + rem_usage
+            trace.log_messages(run_id, "remediation", rem_msgs)
+            trace.write_trace(run_id, "remediation", rem_msgs)
+
+            destructive_repair = remediation_result.destructive_repair
+            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(
+                rem_msgs
             )
+            iteration_count += _count_tool_calls(rem_msgs)
 
-        mttr_s = asyncio.get_event_loop().time() - t0
-        ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if watchdog_result.degraded:
+                rollback_triggered = True
+                rollback_success = await _issue_rollback(
+                    kubectl_mcp, report.affected_resources
+                )
 
-        record = RunRecord(
-            run_id=run_id,
-            scenario=scenario,
-            seed=seed_str,
-            model=model_name,
-            git_sha7=sha7,
-            started_at=started_at,
-            ended_at=ended_at,
-            outcome="success",
-            success_rate=remediation_result.success and not watchdog_result.degraded,
-            diagnosis_accuracy=None,
-            MTTR_s=mttr_s,
-            destructive_repair=destructive_repair,
-            rollback_triggered=rollback_triggered,
-            rollback_success=rollback_success,
-            total_input_tokens=total_usage.input_tokens or 0,
-            total_output_tokens=total_usage.output_tokens or 0,
-            total_tool_calls=total_tool_calls,
-            iteration_count=iteration_count,
-            autonomy_level="full",
+            mttr_s = asyncio.get_event_loop().time() - t0
+            ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            record = RunRecord(
+                run_id=run_id,
+                scenario=scenario,
+                seed=seed_str,
+                model=model_name,
+                git_sha7=sha7,
+                started_at=started_at,
+                ended_at=ended_at,
+                outcome="success",
+                success_rate=(
+                    remediation_result.success and not watchdog_result.degraded
+                ),
+                diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                MTTR_s=mttr_s,
+                destructive_repair=destructive_repair,
+                rollback_triggered=rollback_triggered,
+                rollback_success=rollback_success,
+                total_input_tokens=total_usage.input_tokens or 0,
+                total_output_tokens=total_usage.output_tokens or 0,
+                total_tool_calls=total_tool_calls,
+                iteration_count=iteration_count,
+                autonomy_level="full",
+                actions_taken=remediation_result.actions_taken,
+                model_version=model_name,
+            )
+            log.info("run %s finished outcome=success MTTR=%.1fs", run_id, mttr_s)
+            _write_run_record(record)
+            return record
+
+    except asyncio.TimeoutError:
+        log.error(
+            "run %s aborted: run_timeout (%.0fs)", run_id, ORCHESTRATOR_RUN_TIMEOUT_S
         )
-        log.info("run %s finished outcome=success MTTR=%.1fs", run_id, mttr_s)
+        record = _abort_record("run_timeout")
         _write_run_record(record)
         return record
-
     except UsageLimitExceeded:
         log.exception("run %s aborted: iteration_limit_20", run_id)
         record = _abort_record("iteration_limit_20")

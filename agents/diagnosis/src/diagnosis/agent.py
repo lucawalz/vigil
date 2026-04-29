@@ -8,6 +8,7 @@ Loop capped at 40 requests.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from common.provider import build_model
@@ -81,7 +82,9 @@ async def run_diagnosis(
         f"Diagnose fault: {fault.model_dump_json()}",
         deps=deps,
         toolsets=[kubectl_readonly, nixos_readonly],
-        usage_limits=UsageLimits(request_limit=40),
+        usage_limits=UsageLimits(
+            request_limit=int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
+        ),
         model=model,
     )
     return result.output, result.usage(), result.all_messages()

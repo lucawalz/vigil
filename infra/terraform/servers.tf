@@ -203,7 +203,7 @@ resource "null_resource" "kubeconfig" {
   depends_on = [null_resource.k3s_token_master]
 
   triggers = {
-    master_ip = hcloud_server.master.ipv4_address
+    master_id = hcloud_server.master.id
   }
 
   provisioner "local-exec" {
@@ -230,8 +230,8 @@ resource "null_resource" "kubeconfig_agent" {
   depends_on = [null_resource.kubeconfig, module.install_agent]
 
   triggers = {
-    master_ip = hcloud_server.master.ipv4_address
-    agent_ip  = hcloud_server.agent.ipv4_address
+    master_id = hcloud_server.master.id
+    agent_id  = hcloud_server.agent.id
   }
 
   provisioner "local-exec" {
@@ -303,7 +303,7 @@ resource "null_resource" "vigil_agent_setup" {
   depends_on = [null_resource.kubeconfig_agent]
 
   triggers = {
-    agent_ip       = hcloud_server.agent.ipv4_address
+    agent_id       = hcloud_server.agent.id
     branch         = var.vigil_branch
     webhook_secret = var.vigil_webhook_secret
     llm_api_key    = var.llm_api_key
@@ -317,7 +317,7 @@ resource "null_resource" "vigil_agent_setup" {
         root@${hcloud_server.agent.ipv4_address} \
         "mkdir -p /etc/vigil && \
          echo '${var.vigil_branch}' > /etc/vigil/branch && \
-         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=eval/runs\nSSH_HOSTS=hetzner-worker-1,hetzner-worker-2\nSSH_USER=root\nSSH_KEY_PATH=/root/.ssh/id_ed25519\n' > /etc/vigil/env && \
+         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=/root/vigil/eval/runs\nVIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios\nSSH_HOSTS=hetzner-worker-1,hetzner-worker-2\nSSH_USER=root\nSSH_KEY_PATH=/root/.ssh/id_ed25519\n' > /etc/vigil/env && \
          chmod 600 /etc/vigil/env && \
          systemctl start --no-block vigil-orchestrator.service"
     EOF

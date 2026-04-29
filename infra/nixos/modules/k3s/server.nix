@@ -9,7 +9,6 @@
       "--write-kubeconfig-mode=0644"
       "--disable=servicelb"
       "--disable=traefik"
-      "--disable=local-storage"
     ];
     tokenFile = "/etc/k3s/token";
     clusterInit = true;

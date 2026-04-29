@@ -2,7 +2,7 @@
 
 ## Evaluation Models
 
-The vigil evaluation campaign uses 3 models: Qwen3 Coder and DeepSeek V3.1 via Ollama Cloud, and Claude Sonnet 4.6 via Anthropic API.
+The vigil evaluation campaign uses 3 models (2 Ollama Cloud open-weight + 1 Anthropic reference): Qwen3 Coder Next (tag: qwen3-coder-next:cloud) and DeepSeek V3.2 (tag: deepseek-v3.2:cloud) via Ollama Cloud, and Claude Sonnet 4.6 via Anthropic API.
 
 | Model | Provider | Tag | Parameters | Context Window | Selection Rationale |
 |-------|----------|-----|-----------|----------------|---------------------|
