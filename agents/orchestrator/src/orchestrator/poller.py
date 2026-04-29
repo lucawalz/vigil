@@ -14,8 +14,6 @@ log = logging.getLogger("vigil.orchestrator.poller")
 
 _DEFAULT_PROM_URL = "http://10.0.0.10:9090"
 
-_active_tasks: set[asyncio.Task] = set()
-
 
 def _alert_to_fault_event(alert: dict) -> FaultEvent:
     labels = alert.get("labels", {})
@@ -56,6 +54,7 @@ async def prometheus_poller(app) -> None:
     handled_ttl = int(os.environ.get("PROM_HANDLED_TTL_S", "600"))
     model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
     handled: dict[str, float] = {}
+    _active_tasks: set[asyncio.Task] = set()
 
     async with httpx.AsyncClient() as client:
         while True:
