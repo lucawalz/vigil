@@ -8,7 +8,7 @@ metadata:
 spec:
   interval: 1m0s
   ref:
-    branch: feat/hetzner-eval-campaign
+    branch: feat/agent-observability-prod-ready
   secretRef:
     name: flux-system
   url: ssh://git@github.com/lucawalz/vigil
