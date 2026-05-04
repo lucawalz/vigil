@@ -16,7 +16,7 @@ variable "ssh_private_key_path" {
 
 variable "vigil_branch" {
   type    = string
-  default = "feat/hetzner-eval-campaign"
+  default = "feat/agent-observability-prod-ready"
 }
 
 variable "github_token" {

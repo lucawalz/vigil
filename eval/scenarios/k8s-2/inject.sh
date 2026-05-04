@@ -8,7 +8,7 @@ DEPLOYMENT="vigil-app"
 kubectl patch "deployment/${DEPLOYMENT}" \
   -n "${NAMESPACE}" \
   --type='json' \
-  -p='[{"op":"add","path":"/spec/template/spec/containers/0/env","value":[{"name":"VIGIL_CRASH","value":"1"}]}]'
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/env","value":[{"name":"APP_CRASH_MODE","value":"1"}]}]'
 
 kubectl rollout status "deployment/${DEPLOYMENT}" \
   -n "${NAMESPACE}" --timeout=30s 2>&1 || true

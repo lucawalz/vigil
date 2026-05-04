@@ -3,12 +3,12 @@ name: crashloop-backoff
 layer: k8s
 
 root_cause_layer: k8s
-root_cause_component: "Deployment/vigil-app container crashes on VIGIL_CRASH=1 env var"
+root_cause_component: "Deployment/vigil-app container crashes on APP_CRASH_MODE=1 env var"
 correct_action_class: apply_patch
 expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (remove env) -> watchdog_confirm -> flux_resume"
 
 inject_params:
   namespace: default
   deployment: vigil-app
-  bad_env_name: VIGIL_CRASH
+  bad_env_name: APP_CRASH_MODE
   bad_env_value: "1"

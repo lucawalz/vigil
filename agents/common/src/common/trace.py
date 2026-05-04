@@ -16,7 +16,7 @@ from pydantic_ai.messages import (
 )
 
 _log = logging.getLogger("vigil.agent.trace")
-_TRUNC = 300
+_TRUNC = 1000
 
 
 def _t(s: str) -> str:
@@ -24,26 +24,36 @@ def _t(s: str) -> str:
 
 
 def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
+    _iter = 0
     for msg in messages:
         if isinstance(msg, ModelResponse):
             for part in msg.parts:
                 if isinstance(part, ToolCallPart):
+                    _iter += 1
                     _log.info(
-                        "[%s] [%s] → %s(%s)",
+                        "[%s | %s | iter %d] → %s(%s)",
                         run_id,
                         phase,
+                        _iter,
                         part.tool_name,
                         _t(str(part.args)),
                     )
                 elif isinstance(part, TextPart) and part.content.strip():
-                    _log.debug("[%s] [%s] model: %s", run_id, phase, _t(part.content))
+                    _log.info(
+                        "[%s | %s | iter %d] model: %s",
+                        run_id,
+                        phase,
+                        _iter,
+                        _t(part.content),
+                    )
         elif isinstance(msg, ModelRequest):
             for part in msg.parts:
                 if isinstance(part, ToolReturnPart):
-                    _log.debug(
-                        "[%s] [%s] ← %s: %s",
+                    _log.info(
+                        "[%s | %s | iter %d] ← %s: %s",
                         run_id,
                         phase,
+                        _iter,
                         part.tool_name,
                         _t(str(part.content)),
                     )

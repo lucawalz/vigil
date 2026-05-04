@@ -22,8 +22,8 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              if [ "${VIGIL_CRASH:-0}" = "1" ]; then
-                echo "VIGIL_CRASH=1 — exiting 1 on purpose"
+              if [ "${APP_CRASH_MODE:-0}" = "1" ]; then
+                echo "APP_CRASH_MODE=1 — exiting 1 on purpose"
                 exit 1
               fi
               exec nginx -g 'daemon off;'

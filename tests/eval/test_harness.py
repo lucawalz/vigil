@@ -89,6 +89,7 @@ async def test_reset_runs_before_inject(
         scenario_id="k8s-3",
         seed=1,
         scenarios_dir=scenarios_dir,
+        model="test-model",
         runs_dir=tmp_path / "runs",
         timeout_s=5,
     )
@@ -132,6 +133,7 @@ async def test_inject_subprocess_failure_aborts_run(
             scenario_id="k8s-3",
             seed=1,
             scenarios_dir=scenarios_dir,
+            model="test-model",
             runs_dir=tmp_path / "runs",
             timeout_s=5,
         )
@@ -179,10 +181,12 @@ async def test_post_includes_scenario_and_seed_query_params(
         seed=1,
         orchestrator_url="http://localhost:9099",
         runs_dir=tmp_path,
+        model="test-model",
         timeout_s=5,
     )
 
-    assert captured.get("params") == {"scenario": "k8s-3", "seed": 1}
+    expected = {"scenario": "k8s-3", "seed": 1, "model": "test-model"}
+    assert captured.get("params") == expected
 
 
 async def test_post_includes_bearer_auth_header(
@@ -225,6 +229,7 @@ async def test_post_includes_bearer_auth_header(
         seed=1,
         orchestrator_url="http://localhost:9099",
         runs_dir=tmp_path,
+        model="test-model",
         timeout_s=5,
     )
 
@@ -276,6 +281,7 @@ async def test_uses_response_run_id_for_polling(
         seed=1,
         orchestrator_url="http://localhost:9099",
         runs_dir=tmp_path,
+        model="test-model",
         timeout_s=5,
     )
 
@@ -336,6 +342,7 @@ async def test_timeout_when_result_file_never_appears(
             seed=1,
             orchestrator_url="http://localhost:9099",
             runs_dir=tmp_path,
+            model="test-model",
             timeout_s=2,
         )
 
@@ -378,6 +385,7 @@ async def test_result_file_detected_when_written(
         seed=1,
         orchestrator_url="http://localhost:9099",
         runs_dir=tmp_path,
+        model="test-model",
         timeout_s=10,
     )
     assert result == result_file
@@ -406,6 +414,7 @@ async def test_healthz_precheck_passes(
             seed=1,
             orchestrator_url="http://localhost:9099",
             runs_dir=tmp_path,
+            model="test-model",
             timeout_s=5,
         )
 

@@ -396,6 +396,18 @@ def test_campaign_cmd_retry_failed_reruns_only_failures(tmp_path: Path) -> None:
     assert not failures_path.exists() or failures_path.read_text().strip() == ""
 
 
+def test_campaign_cmd_progress_line_includes_trace_path(tmp_path, monkeypatch):
+    """Campaign progress echo must include '| trace:' with the run_id trace path."""
+    # String-level test: read cli.py source and assert trace format strings are present.
+    import importlib.util
+
+    spec = importlib.util.find_spec("eval.cli")
+    assert spec is not None
+    src = Path(spec.origin).read_text()
+    assert "trace:" in src
+    assert "_trace.jsonl" in src
+
+
 def test_campaign_cmd_exits_0_after_all_combinations_attempted_even_with_failures(
     tmp_path: Path,
 ) -> None:

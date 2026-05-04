@@ -12,6 +12,7 @@ from pydantic_ai.mcp import MCPServerStdio
 
 from .agent import build_run_id, run_orchestration
 from .models import FaultEvent
+from .poller import prometheus_poller
 
 log = logging.getLogger("vigil.orchestrator")
 
@@ -68,7 +69,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.ssh_mcp = ssh_mcp
         app.state.nixos_mcp = nixos_mcp
         log.info("MCP servers booted: kubectl, flux, ssh, nixos")
+        poll_task = asyncio.create_task(prometheus_poller(app))
         yield
+        poll_task.cancel()
+        try:
+            await poll_task
+        except asyncio.CancelledError:
+            pass
         log.info("MCP servers shutting down")
 
 

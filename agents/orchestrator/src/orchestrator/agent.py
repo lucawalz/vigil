@@ -122,8 +122,7 @@ def _write_run_record(record: RunRecord) -> None:
     runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
     runs_dir.mkdir(parents=True, exist_ok=True)
     (runs_dir / f"{record.run_id}.json").write_text(record.model_dump_json(indent=2))
-    index_parent = runs_dir.parent if str(runs_dir.parent) != "" else Path(".")
-    index_path = index_parent / "runs_index.jsonl"
+    index_path = runs_dir.parent / "runs_index.jsonl"
     with index_path.open("a") as f:
         f.write(record.model_dump_json() + "\n")
 
@@ -220,6 +219,43 @@ async def run_orchestration(
                 return record
 
             total_usage = total_usage + diag_usage
+
+            # Ollama Cloud returns 0 output tokens when per-window quota is exhausted.
+            if (total_usage.output_tokens or 0) == 0 and (
+                total_usage.input_tokens or 0
+            ) == 0:
+                log.error(
+                    "run %s: zero-token response (msg_count=%d) — quota exhausted",
+                    run_id,
+                    len(diag_msgs),
+                )
+                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record = RunRecord(
+                    run_id=run_id,
+                    scenario=scenario,
+                    seed=seed_str,
+                    model=model_name,
+                    git_sha7=sha7,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    outcome="quota_exhausted",
+                    success_rate=False,
+                    diagnosis_accuracy=None,
+                    MTTR_s=None,
+                    destructive_repair=False,
+                    rollback_triggered=False,
+                    rollback_success=None,
+                    total_input_tokens=0,
+                    total_output_tokens=0,
+                    total_tool_calls=0,
+                    iteration_count=0,
+                    autonomy_level="full",
+                    actions_taken=[],
+                    model_version=model_name,
+                )
+                _write_run_record(record)
+                return record
+
             trace.log_messages(run_id, "diagnosis", diag_msgs)
             trace.write_trace(run_id, "diagnosis", diag_msgs)
             breaker.success()
