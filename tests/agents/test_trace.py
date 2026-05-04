@@ -1,4 +1,5 @@
 """Unit tests for vigil.agent.trace — upgraded log_messages() behavior."""
+
 from __future__ import annotations
 
 import logging
@@ -94,11 +95,13 @@ def test_iter_counter_resets_between_calls(caplog):
         log_messages("run1", "diagnosis", msgs)
         log_messages("run1", "remediation", msgs)
     diag = [
-        r.message for r in caplog.records
+        r.message
+        for r in caplog.records
         if "diagnosis" in r.message and "iter" in r.message
     ]
     rem = [
-        r.message for r in caplog.records
+        r.message
+        for r in caplog.records
         if "remediation" in r.message and "iter" in r.message
     ]
     assert any("iter 1" in m for m in diag)

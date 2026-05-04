@@ -1,4 +1,5 @@
 """Unit tests for orchestrator.poller — alert polling and FaultEvent mapping."""
+
 from __future__ import annotations
 
 import asyncio
@@ -126,10 +127,12 @@ async def test_poller_continues_after_http_error(monkeypatch):
 
     with patch("orchestrator.poller.httpx.AsyncClient") as MockClient:
         instance = MockClient.return_value.__aenter__.return_value
-        instance.get = AsyncMock(side_effect=[
-            httpx.ConnectError("connection refused"),
-            asyncio.CancelledError,
-        ])
+        instance.get = AsyncMock(
+            side_effect=[
+                httpx.ConnectError("connection refused"),
+                asyncio.CancelledError,
+            ]
+        )
         with patch("orchestrator.poller.asyncio.sleep", return_value=None):
             try:
                 await prometheus_poller(app)

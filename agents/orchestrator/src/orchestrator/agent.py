@@ -221,10 +221,9 @@ async def run_orchestration(
             total_usage = total_usage + diag_usage
 
             # Ollama Cloud returns 0 output tokens when per-window quota is exhausted.
-            if (
-                (total_usage.output_tokens or 0) == 0
-                and (total_usage.input_tokens or 0) == 0
-            ):
+            if (total_usage.output_tokens or 0) == 0 and (
+                total_usage.input_tokens or 0
+            ) == 0:
                 log.error(
                     "run %s: zero-token response (msg_count=%d) — quota exhausted",
                     run_id,

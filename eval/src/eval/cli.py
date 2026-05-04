@@ -231,7 +231,7 @@ def campaign_cmd(
                     "completed_n": n - 1,
                     "remaining_combos": [
                         {"scenario": sc, "seed": sd, "model": md}
-                        for sc, sd, md in combos[n - 1:]
+                        for sc, sd, md in combos[n - 1 :]
                     ],
                 }
                 checkpoint_path = runs_dir / "quota_checkpoint.json"
