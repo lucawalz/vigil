@@ -1,20 +1,72 @@
+---
+status: Accepted
+date: 2026-04-17
+decision-makers: [Luca Walz]
+consulted: []
+informed: []
+---
+
 # ADR-0006: OpenAI-compatible provider interface for LLM hot-swap
 
-**Status**: Accepted
+## Context and Problem Statement
 
-## Context
+The evaluation campaign compares multiple LLM providers across the same 12 fault scenarios. Forking agent code per provider would make inter-provider comparisons unreliable and maintenance expensive. Three constraints shape the interface decision:
 
-The evaluation campaign compares three LLM providers across the same 12 fault scenarios. Forking agent code per provider would make inter-provider comparisons unreliable and maintenance expensive.
+1. All targeted providers expose an OpenAI-compatible REST API: Anthropic Claude (via Anthropic's OpenAI-compatible endpoint) and Ollama Cloud (hosted open-weight models).
+2. The eval harness requires identical agent code paths across providers so that performance differences reflect model capability, not implementation variance.
+3. Provider switching must require zero code changes (only environment variables) so that the campaign can hot-swap models between runs without redeployment.
 
-All targeted providers — Anthropic Claude (via Anthropic's OpenAI-compatible endpoint), Ollama Cloud (hosted open-weight models), Groq — expose an OpenAI-compatible REST API.
+## Decision Drivers
 
-## Decision
+- Inter-provider eval comparisons must be apples-to-apples; any code divergence per provider invalidates the comparison
+- Provider switching must be achievable by changing three environment variables (`LLM_BASE_URL`, `LLM_MODEL_NAME`, `LLM_API_KEY`)
+- No provider SDK may be imported directly into agent code
+- The OpenAI-compatible REST layer must cover the full tool-call and structured-output surface used by Pydantic AI agents
 
-Configure all agents against Pydantic AI's `OpenAIModel` class, pointed at a provider-specific `base_url` and `api_key` read from environment variables (`VIGIL_MODEL_BASE_URL`, `VIGIL_MODEL_NAME`, `VIGIL_API_KEY`). No provider SDK is imported directly.
+## Considered Options
 
-## Consequences
+- OpenAI-compatible REST interface via Pydantic AI `OpenAIChatModel` (single interface, env-var hot-swap)
+- Per-provider native SDKs (Anthropic SDK, Ollama SDK, etc.)
+- LiteLLM-style aggregator as a unified proxy layer
 
-- Switching providers requires changing two environment variables; no code changes are needed
-- All three evaluation models run through identical agent code, ensuring a fair comparison
-- Provider-specific features — Anthropic's extended thinking mode, Ollama-specific sampling parameters — are inaccessible through the compatibility layer
-- Token accounting and latency metrics are normalized at the OpenAI response schema level, which may differ slightly from provider-native SDKs
+## Decision Outcome
+
+Chosen option: "OpenAI-compatible REST interface via Pydantic AI `OpenAIChatModel`", because all targeted providers expose a compatible endpoint, it enforces identical code paths across the campaign, and provider switching requires only environment variable changes.
+
+### Consequences
+
+- Good: Switching providers requires changing three environment variables; no code changes are needed
+- Good: All evaluation models run through identical agent code, ensuring a fair inter-provider comparison
+- Good: The 71-run eval campaign across qwen3-coder-next and deepseek-v3.2 ran without any code changes between providers, confirming the interface holds in practice
+- Bad: Provider-specific features (Anthropic's extended thinking mode, Ollama-specific sampling parameters) are inaccessible through the compatibility layer
+- Bad: Token accounting and latency metrics are normalized at the OpenAI response schema level, which may differ slightly from provider-native SDKs
+
+**Validation Status:** Verified — `OpenAIChatModel` interface holds across two providers; 71-run campaign (qwen3-coder-next and deepseek-v3.2) ran with zero code changes between providers.
+
+### Confirmation
+
+The `OpenAIChatModel` configuration is verified in `agents/common/src/common/provider.py`. The three env vars (`LLM_BASE_URL`, `LLM_MODEL_NAME`, `LLM_API_KEY`) are the complete provider configuration surface. Eval campaign results show runs from two providers in `eval/results/summary.json` with identical `run_orchestration()` code paths.
+
+### Pros and Cons of the Options
+
+#### OpenAI-compatible REST interface via Pydantic AI `OpenAIChatModel`
+
+- Good: Single code path across all providers; Pydantic AI's `OpenAIChatModel` handles tool-call schema translation
+- Good: Env-var configuration is auditable and reproducible: `eval/runs/{run_id}.json` records the model tag used for each run
+- Bad: Provider-specific capabilities (extended thinking, provider-native streaming formats) are unavailable
+
+#### Per-provider native SDKs
+
+- Good: Full access to provider-specific features and native error types
+- Bad: Per-provider SDK forks would multiply agent code by the number of providers (Anthropic, Ollama Cloud, future Groq); inter-provider eval comparisons would no longer be apples-to-apples because token-accounting and tool-call schemas differ. The 71-run eval campaign across two providers ran identical agent code precisely because the provider boundary is one OpenAI-compatible HTTP request.
+
+#### LiteLLM-style aggregator
+
+- Good: Single configuration point for all providers; supports many providers out of the box
+- Bad: An aggregator adds a network hop and a third-party rate-limit envelope on top of the provider's. For long-running eval campaigns (one run = up to 25 Diagnosis + 20 Remediation requests), aggregator rate limits would fragment the campaign into resume cycles, breaking the run-id traceability invariant.
+
+## More Information
+
+- Provider configuration implementation: `agents/common/src/common/provider.py`
+- Model selection rationale: [ADR-0008](0008-evaluation-model-selection.md)
+- Agent design and request limits: `docs/architecture/agent-design.md`
