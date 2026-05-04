@@ -1,17 +1,22 @@
 """Unit tests for vigil.agent.trace — upgraded log_messages() behavior."""
 from __future__ import annotations
-import logging
-from unittest.mock import patch, MagicMock
-import pytest
 
-from common.trace import _TRUNC, log_messages, _t
+import logging
+
+from common.trace import _TRUNC, _t, log_messages
 from pydantic_ai.messages import (
-    ModelResponse, ModelRequest, TextPart, ToolCallPart, ToolReturnPart,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
 )
 
 
 def _tool_call_msg(tool_name: str, args: str) -> ModelResponse:
-    return ModelResponse(parts=[ToolCallPart(tool_name=tool_name, args=args, tool_call_id="tc1")])
+    return ModelResponse(
+        parts=[ToolCallPart(tool_name=tool_name, args=args, tool_call_id="tc1")]
+    )
 
 
 def _text_msg(content: str) -> ModelResponse:
@@ -19,7 +24,9 @@ def _text_msg(content: str) -> ModelResponse:
 
 
 def _tool_return_msg(tool_name: str, content: str) -> ModelRequest:
-    return ModelRequest(parts=[ToolReturnPart(tool_name=tool_name, content=content, tool_call_id="tc1")])
+    return ModelRequest(
+        parts=[ToolReturnPart(tool_name=tool_name, content=content, tool_call_id="tc1")]
+    )
 
 
 def test_trunc_value_is_1000():
@@ -42,8 +49,11 @@ def test_tool_call_emits_info_with_iter_prefix(caplog):
     msgs = [_tool_call_msg("kubectl_get_pods", '{"namespace":"default"}')]
     with caplog.at_level(logging.INFO, logger="vigil.agent.trace"):
         log_messages("k8s-1_1_qwen_abc", "diagnosis", msgs)
-    assert any("iter" in r.message and "kubectl_get_pods" in r.message for r in caplog.records)
-    assert all(r.levelno == logging.INFO for r in caplog.records if "kubectl_get_pods" in r.message)
+    assert any(
+        "iter" in r.message and "kubectl_get_pods" in r.message for r in caplog.records
+    )
+    kp_recs = [r for r in caplog.records if "kubectl_get_pods" in r.message]
+    assert all(r.levelno == logging.INFO for r in kp_recs)
 
 
 def test_text_part_emits_info(caplog):
@@ -51,7 +61,9 @@ def test_text_part_emits_info(caplog):
     with caplog.at_level(logging.INFO, logger="vigil.agent.trace"):
         log_messages("k8s-1_1_qwen_abc", "diagnosis", msgs)
     assert any("model:" in r.message for r in caplog.records)
-    assert all(r.levelno == logging.INFO for r in caplog.records if "model:" in r.message)
+    assert all(
+        r.levelno == logging.INFO for r in caplog.records if "model:" in r.message
+    )
 
 
 def test_tool_return_emits_info(caplog):
@@ -81,8 +93,14 @@ def test_iter_counter_resets_between_calls(caplog):
     with caplog.at_level(logging.INFO, logger="vigil.agent.trace"):
         log_messages("run1", "diagnosis", msgs)
         log_messages("run1", "remediation", msgs)
-    diag = [r.message for r in caplog.records if "diagnosis" in r.message and "iter" in r.message]
-    rem = [r.message for r in caplog.records if "remediation" in r.message and "iter" in r.message]
+    diag = [
+        r.message for r in caplog.records
+        if "diagnosis" in r.message and "iter" in r.message
+    ]
+    rem = [
+        r.message for r in caplog.records
+        if "remediation" in r.message and "iter" in r.message
+    ]
     assert any("iter 1" in m for m in diag)
     assert any("iter 1" in m for m in rem)
 
@@ -91,7 +109,9 @@ def test_log_line_format_includes_run_id_and_phase(caplog):
     msgs = [_tool_call_msg("tool_a", "{}")]
     with caplog.at_level(logging.INFO, logger="vigil.agent.trace"):
         log_messages("myrun_abc", "remediation", msgs)
-    assert any("myrun_abc" in r.message and "remediation" in r.message for r in caplog.records)
+    assert any(
+        "myrun_abc" in r.message and "remediation" in r.message for r in caplog.records
+    )
 
 
 def test_empty_text_part_not_logged(caplog):

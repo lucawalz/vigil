@@ -1,16 +1,14 @@
-"""Unit tests for orchestrator.poller — Prometheus alert polling and FaultEvent mapping."""
+"""Unit tests for orchestrator.poller — alert polling and FaultEvent mapping."""
 from __future__ import annotations
 
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from orchestrator.models import FaultEvent
 
 # These imports will fail until poller.py is created — that is the RED gate.
 from orchestrator.poller import _alert_to_fault_event, prometheus_poller
-from orchestrator.models import FaultEvent
-
 
 SAMPLE_ALERT = {
     "labels": {"alertname": "HighMemory", "namespace": "default", "pod": "myapp-abc"},
@@ -71,11 +69,14 @@ async def test_poller_skips_resolved_alerts(monkeypatch):
 
     app = MagicMock()
 
-    with patch("orchestrator.poller.run_orchestration", new_callable=AsyncMock) as mock_run, \
-         patch("orchestrator.poller.httpx.AsyncClient") as MockClient:
+    sleep_side = [None, asyncio.CancelledError]
+    run_patch = patch("orchestrator.poller.run_orchestration", new_callable=AsyncMock)
+    client_patch = patch("orchestrator.poller.httpx.AsyncClient")
+    sleep_patch = patch("orchestrator.poller.asyncio.sleep", side_effect=sleep_side)
+    with run_patch as mock_run, client_patch as MockClient:
         instance = MockClient.return_value.__aenter__.return_value
         instance.get = AsyncMock(return_value=mock_response)
-        with patch("orchestrator.poller.asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
+        with sleep_patch:
             try:
                 await prometheus_poller(app)
             except asyncio.CancelledError:
@@ -99,12 +100,14 @@ async def test_poller_deduplicates_by_fingerprint(monkeypatch):
     app.state.ssh_mcp = MagicMock()
     app.state.nixos_mcp = MagicMock()
 
-    with patch("orchestrator.poller.run_orchestration", new_callable=AsyncMock) as mock_run, \
-         patch("orchestrator.poller.httpx.AsyncClient") as MockClient:
+    run_patch = patch("orchestrator.poller.run_orchestration", new_callable=AsyncMock)
+    client_patch = patch("orchestrator.poller.httpx.AsyncClient")
+    sleep_calls = [None, None, asyncio.CancelledError]
+    sleep_patch = patch("orchestrator.poller.asyncio.sleep", side_effect=sleep_calls)
+    with run_patch as mock_run, client_patch as MockClient:
         instance = MockClient.return_value.__aenter__.return_value
         instance.get = AsyncMock(return_value=mock_response)
-        sleep_calls = [None, None, asyncio.CancelledError]
-        with patch("orchestrator.poller.asyncio.sleep", side_effect=sleep_calls):
+        with sleep_patch:
             try:
                 await prometheus_poller(app)
             except asyncio.CancelledError:

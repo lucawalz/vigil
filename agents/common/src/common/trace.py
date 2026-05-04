@@ -39,7 +39,10 @@ def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
                         _t(str(part.args)),
                     )
                 elif isinstance(part, TextPart) and part.content.strip():
-                    _log.info("[%s | %s | iter %d] model: %s", run_id, phase, _iter, _t(part.content))
+                    _log.info(
+                        "[%s | %s | iter %d] model: %s",
+                        run_id, phase, _iter, _t(part.content),
+                    )
         elif isinstance(msg, ModelRequest):
             for part in msg.parts:
                 if isinstance(part, ToolReturnPart):

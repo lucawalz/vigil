@@ -137,7 +137,7 @@ def test_load_scenarios_includes_prod_sim(scenarios_dir: Path) -> None:
 
     ids = {s.id for s in load_scenarios(scenarios_dir)}
     for expected in ("pg-1", "redis-1", "ingress-1"):
-        assert expected in ids, f"scenario {expected} not found in load_scenarios output"
+        assert expected in ids, f"scenario {expected} not found in load_scenarios"
 
 
 def test_k8s2_inject_uses_app_crash_mode(scenarios_dir: Path) -> None:

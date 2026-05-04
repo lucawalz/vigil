@@ -66,7 +66,9 @@ async def test_webhook_to_audit_log_end_to_end(
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
-        AsyncMock(return_value=(_canned_report(), Usage(input_tokens=100, output_tokens=50), [])),
+        AsyncMock(return_value=(
+            _canned_report(), Usage(input_tokens=100, output_tokens=50), []
+        )),
     )
     monkeypatch.setattr(
         orch_mod,
@@ -76,7 +78,9 @@ async def test_webhook_to_audit_log_end_to_end(
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
-        AsyncMock(return_value=(_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])),
+        AsyncMock(return_value=(
+            _canned_remediation(), Usage(input_tokens=200, output_tokens=80), []
+        )),
     )
     monkeypatch.setattr(
         orch_mod,
