@@ -2,7 +2,7 @@ resource "hcloud_server" "master" {
   name        = "${var.group_name}-master"
   server_type = "cx33"
   image       = "debian-12"
-  location    = "nbg1"
+  location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -61,7 +61,7 @@ resource "hcloud_server" "worker_1" {
   name        = "${var.group_name}-worker-1"
   server_type = "cx23"
   image       = "debian-12"
-  location    = "nbg1"
+  location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -116,7 +116,7 @@ resource "hcloud_server" "worker_2" {
   name        = "${var.group_name}-worker-2"
   server_type = "cx23"
   image       = "debian-12"
-  location    = "nbg1"
+  location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -171,7 +171,7 @@ resource "hcloud_server" "agent" {
   name        = "${var.group_name}-agent"
   server_type = "cx23"
   image       = "debian-12"
-  location    = "nbg1"
+  location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
