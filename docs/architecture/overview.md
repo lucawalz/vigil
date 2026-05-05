@@ -188,7 +188,7 @@ immediately. After the K8s mutation (`apply_patch` or `rollout_undo`), Remediati
 `rebuild_test` via `nixos-mcp`, which invokes `nixos-rebuild test` on the target host via SSH. If
 the health gate indicates the test build is healthy, no further action is taken; if not,
 `switch_generation` reverts to the previous NixOS generation. The dead-man's switch that enforces
-this flow at the OS level is treated in depth in the forthcoming `gitops-nixos.md` architecture document.
+this flow at the OS level is treated in depth in [gitops-nixos.md](gitops-nixos.md).
 
 The Watchdog runs a deterministic poll loop (5-second interval, 120-second window) using
 `kubectl get pods` via `kubectl-mcp`. It carries no LLM and makes no decisions; it observes. When

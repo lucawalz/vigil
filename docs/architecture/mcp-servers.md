@@ -115,7 +115,7 @@ The NixOS remediation path follows a staged protocol designed around the NixOS g
 
 All nixos-mcp operations are filtered through `truncateOutput` at the same byte limits as the other servers. This is particularly relevant for `get_journal`, which can return thousands of lines for a unit that has been cycling, and for `get_generations`, whose output grows with the number of stored NixOS generations on the node.
 
-The dead-man's switch design (the NixOS timer module that forces a revert if the health gate does not pass within its calibrated window) is the safety net that operates independently of the agent. That mechanism is covered in the forthcoming gitops-nixos architecture document; `nixos-mcp` is the agent-facing interface layer above it.
+The dead-man's switch design (the NixOS timer module that forces a revert if the health gate does not pass within its calibrated window) is the safety net that operates independently of the agent. That mechanism is covered in [gitops-nixos.md](gitops-nixos.md); `nixos-mcp` is the agent-facing interface layer above it.
 
 The read-only/write distinction within nixos-mcp mirrors the pattern in kubectl-mcp. `get_journal`, `get_systemd_status`, and `get_generations` are pure reads that the Diagnosis agent can call without risk of mutation. `switch_generation` and `etcd_snapshot_save` are excluded from the Diagnosis agent's `FilteredToolset` to prevent premature OS mutations before a `DiagnosisReport` is returned. `rebuild_test` is accessible to the Diagnosis agent: it is a read-like probe that activates a trial configuration without committing it, and is therefore not excluded from the diagnostic phase.
 
@@ -136,7 +136,7 @@ The `rebuild_test` tool is the only nixos-mcp tool classified as read-like rathe
 
 Every tool in all four MCP servers passes its string output through `truncateOutput` before returning a `CallToolResult`. The motivation is context-window protection: unrestricted log output or `kubectl describe` dumps can easily exceed the token budget of the downstream LLM, corrupting the agent's working context or triggering a request failure due to token limits.
 
-The byte limits are defined as named constants in `mcp-servers/kubectl-mcp/internal/config/config.go` and are overridable via environment variables at server startup:
+The byte limits are defined as named constants in each server's `internal/config/config.go` and are overridable via environment variables at server startup:
 
 | Context | Constant | Default |
 |---------|----------|---------|

@@ -78,5 +78,4 @@ The decision holds as long as:
 
 ## More Information
 
-- NixOS GitOps depth and dead-man's switch design philosophy: `docs/architecture/gitops-nixos.md` (forthcoming)
-- A forthcoming architecture document will provide the full deep-dive treatment of the NixOS generation model and Flux reconciliation interaction with the dead-man's switch
+- NixOS generation model, dead-man's switch timer, and OS remediation sequence: [docs/architecture/gitops-nixos.md](../architecture/gitops-nixos.md)

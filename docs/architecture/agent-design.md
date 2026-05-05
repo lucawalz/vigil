@@ -117,7 +117,7 @@ Request caps are enforced at the Pydantic AI `UsageLimits` layer independently o
 - Diagnosis: 25 requests (`DIAGNOSIS_REQUEST_LIMIT` env var, default 25)
 - Remediation: 20 requests (`UsageLimits(request_limit=20)`, fixed)
 
-When either cap is exceeded, Pydantic AI raises `UsageLimitExceeded`. The Orchestrator catches this at line 349 of `agent.py` and writes a `RunRecord` with `outcome="abort"` and `abort_reason="iteration_limit_20"`. The abort string `"iteration_limit_20"` is a fixed literal in the codebase derived from the Remediation agent's cap; it also applies when the Diagnosis 25-request cap triggers the exception. This is an implementation naming quirk and carries no architectural significance.
+When either cap is exceeded, Pydantic AI raises `UsageLimitExceeded`. The Orchestrator's `except UsageLimitExceeded` handler in `agent.py` writes a `RunRecord` with `outcome="abort"` and `abort_reason="iteration_limit_20"`. The abort string `"iteration_limit_20"` is a fixed literal in the codebase derived from the Remediation agent's cap; it also applies when the Diagnosis 25-request cap triggers the exception. This is an implementation naming quirk and carries no architectural significance.
 
 All dependency structs (`OrchestratorDeps`, `DiagnosisDeps`, `RemediationDeps`, `WatchdogDeps`) are frozen dataclasses, ensuring no shared mutable state between agents during a run. The one session-level stateful object is the flux-mcp server's `suspendedNames` map, which lives in the Go process and is therefore isolated to the server boundary.
 
