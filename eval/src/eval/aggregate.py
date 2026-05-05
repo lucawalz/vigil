@@ -36,7 +36,7 @@ def aggregate_runs(
     """Compute per-model and per-scenario metric tables plus escalation accuracy."""
     records: list[dict] = []
     if not index_path.exists():
-        return {"by_model": {}, "by_scenario": {}, "escalation": {}, "totals": {"n": 0}}
+        return {"by_model": {}, "by_scenario": {}, "escalation": {}, "totals": {"n": 0, "n_models": 0, "n_scenarios": 0}}
 
     with index_path.open() as fh:
         for line in fh:
