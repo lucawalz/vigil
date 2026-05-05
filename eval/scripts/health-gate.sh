@@ -14,10 +14,11 @@ deadline=$(($(date +%s) + DEADLINE_S))
 iteration=0
 
 check_nodes_ready() {
-  local statuses
+  local statuses filtered
   statuses=$(kubectl --kubeconfig "$KUBECONFIG_PATH" get nodes \
     -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-  [ -n "$statuses" ] && ! grep -qv '^True$' <(echo "$statuses" | tr ' ' '\n' | grep -v '^$')
+  filtered=$(echo "$statuses" | tr ' ' '\n' | grep -v '^$')
+  [ -n "$filtered" ] && ! grep -qv '^True$' <(echo "$filtered")
 }
 
 check_flux_kustomization_ready() {

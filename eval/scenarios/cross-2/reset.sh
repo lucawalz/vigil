@@ -19,6 +19,8 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" delete deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --ignore-not-found=true
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 
+flux --kubeconfig "$FAULT_INJECTION_KUBECONFIG" resume kustomization flux-system -n flux-system 2>/dev/null || true
+
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "deployment/${DEPLOYMENT}" \
   -n "${NAMESPACE}" --timeout=120s
 

@@ -13,7 +13,7 @@ kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" wait --for=delete pod -n "${N
 
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" delete pvc "${PVC}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s
 
-cat <<'EOF' | kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" create -n "${NAMESPACE}" -f -
+cat <<'EOF' | kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" apply -n "${NAMESPACE}" -f -
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
