@@ -53,3 +53,9 @@ variable "group_name" {
     error_message = "group_name must be one of: cross, k8s, os, misc."
   }
 }
+
+variable "run_id" {
+  type        = string
+  description = "CI run identifier — appended to the SSH key name so parallel runs never collide on fingerprint"
+  default     = "local"
+}
