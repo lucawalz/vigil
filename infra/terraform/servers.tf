@@ -1,5 +1,5 @@
 resource "hcloud_server" "master" {
-  name        = "${var.group_name}-master"
+  name        = "${var.group_name}-${var.run_id}-master"
   server_type = "cx33"
   image       = "debian-12"
   location    = "fsn1"
@@ -58,7 +58,7 @@ resource "null_resource" "k3s_token_master" {
 }
 
 resource "hcloud_server" "worker_1" {
-  name        = "${var.group_name}-worker-1"
+  name        = "${var.group_name}-${var.run_id}-worker-1"
   server_type = "cx23"
   image       = "debian-12"
   location    = "fsn1"
@@ -113,7 +113,7 @@ resource "null_resource" "k3s_token_worker_1" {
 }
 
 resource "hcloud_server" "worker_2" {
-  name        = "${var.group_name}-worker-2"
+  name        = "${var.group_name}-${var.run_id}-worker-2"
   server_type = "cx23"
   image       = "debian-12"
   location    = "fsn1"
@@ -168,7 +168,7 @@ resource "null_resource" "k3s_token_worker_2" {
 }
 
 resource "hcloud_server" "agent" {
-  name        = "${var.group_name}-agent"
+  name        = "${var.group_name}-${var.run_id}-agent"
   server_type = "cx23"
   image       = "debian-12"
   location    = "fsn1"

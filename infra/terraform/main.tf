@@ -21,7 +21,7 @@ provider "hcloud" {
 }
 
 resource "hcloud_network" "vigil" {
-  name     = "vigil-eval-${var.group_name}"
+  name     = "vigil-eval-${var.group_name}-${var.run_id}"
   ip_range = "10.0.0.0/24"
 }
 
@@ -33,7 +33,7 @@ resource "hcloud_network_subnet" "vigil" {
 }
 
 resource "hcloud_firewall" "vigil" {
-  name = "vigil-eval-${var.group_name}"
+  name = "vigil-eval-${var.group_name}-${var.run_id}"
 
   rule {
     direction  = "in"
