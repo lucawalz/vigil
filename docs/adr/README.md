@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Architecture Decision Records (ADRs) document significant design choices, the context that led to them, and their trade-offs.
+Architecture Decision Records (ADRs) document significant design choices, the context that led to them, and their trade-offs. ADRs use the [MADR 4.0.0](https://adr.github.io/madr/) format with two Vigil-specific conventions: each rejected alternative under "Pros and Cons of the Options" names a specific failure mode in the Vigil context (not a generic category), and the Consequences section includes a `Validation Status` field tying the decision to a Phase verification or production validation event.
 
 ## Index
 
@@ -15,24 +15,68 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0007](0007-deterministic-fault-injection.md) | Shell-script-based deterministic fault injection | Accepted |
 | [0008](0008-evaluation-model-selection.md) | Evaluation model selection | Accepted |
 
+Architecture-level rationale that spans multiple ADRs lives in [`docs/architecture/`](../architecture/).
+
 ## Adding an ADR
 
 Create a new file `NNNN-title-in-kebab-case.md` using this template:
 
-```markdown
+````markdown
+---
+status: Proposed | Accepted | Superseded by [ADR-MMMM](MMMM-...)
+date: YYYY-MM-DD
+decision-makers: [Luca Walz]
+consulted: []
+informed: []
+---
+
 # ADR-NNNN: Title
 
-**Status**: Proposed | Accepted | Superseded by [ADR-MMMM](MMMM-...)
-
-## Context
+## Context and Problem Statement
 
 Why did this decision need to be made? What forces, constraints, or trade-offs were in play?
 
-## Decision
+## Decision Drivers
 
-The decision that was made.
+- driver 1
+- driver 2
 
-## Consequences
+## Considered Options
 
-What becomes easier or harder as a result?
-```
+- chosen option
+- rejected option 1
+- rejected option 2
+
+## Decision Outcome
+
+Chosen option: "chosen option", because [concise rationale].
+
+### Consequences
+
+- Good: ...
+- Bad: ...
+
+**Validation Status:** Verified — Phase N VERIFICATION.md (or "Pending — Phase N", or a production validation citation)
+
+### Confirmation
+
+[testable criteria — how to verify the decision still holds]
+
+### Pros and Cons of the Options
+
+#### chosen option
+- Good: ...
+- Bad: ...
+
+#### rejected option 1
+- Good: ...
+- Bad: [specific failure mode in the Vigil context, >= 15 words; not a generic category]
+
+#### rejected option 2
+- Good: ...
+- Bad: [specific failure mode in the Vigil context, >= 15 words]
+
+## More Information
+
+[cross-references to relevant architecture docs and ADRs]
+````

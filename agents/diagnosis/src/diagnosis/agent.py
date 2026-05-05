@@ -3,7 +3,7 @@
 Emits a structured DiagnosisReport per run.
 Tool scope: kubectl-mcp and nixos-mcp only; ssh-mcp is excluded to prevent the
 model from confusing run_allowed_command with kubectl operations.
-Loop capped at 40 requests.
+Loop capped at 25 requests (DIAGNOSIS_REQUEST_LIMIT env var).
 """
 
 from __future__ import annotations

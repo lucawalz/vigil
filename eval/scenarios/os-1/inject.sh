@@ -13,10 +13,7 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "grep -q 'bad-module.nix' ${CONFIG_DIR}/default.nix || sed -i 's|imports = \[|imports = [\n    ./bad-module.nix|' ${CONFIG_DIR}/default.nix"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1" || {
-    rc=$?
-    [ $rc -eq 4 ] || exit $rc
-  }
+  "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "! systemctl is-active --quiet k3s"

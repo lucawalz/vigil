@@ -43,3 +43,13 @@ variable "llm_base_url" {
 variable "llm_model_name" {
   type = string
 }
+
+variable "group_name" {
+  type        = string
+  description = "Scenario group name (cross|k8s|os|misc) — scopes Hetzner resource names so 4 stacks can coexist on one account"
+
+  validation {
+    condition     = contains(["cross", "k8s", "os", "misc"], var.group_name)
+    error_message = "group_name must be one of: cross, k8s, os, misc."
+  }
+}

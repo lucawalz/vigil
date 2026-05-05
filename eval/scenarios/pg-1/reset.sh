@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+: "${FAULT_INJECTION_KUBECONFIG:?FAULT_INJECTION_KUBECONFIG must be set}"
+: "${EVAL_RUNNER_KUBECONFIG:?EVAL_RUNNER_KUBECONFIG must be set}"
+
 SEED="${1:-1}"
 NAMESPACE="default"
 STATEFULSET="postgresql"
 GOOD_IMAGE="docker.io/bitnami/postgresql:16"
 
-kubectl set image \
+kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" set image \
   "statefulset/${STATEFULSET}" \
   "postgresql=${GOOD_IMAGE}" \
   -n "${NAMESPACE}"
 
-kubectl rollout status "statefulset/${STATEFULSET}" \
+kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "statefulset/${STATEFULSET}" \
   -n "${NAMESPACE}" --timeout=120s
 
-flux resume kustomization flux-system -n flux-system 2>/dev/null || true
+flux --kubeconfig "$EVAL_RUNNER_KUBECONFIG" resume kustomization flux-system -n flux-system 2>/dev/null || true
 
 echo "reset.sh: pg-1 seed=${SEED} — cluster at baseline"

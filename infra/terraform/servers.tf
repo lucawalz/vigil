@@ -1,5 +1,5 @@
 resource "hcloud_server" "master" {
-  name        = "hetzner-master"
+  name        = "${var.group_name}-master"
   server_type = "cx33"
   image       = "debian-12"
   location    = "nbg1"
@@ -58,7 +58,7 @@ resource "null_resource" "k3s_token_master" {
 }
 
 resource "hcloud_server" "worker_1" {
-  name        = "hetzner-worker-1"
+  name        = "${var.group_name}-worker-1"
   server_type = "cx23"
   image       = "debian-12"
   location    = "nbg1"
@@ -113,7 +113,7 @@ resource "null_resource" "k3s_token_worker_1" {
 }
 
 resource "hcloud_server" "worker_2" {
-  name        = "hetzner-worker-2"
+  name        = "${var.group_name}-worker-2"
   server_type = "cx23"
   image       = "debian-12"
   location    = "nbg1"
@@ -168,7 +168,7 @@ resource "null_resource" "k3s_token_worker_2" {
 }
 
 resource "hcloud_server" "agent" {
-  name        = "hetzner-agent"
+  name        = "${var.group_name}-agent"
   server_type = "cx23"
   image       = "debian-12"
   location    = "nbg1"
@@ -216,12 +216,12 @@ resource "null_resource" "kubeconfig" {
       done
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
         | sed 's|https://127.0.0.1:6443|https://${hcloud_server.master.ipv4_address}:6443|' \
-        | sed 's/name: default/name: hetzner-vigil/g' \
-        | sed 's/cluster: default/cluster: hetzner-vigil/g' \
-        | sed 's/user: default/user: hetzner-vigil/g' \
-        | sed 's/current-context: default/current-context: hetzner-vigil/' \
-        > ~/.kube/hetzner-vigil
-      chmod 600 ~/.kube/hetzner-vigil
+        | sed 's/name: default/name: hetzner-vigil-${var.group_name}/g' \
+        | sed 's/cluster: default/cluster: hetzner-vigil-${var.group_name}/g' \
+        | sed 's/user: default/user: hetzner-vigil-${var.group_name}/g' \
+        | sed 's/current-context: default/current-context: hetzner-vigil-${var.group_name}/' \
+        > ~/.kube/hetzner-vigil-${var.group_name}
+      chmod 600 ~/.kube/hetzner-vigil-${var.group_name}
     EOF
   }
 }
@@ -295,20 +295,24 @@ resource "null_resource" "agent_ssh_auth" {
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.worker_2.ipv4_address} \
         "grep -qxF '$PUBKEY' /root/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /root/.ssh/authorized_keys"
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.agent.ipv4_address} \
+        "grep -qxF '$PUBKEY' /root/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /root/.ssh/authorized_keys"
     EOF
   }
 }
 
 resource "null_resource" "vigil_agent_setup" {
-  depends_on = [null_resource.kubeconfig_agent]
+  depends_on = [null_resource.kubeconfig_agent, null_resource.rbac_kubeconfig_eval_runner, null_resource.rbac_kubeconfig_fault_injection]
 
   triggers = {
-    agent_id       = hcloud_server.agent.id
-    branch         = var.vigil_branch
-    webhook_secret = var.vigil_webhook_secret
-    llm_api_key    = var.llm_api_key
-    llm_base_url   = var.llm_base_url
-    llm_model_name = var.llm_model_name
+    agent_id          = hcloud_server.agent.id
+    branch            = var.vigil_branch
+    webhook_secret    = var.vigil_webhook_secret
+    llm_api_key       = var.llm_api_key
+    llm_base_url      = var.llm_base_url
+    llm_model_name    = var.llm_model_name
+    kubeconfigs_ready = "${null_resource.rbac_kubeconfig_eval_runner.id}-${null_resource.rbac_kubeconfig_fault_injection.id}"
   }
 
   provisioner "local-exec" {
@@ -317,7 +321,7 @@ resource "null_resource" "vigil_agent_setup" {
         root@${hcloud_server.agent.ipv4_address} \
         "mkdir -p /etc/vigil && \
          echo '${var.vigil_branch}' > /etc/vigil/branch && \
-         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=/root/vigil/eval/runs\nVIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios\nSSH_HOSTS=hetzner-worker-1,hetzner-worker-2\nSSH_USER=root\nSSH_KEY_PATH=/root/.ssh/id_ed25519\n' > /etc/vigil/env && \
+         printf 'VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}\nLLM_API_KEY=${var.llm_api_key}\nLLM_BASE_URL=${var.llm_base_url}\nLLM_MODEL_NAME=${var.llm_model_name}\nVIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099\nEVAL_RUNS_DIR=/root/vigil/eval/runs\nVIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios\nSSH_HOSTS=hetzner-worker-1,hetzner-worker-2\nSSH_USER=root\nSSH_KEY_PATH=/root/.ssh/id_ed25519\nEVAL_RUNNER_KUBECONFIG=/etc/vigil/kubeconfig-eval-runner\nFAULT_INJECTION_KUBECONFIG=/etc/vigil/kubeconfig-fault-injection\n' > /etc/vigil/env && \
          chmod 600 /etc/vigil/env && \
          systemctl start --no-block vigil-orchestrator.service"
     EOF

@@ -16,7 +16,7 @@ resource "null_resource" "flux_bootstrap" {
         --personal
     EOF
     environment = {
-      KUBECONFIG   = pathexpand("~/.kube/hetzner-vigil")
+      KUBECONFIG   = pathexpand("~/.kube/hetzner-vigil-${var.group_name}")
       GITHUB_TOKEN = var.github_token
     }
   }
