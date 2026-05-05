@@ -98,7 +98,7 @@
       NIXOS_MCP_CMD = "/usr/local/bin/nixos-mcp";
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
-      KUBECONFIG = "/root/.kube/config";
+      KUBECONFIG = "/etc/vigil/kubeconfig-eval-runner";
       PATH = lib.mkForce "/run/current-system/sw/bin:/usr/local/bin:/root/vigil/.venv/bin";
     };
     serviceConfig = {
@@ -115,6 +115,9 @@
       set -a
       . /etc/vigil/env
       set +a
+    fi
+    if [ -f /etc/vigil/kubeconfig-eval-runner ]; then
+      export KUBECONFIG="/etc/vigil/kubeconfig-eval-runner"
     fi
     export PATH="/usr/local/bin:/root/vigil/.venv/bin:$PATH"
   '';
