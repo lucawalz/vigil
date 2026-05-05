@@ -39,12 +39,12 @@ jobs:
           - group: misc
             scenarios: "boundary-1 pg-1 redis-1 ingress-1"
     env:
-      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
       TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
-      TF_VAR_vigil_webhook_secret: ${{ secrets.VIGIL_WEBHOOK_SECRET }}
-      TF_VAR_llm_api_key: ${{ secrets.LLM_API_KEY }}
-      TF_VAR_llm_base_url: ${{ secrets.LLM_BASE_URL }}
-      TF_VAR_llm_model_name: ${{ secrets.LLM_MODEL_NAME }}
+      TF_VAR_vigil_webhook_secret: ${{ secrets.TF_VAR_VIGIL_WEBHOOK_SECRET }}
+      TF_VAR_llm_api_key: ${{ secrets.TF_VAR_LLM_API_KEY }}
+      TF_VAR_llm_base_url: ${{ secrets.TF_VAR_LLM_BASE_URL }}
+      TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
       TF_VAR_group_name: ${{ matrix.group }}
       VIGIL_BRANCH: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
     steps:
@@ -118,7 +118,7 @@ jobs:
         env:
           SCENARIOS: ${{ matrix.scenarios }}
           SEED: ${{ github.event.inputs.seed }}
-          MODEL: ${{ inputs.model != '' && inputs.model || secrets.LLM_MODEL_NAME }}
+          MODEL: ${{ inputs.model != '' && inputs.model || secrets.TF_VAR_LLM_MODEL_NAME }}
           GROUP: ${{ matrix.group }}
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
