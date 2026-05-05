@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${EVAL_RUNNER_KUBECONFIG:?EVAL_RUNNER_KUBECONFIG must be set}"
+
+PREV_SCENARIO="${1:?Usage: between-scenarios.sh <previous-scenario-id> <group-name>}"
+GROUP="${2:?Usage: between-scenarios.sh <previous-scenario-id> <group-name>}"
+
+REPO_ROOT="${VIGIL_REPO_ROOT:-/root/vigil}"
+AGENT_HOST="${AGENT_HOST:-}"
+SSH_KEY="${SSH_KEY_PATH:-/root/.ssh/id_ed25519}"
+SSH_USER="${SSH_USER:-root}"
+
+echo "between-scenarios: prev=$PREV_SCENARIO group=$GROUP" >&2
+
+RESET_SCRIPT="$REPO_ROOT/eval/scenarios/$PREV_SCENARIO/reset.sh"
+if [ -x "$RESET_SCRIPT" ]; then
+  echo "between-scenarios: step 1/5 — running $RESET_SCRIPT" >&2
+  "$RESET_SCRIPT" 1 || echo "between-scenarios: reset.sh exited non-zero, continuing" >&2
+else
+  echo "between-scenarios: skip step 1/5 — $RESET_SCRIPT not executable" >&2
+fi
+
+echo "between-scenarios: step 2/5 — flux force-reconcile" >&2
+kubectl --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
+  annotate kustomization flux-system -n flux-system \
+  "reconcile.fluxcd.io/requestedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --overwrite || echo "between-scenarios: flux reconcile annotation failed, continuing" >&2
+
+if [ "$GROUP" = "cross" ] || [ "$GROUP" = "os" ]; then
+  echo "between-scenarios: step 3/5 — nixos-rebuild switch on workers" >&2
+  for host in hetzner-worker-1 hetzner-worker-2; do
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      "$SSH_USER@$host" \
+      "nixos-rebuild switch --flake /opt/nixos-config#$host" \
+      || echo "between-scenarios: nixos-rebuild on $host failed, continuing" >&2
+  done
+else
+  echo "between-scenarios: step 3/5 — skipped (group=$GROUP)" >&2
+fi
+
+echo "between-scenarios: step 4/5 — restart vigil-orchestrator" >&2
+if [ -n "$AGENT_HOST" ]; then
+  ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "$SSH_USER@$AGENT_HOST" \
+    "systemctl restart vigil-orchestrator.service"
+else
+  systemctl restart vigil-orchestrator.service \
+    || echo "between-scenarios: systemctl restart failed, continuing" >&2
+fi
+
+echo "between-scenarios: step 5/5 — health gate" >&2
+HEALTH_GATE="$REPO_ROOT/eval/scripts/health-gate.sh"
+exec "$HEALTH_GATE" "$EVAL_RUNNER_KUBECONFIG"

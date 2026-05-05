@@ -2,8 +2,11 @@ resource "null_resource" "rbac_manifests" {
   depends_on = [null_resource.flux_bootstrap]
 
   triggers = {
-    master_id = hcloud_server.master.id
-    manifests = filebase64sha256("${path.module}/../kubernetes/rbac/eval-runner-clusterrole.yaml")
+    master_id                   = hcloud_server.master.id
+    eval_runner_clusterrole     = filebase64sha256("${path.module}/../kubernetes/rbac/eval-runner-clusterrole.yaml")
+    fault_injection_clusterrole = filebase64sha256("${path.module}/../kubernetes/rbac/fault-injection-clusterrole.yaml")
+    serviceaccounts             = filebase64sha256("${path.module}/../kubernetes/rbac/serviceaccounts.yaml")
+    clusterrolebindings         = filebase64sha256("${path.module}/../kubernetes/rbac/clusterrolebindings.yaml")
   }
 
   provisioner "local-exec" {
