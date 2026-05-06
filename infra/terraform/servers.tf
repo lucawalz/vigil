@@ -261,6 +261,12 @@ resource "null_resource" "kubeconfig_agent" {
 
   provisioner "local-exec" {
     command = <<-EOF
+      DEADLINE=$(($(date +%s) + 300))
+      until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
+          root@${hcloud_server.agent.ipv4_address} true 2>/dev/null; do
+        if [ $(date +%s) -gt $DEADLINE ]; then echo "Agent SSH not ready after 5 minutes"; exit 1; fi
+        sleep 5
+      done
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
         | sed 's|https://127.0.0.1:6443|https://10.0.0.10:6443|' \
