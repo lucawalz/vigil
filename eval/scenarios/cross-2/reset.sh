@@ -11,10 +11,7 @@ DEPLOYMENT="vigil-app"
 MANIFEST_DIR="$(cd "$(dirname "$0")" && pwd)/manifests"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "systemctl start k3s.service || true && printf '{ }\n' > /opt/nixos-config/hosts/hetzner-worker-2/bad-module.nix"
-
-ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-2"
+  "systemctl start k3s.service || true"
 
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" delete deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --ignore-not-found=true
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
