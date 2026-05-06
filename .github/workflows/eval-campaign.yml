@@ -75,13 +75,35 @@ jobs:
         working-directory: infra/terraform
         run: terraform init -input=false
 
-      - name: Patch nixos-anywhere post-kexec sshd stabilization
+      - name: Patch nixos-rebuild deploy.sh for SSH resilience
         working-directory: infra/terraform
         run: |
-          find .terraform/modules -name "nixos-anywhere.sh" -print0 | \
-            xargs -0 -I{} sed -i \
-              '/until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done/a\  sleep 15' \
-              {}
+          find .terraform/modules -name "deploy.sh" -path "*/nixos-rebuild/*" -print0 | while IFS= read -r -d '' f; do
+            python3 - "$f" <<'PYEOF'
+          import sys, re
+          path = sys.argv[1]
+          content = open(path).read()
+          old = (
+            'deploy_status=0\n'
+            '# shellcheck disable=SC2029\n'
+            'ssh "${sshOpts[@]}" "$TARGET" "$switchCommand" || deploy_status="$?"'
+          )
+          new = (
+            'deploy_status=0\n'
+            'for _switch_try in 1 2 3 4 5; do\n'
+            '  # shellcheck disable=SC2029\n'
+            '  ssh "${sshOpts[@]}" "$TARGET" "$switchCommand" && { deploy_status=0; break; } || deploy_status="$?"\n'
+            '  [ "$deploy_status" = "255" ] || break\n'
+            '  sleep 30\n'
+            'done'
+          )
+          if old in content:
+            print(f"Patched {path}")
+            open(path, 'w').write(content.replace(old, new, 1))
+          else:
+            print(f"Pattern not found in {path} — skipping")
+          PYEOF
+          done
 
       - name: Terraform apply
         working-directory: infra/terraform
