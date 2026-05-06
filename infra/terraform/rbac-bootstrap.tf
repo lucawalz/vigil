@@ -65,6 +65,8 @@ contexts:
     user: vigil-eval-runner
 current-context: vigil-eval-runner@vigil-eval-${var.group_name}
 KUBECFG
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.agent.ipv4_address} "mkdir -p /etc/vigil"
       scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         /tmp/kubeconfig-eval-runner-${var.group_name} \
         root@${hcloud_server.agent.ipv4_address}:/etc/vigil/kubeconfig-eval-runner
@@ -111,6 +113,8 @@ contexts:
     user: vigil-fault-injection
 current-context: vigil-fault-injection@vigil-eval-${var.group_name}
 KUBECFG
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.agent.ipv4_address} "mkdir -p /etc/vigil"
       scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         /tmp/kubeconfig-fault-injection-${var.group_name} \
         root@${hcloud_server.agent.ipv4_address}:/etc/vigil/kubeconfig-fault-injection
