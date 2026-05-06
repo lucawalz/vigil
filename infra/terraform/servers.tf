@@ -17,6 +17,18 @@ resource "hcloud_server" "master" {
   depends_on = [hcloud_network_subnet.vigil]
 }
 
+resource "local_file" "extra_files_script" {
+  filename        = "/tmp/nixos-anywhere-extra-files-${var.run_id}.sh"
+  file_permission = "0755"
+  content         = <<-SCRIPT
+    #!/usr/bin/env bash
+    set -euo pipefail
+    install -m 700 -d root/.ssh
+    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
+    chmod 600 root/.ssh/authorized_keys
+  SCRIPT
+}
+
 module "install_master" {
   source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one"
 
@@ -29,14 +41,7 @@ module "install_master" {
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
 
-  extra_files_script = <<-SCRIPT
-    #!/usr/bin/env bash
-    set -euo pipefail
-    install -m 700 -d root/.ssh
-    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
-    chmod 600 root/.ssh/authorized_keys
-  SCRIPT
-
+  extra_files_script = local_file.extra_files_script.filename
   deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
@@ -98,14 +103,7 @@ module "install_worker_1" {
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
 
-  extra_files_script = <<-SCRIPT
-    #!/usr/bin/env bash
-    set -euo pipefail
-    install -m 700 -d root/.ssh
-    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
-    chmod 600 root/.ssh/authorized_keys
-  SCRIPT
-
+  extra_files_script = local_file.extra_files_script.filename
   deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
@@ -163,14 +161,7 @@ module "install_worker_2" {
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
 
-  extra_files_script = <<-SCRIPT
-    #!/usr/bin/env bash
-    set -euo pipefail
-    install -m 700 -d root/.ssh
-    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
-    chmod 600 root/.ssh/authorized_keys
-  SCRIPT
-
+  extra_files_script = local_file.extra_files_script.filename
   deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
@@ -228,14 +219,7 @@ module "install_agent" {
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
 
-  extra_files_script = <<-SCRIPT
-    #!/usr/bin/env bash
-    set -euo pipefail
-    install -m 700 -d root/.ssh
-    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
-    chmod 600 root/.ssh/authorized_keys
-  SCRIPT
-
+  extra_files_script = local_file.extra_files_script.filename
   deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
