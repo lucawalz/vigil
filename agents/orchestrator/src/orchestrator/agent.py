@@ -94,7 +94,8 @@ def build_run_id(
             ).strip()
         except (subprocess.CalledProcessError, FileNotFoundError):
             sha7 = "0000000"
-    run_id = f"{scenario}_{seed_str}_{model}_{sha7}"
+    safe_model = model.replace(":", "-").replace("/", "-")
+    run_id = f"{scenario}_{seed_str}_{safe_model}_{sha7}"
     return run_id, seed_str, sha7
 
 
