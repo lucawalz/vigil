@@ -28,6 +28,16 @@ module "install_master" {
   debug_logging          = true
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
+
+  extra_files_script = <<-SCRIPT
+    #!/usr/bin/env bash
+    set -euo pipefail
+    install -m 700 -d root/.ssh
+    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
+    chmod 600 root/.ssh/authorized_keys
+  SCRIPT
+
+  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
 resource "null_resource" "k3s_token_master" {
@@ -87,6 +97,16 @@ module "install_worker_1" {
   debug_logging          = true
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
+
+  extra_files_script = <<-SCRIPT
+    #!/usr/bin/env bash
+    set -euo pipefail
+    install -m 700 -d root/.ssh
+    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
+    chmod 600 root/.ssh/authorized_keys
+  SCRIPT
+
+  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
 resource "null_resource" "k3s_token_worker_1" {
@@ -142,6 +162,16 @@ module "install_worker_2" {
   debug_logging          = true
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
+
+  extra_files_script = <<-SCRIPT
+    #!/usr/bin/env bash
+    set -euo pipefail
+    install -m 700 -d root/.ssh
+    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
+    chmod 600 root/.ssh/authorized_keys
+  SCRIPT
+
+  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
 resource "null_resource" "k3s_token_worker_2" {
@@ -197,6 +227,16 @@ module "install_agent" {
   debug_logging          = true
   install_bootloader     = true
   nix_options            = { "tarball-ttl" = "0" }
+
+  extra_files_script = <<-SCRIPT
+    #!/usr/bin/env bash
+    set -euo pipefail
+    install -m 700 -d root/.ssh
+    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
+    chmod 600 root/.ssh/authorized_keys
+  SCRIPT
+
+  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
 resource "null_resource" "kubeconfig" {
