@@ -75,6 +75,14 @@ jobs:
         working-directory: infra/terraform
         run: terraform init -input=false
 
+      - name: Patch nixos-anywhere post-kexec sshd stabilization
+        working-directory: infra/terraform
+        run: |
+          find .terraform/modules -name "nixos-anywhere.sh" -print0 | \
+            xargs -0 -I{} sed -i \
+              '/until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done/a\  sleep 15' \
+              {}
+
       - name: Terraform apply
         working-directory: infra/terraform
         env:
