@@ -162,6 +162,7 @@ jobs:
           path: |
             eval/runs/
             eval/runs_index.jsonl
+          if-no-files-found: warn
 
       - name: Terraform destroy
         if: always()
