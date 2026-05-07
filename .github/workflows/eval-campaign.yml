@@ -105,6 +105,35 @@ jobs:
           PYEOF
           done
 
+      - name: Patch nixos-anywhere for post-kexec SSH stability
+        working-directory: infra/terraform
+        run: |
+          find .terraform/modules -name "nixos-anywhere.sh" -path "*/src/*" -print0 | while IFS= read -r -d '' f; do
+            python3 - "$f" <<'PYEOF'
+          import sys
+          path = sys.argv[1]
+          content = open(path).read()
+          old = (
+            '  # waiting for machine to become available again\n'
+            '  until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done\n'
+            '\n'
+            '  importFacts\n'
+          )
+          new = (
+            '  # waiting for machine to become available again\n'
+            '  until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done\n'
+            '  sleep 10\n'
+            '\n'
+            '  importFacts\n'
+          )
+          if old in content:
+            print(f"Patched {path}")
+            open(path, 'w').write(content.replace(old, new, 1))
+          else:
+            print(f"Pattern not found in {path} — skipping")
+          PYEOF
+          done
+
       - name: Terraform apply
         working-directory: infra/terraform
         env:
