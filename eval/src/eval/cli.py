@@ -342,8 +342,8 @@ def aggregate_cmd(
     scenarios_dir: Path,
     output_dir: Path,
 ) -> None:
-    """Read completed run JSONs and produce summary.json and REPORT.md."""
-    from eval.aggregate import aggregate_runs, write_report
+    """Read completed run JSONs and produce summary.json, REPORT.md, and step_summary.md."""
+    from eval.aggregate import aggregate_runs, write_report, write_step_summary
 
     runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
     index_path = Path(index) if index else (runs_dir.parent / "runs_index.jsonl")
@@ -351,7 +351,8 @@ def aggregate_cmd(
 
     summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
     write_report(summary, output_dir)
-    click.echo(f"Written: {output_dir}/summary.json, {output_dir}/REPORT.md")
+    write_step_summary(runs_dir, index_path, output_dir)
+    click.echo(f"Written: {output_dir}/summary.json, {output_dir}/REPORT.md, {output_dir}/step_summary.md")
 
 
 if __name__ == "__main__":

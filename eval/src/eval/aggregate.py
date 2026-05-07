@@ -12,6 +12,40 @@ log = logging.getLogger(__name__)
 
 _OS_LAYERS = frozenset({"os", "cross"})
 
+_GROUP_LABELS: dict[str, str] = {
+    "k8s": "Kubernetes Layer",
+    "os": "OS / NixOS Layer",
+    "cross": "Cross-Layer",
+    "misc": "Infrastructure / Misc",
+}
+
+_GROUP_ORDER = ["k8s", "os", "cross", "misc"]
+
+
+def _scenario_group(scenario_id: str) -> str:
+    for prefix in ("k8s-", "os-", "cross-"):
+        if scenario_id.startswith(prefix):
+            return prefix.rstrip("-")
+    return "misc"
+
+
+def _load_records(runs_dir: Path, index_path: Path) -> list[dict]:
+    records: list[dict] = []
+    if not index_path.exists():
+        return records
+    with index_path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            idx_rec = json.loads(line)
+            run_file = runs_dir / f"{idx_rec['run_id']}.json"
+            if run_file.exists():
+                records.append(json.loads(run_file.read_text()))
+            else:
+                log.warning("run JSON missing for %s; skipping", idx_rec["run_id"])
+    return records
+
 
 def _mean_std(vals: list[float]) -> tuple[float | None, float | None]:
     if not vals:
@@ -34,26 +68,14 @@ def aggregate_runs(
     runs_dir: Path, index_path: Path, scenarios_dir: Path
 ) -> dict[str, Any]:
     """Compute per-model and per-scenario metric tables plus escalation accuracy."""
-    records: list[dict] = []
-    if not index_path.exists():
+    records = _load_records(runs_dir, index_path)
+    if not records:
         return {
             "by_model": {},
             "by_scenario": {},
             "escalation": {},
             "totals": {"n": 0, "n_models": 0, "n_scenarios": 0},
         }
-
-    with index_path.open() as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            idx_rec = json.loads(line)
-            run_file = runs_dir / f"{idx_rec['run_id']}.json"
-            if not run_file.exists():
-                log.warning("run JSON missing for %s; skipping", idx_rec["run_id"])
-                continue
-            records.append(json.loads(run_file.read_text()))
 
     by_model: dict[str, list[dict]] = {}
     by_scenario: dict[str, list[dict]] = {}
@@ -207,6 +229,72 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     )
 
     (output_dir / "REPORT.md").write_text("\n".join(lines) + "\n")
+
+
+def write_step_summary(runs_dir: Path, index_path: Path, output_dir: Path) -> None:
+    records = _load_records(runs_dir, index_path)
+    if not records:
+        return
+
+    by_group: dict[str, dict[str, dict]] = {}
+    for r in records:
+        g = _scenario_group(r["scenario"])
+        by_group.setdefault(g, {})[r["scenario"]] = r
+
+    n_remediated = sum(1 for r in records if r.get("success_rate"))
+    n_not_remediated = sum(
+        1 for r in records if r["outcome"] != "abort" and not r.get("success_rate")
+    )
+    n_aborted = sum(1 for r in records if r["outcome"] == "abort")
+
+    model = records[0]["model"]
+    git_sha = records[0].get("git_sha7", "")
+    date = records[0].get("started_at", "")[:10]
+
+    header_parts = [model]
+    if git_sha:
+        header_parts.append(f"@ {git_sha}")
+    if date:
+        header_parts.append(f"({date})")
+
+    lines: list[str] = [
+        f"### {' '.join(header_parts)}",
+        "",
+        f"{n_remediated} of {len(records)} scenarios remediated;"
+        f" {n_aborted} aborted.",
+        "",
+    ]
+
+    for group in _GROUP_ORDER:
+        if group not in by_group:
+            continue
+        scenarios = by_group[group]
+        lines += [
+            f"#### {_GROUP_LABELS[group]}",
+            "",
+            "| scenario | outcome | remediated | diagnosis | MTTR (s) | iterations | tool calls |",
+            "|----------|---------|------------|-----------|----------:|----------:|----------:|",
+        ]
+        for sid in sorted(scenarios):
+            r = scenarios[sid]
+            if r["outcome"] == "abort":
+                outcome_cell = "abort"
+                remediated_cell = "—"
+            else:
+                outcome_cell = "pass"
+                remediated_cell = "yes" if r.get("success_rate") else "no"
+            diag = r.get("diagnosis_accuracy")
+            diag_cell = "correct" if diag is True else ("incorrect" if diag is False else "—")
+            mttr = r.get("MTTR_s")
+            mttr_cell = f"{mttr:.0f}" if isinstance(mttr, (int, float)) else "—"
+            lines.append(
+                f"| {sid} | {outcome_cell} | {remediated_cell} | {diag_cell}"
+                f" | {mttr_cell} | {r.get('iteration_count', '—')} | {r.get('total_tool_calls', '—')} |"
+            )
+        lines.append("")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "step_summary.md").write_text("\n".join(lines) + "\n")
 
 
 def _fmt(v: Any) -> str:

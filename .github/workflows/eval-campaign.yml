@@ -269,6 +269,9 @@ jobs:
       - name: Aggregate
         run: uv run vigil-eval aggregate
 
+      - name: Publish results to step summary
+        run: cat eval/results/step_summary.md >> $GITHUB_STEP_SUMMARY
+
       - name: Commit and push results
         env:
           TARGET_BRANCH: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
