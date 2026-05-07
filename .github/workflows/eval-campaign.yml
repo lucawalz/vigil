@@ -170,7 +170,7 @@ jobs:
           DEADLINE=$(($(date +%s) + 600))
           until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               root@${{ steps.agent.outputs.ip }} \
-              "systemctl is-active vigil-orchestrator.service" >/dev/null 2>&1; do
+              "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
             if [ $(date +%s) -gt $DEADLINE ]; then
               echo "Orchestrator not ready after 10 minutes"
               exit 1

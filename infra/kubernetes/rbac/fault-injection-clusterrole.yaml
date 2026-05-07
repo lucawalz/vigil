@@ -14,7 +14,7 @@ rules:
     verbs: ["get", "list", "delete", "create", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "replicasets"]
-    verbs: ["get", "list", "patch", "update"]
+    verbs: ["get", "list", "watch", "patch", "update", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments/scale", "statefulsets/scale"]
     verbs: ["get", "patch", "update"]
