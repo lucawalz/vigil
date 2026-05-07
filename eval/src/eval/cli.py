@@ -351,7 +351,7 @@ def aggregate_cmd(
 
     summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
     write_report(summary, output_dir)
-    write_step_summary(runs_dir, index_path, output_dir)
+    write_step_summary(runs_dir, index_path, output_dir, scenarios_dir)
     click.echo(f"Written: {output_dir}/summary.json, {output_dir}/REPORT.md, {output_dir}/step_summary.md")
 
 

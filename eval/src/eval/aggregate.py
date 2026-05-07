@@ -231,21 +231,26 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     (output_dir / "REPORT.md").write_text("\n".join(lines) + "\n")
 
 
-def write_step_summary(runs_dir: Path, index_path: Path, output_dir: Path) -> None:
+def write_step_summary(
+    runs_dir: Path, index_path: Path, output_dir: Path, scenarios_dir: Path | None = None
+) -> None:
     records = _load_records(runs_dir, index_path)
     if not records:
         return
 
-    by_group: dict[str, dict[str, dict]] = {}
+    by_group: dict[str, dict[str, dict | None]] = {}
     for r in records:
         g = _scenario_group(r["scenario"])
         by_group.setdefault(g, {})[r["scenario"]] = r
 
+    if scenarios_dir is not None:
+        for sid in (p.name for p in sorted(scenarios_dir.iterdir()) if p.is_dir()):
+            g = _scenario_group(sid)
+            by_group.setdefault(g, {}).setdefault(sid, None)
+
     n_remediated = sum(1 for r in records if r.get("success_rate"))
-    n_not_remediated = sum(
-        1 for r in records if r["outcome"] != "abort" and not r.get("success_rate")
-    )
     n_aborted = sum(1 for r in records if r["outcome"] == "abort")
+    n_total = sum(len(scs) for scs in by_group.values())
 
     model = records[0]["model"]
     git_sha = records[0].get("git_sha7", "")
@@ -260,8 +265,7 @@ def write_step_summary(runs_dir: Path, index_path: Path, output_dir: Path) -> No
     lines: list[str] = [
         f"### {' '.join(header_parts)}",
         "",
-        f"{n_remediated} of {len(records)} scenarios remediated;"
-        f" {n_aborted} aborted.",
+        f"{n_remediated} of {n_total} scenarios remediated; {n_aborted} aborted.",
         "",
     ]
 
@@ -277,6 +281,9 @@ def write_step_summary(runs_dir: Path, index_path: Path, output_dir: Path) -> No
         ]
         for sid in sorted(scenarios):
             r = scenarios[sid]
+            if r is None:
+                lines.append(f"| {sid} | no data | — | — | — | — | — |")
+                continue
             if r["outcome"] == "abort":
                 outcome_cell = "abort"
                 remediated_cell = "—"
