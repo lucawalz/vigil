@@ -105,7 +105,7 @@ jobs:
           PYEOF
           done
 
-      - name: Patch nixos-anywhere for post-kexec SSH stability
+      - name: Patch nixos-anywhere importFacts for SSH retry
         working-directory: infra/terraform
         run: |
           find .terraform/modules -name "nixos-anywhere.sh" -path "*/src/*" -print0 | while IFS= read -r -d '' f; do
@@ -114,17 +114,22 @@ jobs:
           path = sys.argv[1]
           content = open(path).read()
           old = (
-            '  # waiting for machine to become available again\n'
-            '  until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done\n'
-            '\n'
-            '  importFacts\n'
+            'importFacts() {\n'
+            '  step Gathering machine facts\n'
+            '  local facts filteredFacts\n'
+            '  if ! facts=$(runSsh -o ConnectTimeout=10 enableDebug=$enableDebug sh -- <"$here"/get-facts.sh); then\n'
+            '    exit 1\n'
+            '  fi\n'
           )
           new = (
-            '  # waiting for machine to become available again\n'
-            '  until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done\n'
-            '  sleep 10\n'
-            '\n'
-            '  importFacts\n'
+            'importFacts() {\n'
+            '  step Gathering machine facts\n'
+            '  local facts filteredFacts\n'
+            '  for _importFacts_try in 1 2 3 4 5; do\n'
+            '    facts=$(runSsh -o ConnectTimeout=30 enableDebug=$enableDebug sh -- <"$here"/get-facts.sh) && break\n'
+            '    [ "$_importFacts_try" = "5" ] && exit 1\n'
+            '    sleep 20\n'
+            '  done\n'
           )
           if old in content:
             print(f"Patched {path}")
