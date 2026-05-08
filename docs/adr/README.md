@@ -14,6 +14,10 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0006](0006-openai-compatible-provider-interface.md) | OpenAI-compatible provider interface | Accepted |
 | [0007](0007-deterministic-fault-injection.md) | Shell-script-based deterministic fault injection | Accepted |
 | [0008](0008-evaluation-model-selection.md) | Evaluation model selection | Accepted |
+| [0009](0009-hetzner-cluster-provisioning.md) | Hetzner cluster provisioning | Accepted |
+| [0010](0010-github-actions-eval-runner.md) | GitHub Actions eval campaign runner | Accepted |
+| [0011](0011-deterministic-watchdog.md) | Deterministic Watchdog | Accepted |
+| [0012](0012-empirically-calibrated-rollback-deadline.md) | Empirically-calibrated dead-man's switch deadline | Accepted |
 
 Architecture-level rationale that spans multiple ADRs lives in [`docs/architecture/`](../architecture/).
 
