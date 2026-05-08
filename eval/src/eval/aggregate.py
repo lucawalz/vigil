@@ -232,7 +232,10 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
 
 
 def write_step_summary(
-    runs_dir: Path, index_path: Path, output_dir: Path, scenarios_dir: Path | None = None
+    runs_dir: Path,
+    index_path: Path,
+    output_dir: Path,
+    scenarios_dir: Path | None = None,
 ) -> None:
     records = _load_records(runs_dir, index_path)
     if not records:
@@ -276,7 +279,8 @@ def write_step_summary(
         lines += [
             f"#### {_GROUP_LABELS[group]}",
             "",
-            "| scenario | outcome | remediated | diagnosis | MTTR (s) | iterations | tool calls |",
+            "| scenario | outcome | remediated | diagnosis"
+            " | MTTR (s) | iterations | tool calls |",
             "|----------|---------|------------|-----------|----------:|----------:|----------:|",
         ]
         for sid in sorted(scenarios):
@@ -291,12 +295,19 @@ def write_step_summary(
                 outcome_cell = "pass"
                 remediated_cell = "yes" if r.get("success_rate") else "no"
             diag = r.get("diagnosis_accuracy")
-            diag_cell = "correct" if diag is True else ("incorrect" if diag is False else "—")
+            if diag is True:
+                diag_cell = "correct"
+            elif diag is False:
+                diag_cell = "incorrect"
+            else:
+                diag_cell = "—"
             mttr = r.get("MTTR_s")
             mttr_cell = f"{mttr:.0f}" if isinstance(mttr, (int, float)) else "—"
+            iters = r.get("iteration_count", "—")
+            tools = r.get("total_tool_calls", "—")
             lines.append(
                 f"| {sid} | {outcome_cell} | {remediated_cell} | {diag_cell}"
-                f" | {mttr_cell} | {r.get('iteration_count', '—')} | {r.get('total_tool_calls', '—')} |"
+                f" | {mttr_cell} | {iters} | {tools} |"
             )
         lines.append("")
 
