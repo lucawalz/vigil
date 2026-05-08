@@ -252,9 +252,9 @@ async def test_run_orchestration_run_id_format(
 
 
 def test_build_run_id_uses_explicit_integer_seed() -> None:
-    run_id, seed_str, sha7 = build_run_id("k8s-1", "claude-sonnet-4-5", seed=3)
+    run_id, seed_str, sha7 = build_run_id("k8s-1", "claude-sonnet-4-6", seed=3)
     assert seed_str == "3"
-    assert re.match(r"^k8s-1_3_claude-sonnet-4-5_[a-f0-9]{7}$", run_id), run_id
+    assert re.match(r"^k8s-1_3_claude-sonnet-4-6_[a-f0-9]{7}$", run_id), run_id
 
 
 def test_build_run_id_seed_kwarg_is_stringified() -> None:

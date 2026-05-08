@@ -1,14 +1,3 @@
-"""Orchestrator: central control flow for a single fault-to-remediation run.
-
-Flow:
-  1. Ingest FaultEvent.
-  2. Run Diagnosis agent -> DiagnosisReport.
-  3. Capture baseline HealthSnapshot.
-  4. Launch Remediation + Watchdog in parallel via asyncio.TaskGroup.
-  5. If Watchdog reports degradation, issue rollback via kubectl-mcp rollout_undo.
-  6. Write RunRecord to eval/runs/{run_id}.json + append to runs_index.jsonl.
-"""
-
 from __future__ import annotations
 
 import asyncio
