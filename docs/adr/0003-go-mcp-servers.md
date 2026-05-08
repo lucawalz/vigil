@@ -47,7 +47,7 @@ Chosen option: "Go", because it produces standalone binaries decoupled from the 
 - Bad: The monorepo requires a Go toolchain alongside Python and uv, increasing the onboarding surface
 - Bad: CI runs two separate lint and test pipelines: ruff + pytest for Python, golangci-lint + go test for Go
 
-**Validation Status:** Verified — 4/4 MCP servers; clean interface-driven pattern; `io.Pipe()` tests reliable across the 71-run Hetzner campaign.
+**Validation Status:** Verified — 4/4 MCP servers; clean interface-driven pattern; `io.Pipe()` tests reliable across the v1.0 Hetzner eval campaign.
 
 ### Confirmation
 

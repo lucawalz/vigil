@@ -8,14 +8,16 @@ informed: []
 
 # ADR-0007: Shell-script-based deterministic fault injection
 
+> Updated 2026-05-08: scenario set expanded from v1.0 baseline (12) to v2.0 panel (18) by adding boundary-2..4.
+
 ## Context and Problem Statement
 
-The evaluation campaign requires ground-truth labels (root-cause layer and correct repair action) for each run in order to compute classification accuracy metrics. Two concerns shape the injection approach:
+The evaluation campaign requires ground-truth labels (root-cause layer and correct repair action) for each run to compute classification accuracy metrics. Two concerns shape the injection approach:
 
 1. **Reproducibility**: Each seed must start from an identical cluster state. Fault injection must be idempotent: running `inject.sh` twice produces the same fault, and `reset.sh` unconditionally restores the baseline regardless of agent actions taken during the run.
 2. **Labeling**: The research questions require pre-labeled ground truth (root-cause layer, correct repair action) for each scenario before the agent runs. A fault with no stable label cannot be used to score agent accuracy.
 
-The 12 scenario YAML stubs (covering K8s×5, OS×3, Cross×3, boundary×1 fault types) each require deterministic injection so that scenario K8s-1 always produces the same pod failure mode across all seeds and models.
+The 18 scenario YAML stubs (covering K8s×8, OS×3, Cross×3, Boundary×4) each require deterministic injection so that scenario K8s-1 always produces the same pod failure mode across all seeds and models.
 
 ## Decision Drivers
 
@@ -39,14 +41,14 @@ Chosen option: "Shell-script-based idempotent fault injection", because it produ
 - Good: Deterministic injection produces reproducible ground truth for accuracy, MTTR, and action-class metrics
 - Good: Each scenario can be tested independently and reset between runs without cluster re-provisioning
 - Good: Scripts execute from the agent host, outside the cluster; OS-level fault scenarios cannot take down the injection mechanism
-- Bad: Fault coverage is limited to the 12 pre-defined scenarios; injecting novel fault types requires authoring new scripts
+- Bad: Fault coverage is limited to the 18 pre-defined scenarios; injecting novel fault types requires authoring new scripts
 - Bad: Script maintenance grows linearly with scenario count; complex multi-step faults require careful reset sequencing
 
-**Validation Status:** Verified — 12 scenarios with idempotent inject/reset; reset before injection guarantees clean baseline; 71-run Hetzner campaign confirms identical initial state across all seeds.
+**Validation Status:** Verified — 18 scenarios with idempotent inject/reset; reset before injection guarantees clean baseline; v1.0 Hetzner eval campaign confirms identical initial state across all seeds.
 
 ### Confirmation
 
-The 12 scenario directories under `eval/scenarios/` each contain `inject.sh` and `reset.sh`. The eval harness calls `reset.sh` before `inject.sh` for every run, confirmed in the campaign runner. Eval campaign results show consistent per-scenario pass rates across 3 seeds, confirming identical initial state.
+The 18 scenario directories under `eval/scenarios/` each contain `inject.sh` and `reset.sh`. The eval harness calls `reset.sh` before `inject.sh` for every run, confirmed in the campaign runner. Eval campaign results show consistent per-scenario pass rates across 3 seeds, confirming identical initial state.
 
 ### Pros and Cons of the Options
 
@@ -54,12 +56,12 @@ The 12 scenario directories under `eval/scenarios/` each contain `inject.sh` and
 
 - Good: Zero additional cluster infrastructure; scripts are plain shell runnable on any Unix host with `kubectl` access
 - Good: Ground truth is encoded in the script pair: the injected fault is known before the agent runs
-- Bad: Scale requires manual authoring; adding fault type 13 means writing a new script pair, not configuring a platform
+- Bad: Scale requires manual authoring; adding fault type 19 means writing a new script pair, not configuring a platform
 
 #### Autonomous chaos engineering platform (Chaos Mesh / Litmus)
 
 - Good: Large library of pre-built fault types; no per-scenario scripting required
-- Bad: Chaos Mesh injects faults non-deterministically by design: randomized pod kills, randomized network partitions. Vigil's research questions require pre-labelled ground truth (root-cause layer, correct repair action) for each run; a randomized fault has no stable label. The 12 scenario YAML stubs require deterministic injection so that scenario K8s-1 always produces the same pod failure mode.
+- Bad: Chaos Mesh injects faults non-deterministically by design: randomized pod kills, randomized network partitions. Vigil's research questions require pre-labelled ground truth (root-cause layer, correct repair action) for each run; a randomized fault has no stable label. The 18 scenario YAML stubs require deterministic injection so that scenario K8s-1 always produces the same pod failure mode.
 
 #### Kubernetes operator-driven fault injection
 
@@ -68,6 +70,6 @@ The 12 scenario directories under `eval/scenarios/` each contain `inject.sh` and
 
 ## More Information
 
-- Scenario implementations: `eval/scenarios/` (12 directories, one per fault scenario)
+- Scenario implementations: `eval/scenarios/` (18 directories, one per fault scenario)
 - Eval harness campaign runner: `eval/`
 - Scenario documentation: `docs/eval/scenarios/` (forthcoming)

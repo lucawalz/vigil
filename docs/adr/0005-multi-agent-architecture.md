@@ -44,7 +44,7 @@ Chosen option: "Multi-agent decomposition with dedicated roles", because focused
 - Bad: Four distinct agent lifecycles require careful asyncio management, particularly around MCP client teardown
 - Bad: The Orchestrator coordinates workflow without reasoning about fault semantics directly; it delegates all LLM work to sub-agents
 
-**Validation Status:** Verified — `asyncio.TaskGroup` pattern confirmed in production; circuit breaker essential; 71-run Hetzner campaign confirms parallel pattern reduces MTTR vs sequential remediation and monitoring.
+**Validation Status:** Verified — `asyncio.TaskGroup` pattern confirmed in production; circuit breaker essential; v1.0 Hetzner eval campaign confirms parallel pattern reduces MTTR vs sequential remediation and monitoring.
 
 ### Confirmation
 
@@ -67,7 +67,7 @@ The `asyncio.TaskGroup` pattern is confirmed in `agents/orchestrator/src/orchest
 #### Pipeline-of-functions (no ReAct loop)
 
 - Good: Purely deterministic: no LLM token cost during execution
-- Bad: A non-agent function pipeline would lose the ReAct iterative-reasoning property that Diagnosis requires for multi-step root-cause analysis (e.g. seeing CrashLoopBackOff → fetching logs → spotting OOM → checking node memory pressure). Hardcoding that decision tree per scenario does not scale to 12 fault types.
+- Bad: A non-agent function pipeline would lose the ReAct iterative-reasoning property that Diagnosis requires for multi-step root-cause analysis (e.g. seeing CrashLoopBackOff → fetching logs → spotting OOM → checking node memory pressure). Hardcoding that decision tree per scenario does not scale to 18 fault types.
 
 ## More Information
 

@@ -8,8 +8,8 @@ Flux-managed GitOps) is the enabling substrate for corrigibility, because every 
 atomic, reversible generation switch rather than an in-place edit; and third, that the combination
 of Kubernetes at the application layer and NixOS at the OS layer provides a sufficiently realistic
 target for autonomous remediation to be meaningful. The architecture described here is not a
-forward-looking design sketch; it is a description of a validated system that completed a 71-run
-evaluation campaign across 12 fault scenarios on a Hetzner Cloud cluster.
+forward-looking design sketch; it is a description of a system
+evaluated through fault-injection campaigns on a Hetzner Cloud cluster provisioned via Terraform and orchestrated by GitHub Actions.
 
 ## System Topology
 
