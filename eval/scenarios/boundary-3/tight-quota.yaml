@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tight-quota
+  namespace: default
+spec:
+  hard:
+    requests.memory: "32Mi"
+    requests.cpu: "50m"

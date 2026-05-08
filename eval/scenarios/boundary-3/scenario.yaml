@@ -1,0 +1,13 @@
+id: boundary-3
+name: resourcequota-exhausted
+layer: boundary
+
+root_cause_layer: k8s
+root_cause_component: "ResourceQuota exhausted; pods Pending with no schedule — surface mimics node memory/CPU pressure, agent must NOT escalate to OS"
+correct_action_class: apply_patch
+expected_resolution_path: "diagnosis correctly scopes to k8s (not OS) -> flux_suspend -> apply_patch (raise quota or scale down) -> watchdog_confirm -> flux_resume"
+
+inject_params:
+  namespace: default
+  deployment: vigil-app
+  quota_name: tight-quota

@@ -1,0 +1,13 @@
+id: boundary-2
+name: configmap-deleted
+layer: boundary
+
+root_cause_layer: k8s
+root_cause_component: "ConfigMap deleted; pods CrashLoop with config errors — surface mimics systemd unit failure, agent must NOT escalate to OS"
+correct_action_class: apply_patch
+expected_resolution_path: "diagnosis correctly scopes to k8s (not OS) -> flux_suspend -> apply_patch (recreate ConfigMap) -> watchdog_confirm -> flux_resume"
+
+inject_params:
+  namespace: default
+  deployment: vigil-app
+  configmap_name: vigil-app-config

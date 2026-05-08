@@ -5,10 +5,11 @@ KUBECONFIG_PATH="${1:-${EVAL_RUNNER_KUBECONFIG:-}}"
 
 : "${KUBECONFIG_PATH:?Usage: health-gate.sh <kubeconfig-path> OR set EVAL_RUNNER_KUBECONFIG}"
 
-DEADLINE_S=120
+DEADLINE_S=180
 POLL_INTERVAL_S=5
 NAMESPACE="default"
 DEPLOYMENT="vigil-app"
+ORCHESTRATOR_URL="${VIGIL_ORCHESTRATOR_URL:-http://localhost:9099}"
 
 deadline=$(($(date +%s) + DEADLINE_S))
 iteration=0
@@ -29,6 +30,10 @@ check_flux_kustomization_ready() {
   [ "$status" = "True" ]
 }
 
+check_orchestrator_ready() {
+  curl -sf "${ORCHESTRATOR_URL}/healthz" > /dev/null 2>&1
+}
+
 check_vigil_app_ready() {
   local desired ready
   desired=$(kubectl --kubeconfig "$KUBECONFIG_PATH" get deployment "$DEPLOYMENT" \
@@ -40,7 +45,7 @@ check_vigil_app_ready() {
 
 while [ "$(date +%s)" -lt "$deadline" ]; do
   iteration=$((iteration + 1))
-  if check_nodes_ready && check_flux_kustomization_ready && check_vigil_app_ready; then
+  if check_nodes_ready && check_flux_kustomization_ready && check_vigil_app_ready && check_orchestrator_ready; then
     echo "HEALTH_GATE: ok (iteration=$iteration)" >&2
     echo "HEALTH_GATE: ok"
     exit 0

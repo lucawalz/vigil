@@ -44,7 +44,7 @@ Chosen option: "MCP-only tool surface", because it makes command injection struc
 - Bad: The stdio transport adds modest per-call latency compared to a direct in-process API call
 - Bad: Adding a new capability requires a new typed tool definition in Go, not just a new subprocess invocation
 
-**Validation Status:** Verified — 4/4 MCP servers tested with `io.Pipe()` fakes; no regressions across the 71-run Hetzner campaign.
+**Validation Status:** Verified — 4/4 MCP servers tested with `io.Pipe()` fakes; no regressions across the v1.0 Hetzner eval campaign.
 
 ### Confirmation
 

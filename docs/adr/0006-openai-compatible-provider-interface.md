@@ -10,7 +10,7 @@ informed: []
 
 ## Context and Problem Statement
 
-The evaluation campaign compares multiple LLM providers across the same 12 fault scenarios. Forking agent code per provider would make inter-provider comparisons unreliable and maintenance expensive. Three constraints shape the interface decision:
+The evaluation campaign compares multiple LLM providers across the same 18 fault scenarios. Forking agent code per provider would make inter-provider comparisons unreliable and maintenance expensive. Three constraints shape the interface decision:
 
 1. All targeted providers expose an OpenAI-compatible REST API: Anthropic Claude (via Anthropic's OpenAI-compatible endpoint) and Ollama Cloud (hosted open-weight models).
 2. The eval harness requires identical agent code paths across providers so that performance differences reflect model capability, not implementation variance.
@@ -37,11 +37,11 @@ Chosen option: "OpenAI-compatible REST interface via Pydantic AI `OpenAIChatMode
 
 - Good: Switching providers requires changing three environment variables; no code changes are needed
 - Good: All evaluation models run through identical agent code, ensuring a fair inter-provider comparison
-- Good: The 71-run eval campaign across qwen3-coder-next and deepseek-v3.2 ran without any code changes between providers, confirming the interface holds in practice
+- Good: The v1.0 Hetzner eval campaign across qwen3-coder-next and deepseek-v3.2 ran without any code changes between providers, confirming the interface holds in practice
 - Bad: Provider-specific features (Anthropic's extended thinking mode, Ollama-specific sampling parameters) are inaccessible through the compatibility layer
 - Bad: Token accounting and latency metrics are normalized at the OpenAI response schema level, which may differ slightly from provider-native SDKs
 
-**Validation Status:** Verified — `OpenAIChatModel` interface holds across two providers; 71-run campaign (qwen3-coder-next and deepseek-v3.2) ran with zero code changes between providers.
+**Validation Status:** Verified — `OpenAIChatModel` interface holds across two providers; v1.0 Hetzner eval campaign (qwen3-coder-next and deepseek-v3.2) ran with zero code changes between providers.
 
 ### Confirmation
 
@@ -58,7 +58,7 @@ The `OpenAIChatModel` configuration is verified in `agents/common/src/common/pro
 #### Per-provider native SDKs
 
 - Good: Full access to provider-specific features and native error types
-- Bad: Per-provider SDK forks would multiply agent code by the number of providers (Anthropic, Ollama Cloud, future Groq); inter-provider eval comparisons would no longer be apples-to-apples because token-accounting and tool-call schemas differ. The 71-run eval campaign across two providers ran identical agent code precisely because the provider boundary is one OpenAI-compatible HTTP request.
+- Bad: Per-provider SDK forks would multiply agent code by the number of providers (Anthropic, Ollama Cloud, future Groq); inter-provider eval comparisons would no longer be apples-to-apples because token-accounting and tool-call schemas differ. The v1.0 Hetzner eval campaign across two providers ran identical agent code precisely because the provider boundary is one OpenAI-compatible HTTP request.
 
 #### LiteLLM-style aggregator
 

@@ -42,7 +42,7 @@ Chosen option: "Pydantic AI", because it is the only evaluated framework that na
 - Bad: Pydantic AI is a relatively young library; community resources are limited compared to LangChain
 - Bad: Async-first design requires careful asyncio lifecycle management, especially during agent teardown
 
-**Validation Status:** Verified — `MCPServerStdio` boot-once-in-lifespan pattern confirmed in production; structured outputs validated across the 71-run Hetzner campaign.
+**Validation Status:** Verified — `MCPServerStdio` boot-once-in-lifespan pattern confirmed in production; structured outputs validated across the v1.0 Hetzner eval campaign.
 
 ### Confirmation
 

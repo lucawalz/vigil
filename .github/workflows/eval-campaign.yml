@@ -37,7 +37,7 @@ jobs:
           - group: os
             scenarios: "os-1 os-2 os-3"
           - group: misc
-            scenarios: "boundary-1 pg-1 redis-1 ingress-1"
+            scenarios: "boundary-1 boundary-2 boundary-3 boundary-4 pg-1 redis-1 ingress-1"
     env:
       TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
       TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
@@ -170,7 +170,7 @@ jobs:
           DEADLINE=$(($(date +%s) + 600))
           until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               root@${{ steps.agent.outputs.ip }} \
-              "systemctl is-active vigil-orchestrator.service" >/dev/null 2>&1; do
+              "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
             if [ $(date +%s) -gt $DEADLINE ]; then
               echo "Orchestrator not ready after 10 minutes"
               exit 1
@@ -268,6 +268,9 @@ jobs:
 
       - name: Aggregate
         run: uv run vigil-eval aggregate
+
+      - name: Publish results to step summary
+        run: cat eval/results/step_summary.md >> $GITHUB_STEP_SUMMARY
 
       - name: Commit and push results
         env:
