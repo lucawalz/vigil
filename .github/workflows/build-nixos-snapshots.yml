@@ -35,6 +35,7 @@ jobs:
         run: packer init .
 
       - name: Build snapshot
+        id: build
         working-directory: infra/packer
         env:
           PKR_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
@@ -43,3 +44,17 @@ jobs:
           PKR_VAR_nixos_hash: ${{ steps.hash.outputs.nixos_hash }}
           PKR_VAR_ssh_private_key_file: /tmp/packer_key
         run: packer build .
+
+      - name: Cleanup leaked Packer servers
+        if: always()
+        env:
+          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+        run: |
+          IDS=$(curl -sf -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            "https://api.hetzner.cloud/v1/servers?per_page=50" \
+            | jq -r '.servers[] | select(.name | startswith("packer-")) | .id')
+          for ID in $IDS; do
+            echo "Deleting leaked Packer server $ID"
+            curl -sf -X DELETE -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              "https://api.hetzner.cloud/v1/servers/$ID"
+          done
