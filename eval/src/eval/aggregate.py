@@ -239,6 +239,8 @@ def write_step_summary(
 ) -> None:
     records = _load_records(runs_dir, index_path)
     if not records:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "step_summary.md").write_text("No run data available.\n")
         return
 
     by_group: dict[str, dict[str, dict | None]] = {}
