@@ -12,7 +12,7 @@
     script = ''
       install -m 700 -d /root/.ssh
       TMPKEYS=$(mktemp)
-      ${pkgs.curl}/bin/curl -sf --retry 3 --retry-delay 2 \
+      ${pkgs.curl}/bin/curl -sf --connect-timeout 5 --max-time 10 --retry 3 --retry-delay 2 \
         http://169.254.169.254/hetzner/v1/metadata \
         | ${pkgs.gnugrep}/bin/grep -E '^- (ssh-|ecdsa-)' \
         | ${pkgs.gnused}/bin/sed 's/^- //' \
