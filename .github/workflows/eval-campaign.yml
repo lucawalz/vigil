@@ -273,6 +273,7 @@ jobs:
         run: cat eval/results/step_summary.md >> $GITHUB_STEP_SUMMARY
 
       - name: Commit and push results
+        if: ${{ env.LOCAL_RUN != '1' }}
         env:
           TARGET_BRANCH: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
         run: |
