@@ -35,8 +35,4 @@ build {
     ]
   }
 
-  provisioner "shell" {
-    pause_before = "60s"
-    inline       = ["echo 'snapshot ready: vigil-nixos-${var.role}-${var.nixos_hash}'"]
-  }
 }
