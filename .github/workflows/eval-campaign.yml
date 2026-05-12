@@ -151,7 +151,8 @@ jobs:
             root@$AGENT_IP:/root/vigil/eval/runs/ ./eval/runs/ || true
           if ssh $SSH_OPTS root@$AGENT_IP "test -f /root/vigil/eval/runs_index.jsonl"; then
             rsync -avz -e "ssh $SSH_OPTS" \
-              root@$AGENT_IP:/root/vigil/eval/runs_index.jsonl ./eval/runs_index.jsonl || true
+              root@$AGENT_IP:/root/vigil/eval/runs_index.jsonl \
+              ./eval/runs/runs_index_${{ matrix.group }}.jsonl || true
           fi
 
       - name: Upload run artifacts
@@ -161,7 +162,6 @@ jobs:
           name: group-runs-${{ matrix.group }}
           path: |
             eval/runs/
-            eval/runs_index.jsonl
           if-no-files-found: warn
 
       - name: Terraform destroy
@@ -193,11 +193,11 @@ jobs:
           merge-multiple: true
           path: eval/runs
 
-      - name: Move runs_index to expected location
+      - name: Merge runs indexes
         run: |
-          if [ -f eval/runs/runs_index.jsonl ]; then
-            mv eval/runs/runs_index.jsonl eval/runs_index.jsonl
-          fi
+          for f in eval/runs/runs_index_*.jsonl; do
+            [ -f "$f" ] && cat "$f" >> eval/runs_index.jsonl
+          done
 
       - name: Install dependencies
         run: uv sync --locked --all-packages
