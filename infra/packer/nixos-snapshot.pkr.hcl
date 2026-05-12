@@ -8,11 +8,12 @@ packer {
 }
 
 source "hcloud" "nixos" {
-  token        = var.hcloud_token
-  image        = "debian-12"
-  location     = "fsn1"
-  server_type  = "cpx22"
-  ssh_username = "root"
+  token                = var.hcloud_token
+  image                = "debian-12"
+  location             = "fsn1"
+  server_type          = "cpx22"
+  ssh_username         = "root"
+  ssh_private_key_file = var.ssh_private_key_file
 
   snapshot_name = "vigil-nixos-${var.role}-${var.nixos_hash}"
   snapshot_labels = {
@@ -30,7 +31,7 @@ build {
 
   provisioner "shell-local" {
     inline = [
-      "nix run --accept-flake-config 'github:nix-community/nixos-anywhere?ref=1.13.0' -- --ssh-option 'IdentityFile=${build.SSHPrivateKey}' --ssh-option 'StrictHostKeyChecking=no' --ssh-option 'UserKnownHostsFile=/dev/null' --flake 'github:lucawalz/vigil/${var.nixos_commit_sha}?dir=infra/nixos#hetzner-${var.role}' root@${build.Host}"
+      "nix run --accept-flake-config 'github:nix-community/nixos-anywhere?ref=1.13.0' -- --ssh-option 'IdentityFile=${var.ssh_private_key_file}' --ssh-option 'StrictHostKeyChecking=no' --ssh-option 'UserKnownHostsFile=/dev/null' --flake 'github:lucawalz/vigil/${var.nixos_commit_sha}?dir=infra/nixos#hetzner-${var.role}' root@${build.Host}"
     ]
   }
 
