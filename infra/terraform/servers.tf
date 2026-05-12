@@ -1,7 +1,27 @@
+data "hcloud_image" "master_snapshot" {
+  with_selector = "vigil-role=master"
+  most_recent   = true
+}
+
+data "hcloud_image" "worker_1_snapshot" {
+  with_selector = "vigil-role=worker-1"
+  most_recent   = true
+}
+
+data "hcloud_image" "worker_2_snapshot" {
+  with_selector = "vigil-role=worker-2"
+  most_recent   = true
+}
+
+data "hcloud_image" "agent_snapshot" {
+  with_selector = "vigil-role=agent"
+  most_recent   = true
+}
+
 resource "hcloud_server" "master" {
   name        = "${var.group_name}-${var.run_id}-master"
   server_type = "cpx22"
-  image       = "debian-12"
+  image       = data.hcloud_image.master_snapshot.id
   location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
@@ -17,37 +37,8 @@ resource "hcloud_server" "master" {
   depends_on = [hcloud_network_subnet.vigil]
 }
 
-resource "local_file" "extra_files_script" {
-  filename        = "/tmp/nixos-anywhere-extra-files-${var.run_id}.sh"
-  file_permission = "0755"
-  content         = <<-SCRIPT
-    #!/usr/bin/env bash
-    set -euo pipefail
-    install -m 700 -d root/.ssh
-    cat "$HOME/.ssh/id_ed25519.pub" > root/.ssh/authorized_keys
-    chmod 600 root/.ssh/authorized_keys
-  SCRIPT
-}
-
-# To upgrade nixos-anywhere, bump the ?ref= in all four install_* modules below.
-module "install_master" {
-  source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one?ref=1.13.0"
-
-  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-master.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-master.config.system.build.diskoScript"
-  target_host            = hcloud_server.master.ipv4_address
-  instance_id            = tostring(hcloud_server.master.id)
-  build_on_remote        = true
-  debug_logging          = true
-  install_bootloader     = true
-  nix_options            = { "tarball-ttl" = "0" }
-
-  extra_files_script = local_file.extra_files_script.filename
-  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
-}
-
 resource "null_resource" "k3s_token_master" {
-  depends_on = [module.install_master]
+  depends_on = [hcloud_server.master]
 
   triggers = {
     instance_id = tostring(hcloud_server.master.id)
@@ -76,7 +67,7 @@ resource "null_resource" "k3s_token_master" {
 resource "hcloud_server" "worker_1" {
   name        = "${var.group_name}-${var.run_id}-worker-1"
   server_type = "cpx22"
-  image       = "debian-12"
+  image       = data.hcloud_image.worker_1_snapshot.id
   location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
@@ -92,24 +83,8 @@ resource "hcloud_server" "worker_1" {
   depends_on = [hcloud_network_subnet.vigil]
 }
 
-module "install_worker_1" {
-  source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one?ref=1.13.0"
-
-  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-1.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-1.config.system.build.diskoScript"
-  target_host            = hcloud_server.worker_1.ipv4_address
-  instance_id            = tostring(hcloud_server.worker_1.id)
-  build_on_remote        = true
-  debug_logging          = true
-  install_bootloader     = true
-  nix_options            = { "tarball-ttl" = "0" }
-
-  extra_files_script = local_file.extra_files_script.filename
-  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
-}
-
 resource "null_resource" "k3s_token_worker_1" {
-  depends_on = [module.install_worker_1]
+  depends_on = [hcloud_server.worker_1]
 
   triggers = {
     instance_id = tostring(hcloud_server.worker_1.id)
@@ -134,7 +109,7 @@ resource "null_resource" "k3s_token_worker_1" {
 resource "hcloud_server" "worker_2" {
   name        = "${var.group_name}-${var.run_id}-worker-2"
   server_type = "cpx22"
-  image       = "debian-12"
+  image       = data.hcloud_image.worker_2_snapshot.id
   location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
@@ -150,24 +125,8 @@ resource "hcloud_server" "worker_2" {
   depends_on = [hcloud_network_subnet.vigil]
 }
 
-module "install_worker_2" {
-  source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one?ref=1.13.0"
-
-  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-2.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-worker-2.config.system.build.diskoScript"
-  target_host            = hcloud_server.worker_2.ipv4_address
-  instance_id            = tostring(hcloud_server.worker_2.id)
-  build_on_remote        = true
-  debug_logging          = true
-  install_bootloader     = true
-  nix_options            = { "tarball-ttl" = "0" }
-
-  extra_files_script = local_file.extra_files_script.filename
-  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
-}
-
 resource "null_resource" "k3s_token_worker_2" {
-  depends_on = [module.install_worker_2]
+  depends_on = [hcloud_server.worker_2]
 
   triggers = {
     instance_id = tostring(hcloud_server.worker_2.id)
@@ -192,7 +151,7 @@ resource "null_resource" "k3s_token_worker_2" {
 resource "hcloud_server" "agent" {
   name        = "${var.group_name}-${var.run_id}-agent"
   server_type = "cpx22"
-  image       = "debian-12"
+  image       = data.hcloud_image.agent_snapshot.id
   location    = "fsn1"
 
   ssh_keys = [hcloud_ssh_key.operator.id]
@@ -206,22 +165,6 @@ resource "hcloud_server" "agent" {
   firewall_ids = [hcloud_firewall.vigil.id]
 
   depends_on = [hcloud_network_subnet.vigil]
-}
-
-module "install_agent" {
-  source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one?ref=1.13.0"
-
-  nixos_system_attr      = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-agent.config.system.build.toplevel"
-  nixos_partitioner_attr = "github:lucawalz/vigil/${var.vigil_branch}?dir=infra/nixos#nixosConfigurations.hetzner-agent.config.system.build.diskoScript"
-  target_host            = hcloud_server.agent.ipv4_address
-  instance_id            = tostring(hcloud_server.agent.id)
-  build_on_remote        = true
-  debug_logging          = true
-  install_bootloader     = true
-  nix_options            = { "tarball-ttl" = "0" }
-
-  extra_files_script = local_file.extra_files_script.filename
-  deployment_ssh_key = file(pathexpand(var.ssh_private_key_path))
 }
 
 resource "null_resource" "kubeconfig" {
@@ -252,7 +195,7 @@ resource "null_resource" "kubeconfig" {
 }
 
 resource "null_resource" "kubeconfig_agent" {
-  depends_on = [null_resource.kubeconfig, module.install_agent]
+  depends_on = [null_resource.kubeconfig, hcloud_server.agent]
 
   triggers = {
     master_id = hcloud_server.master.id
@@ -278,7 +221,7 @@ resource "null_resource" "kubeconfig_agent" {
 }
 
 resource "null_resource" "worker_nixos_config" {
-  depends_on = [module.install_worker_1, module.install_worker_2]
+  depends_on = [null_resource.k3s_token_worker_1, null_resource.k3s_token_worker_2]
 
   triggers = {
     worker_1_ip = hcloud_server.worker_1.ipv4_address

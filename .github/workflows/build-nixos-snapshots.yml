@@ -1,0 +1,41 @@
+name: Build NixOS Snapshots
+
+on:
+  push:
+    branches: [main]
+    paths: ['infra/nixos/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [master, worker-1, worker-2, agent]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v17
+
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: "~1.11"
+
+      - name: Compute NixOS tree hash
+        id: hash
+        run: echo "nixos_hash=$(git rev-parse HEAD:infra/nixos)" >> $GITHUB_OUTPUT
+
+      - name: Packer init
+        working-directory: infra/packer
+        run: packer init .
+
+      - name: Build snapshot
+        working-directory: infra/packer
+        env:
+          PKR_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          PKR_VAR_role: ${{ matrix.role }}
+          PKR_VAR_nixos_commit_sha: ${{ github.sha }}
+          PKR_VAR_nixos_hash: ${{ steps.hash.outputs.nixos_hash }}
+        run: packer build .
