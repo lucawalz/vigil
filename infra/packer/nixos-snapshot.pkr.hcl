@@ -30,7 +30,7 @@ build {
 
   provisioner "shell-local" {
     inline = [
-      "nix run --accept-flake-config 'github:nix-community/nixos-anywhere?ref=1.13.0' -- --flake 'github:lucawalz/vigil/${var.nixos_commit_sha}?dir=infra/nixos#hetzner-${var.role}' root@${build.Host}"
+      "nix run --accept-flake-config 'github:nix-community/nixos-anywhere?ref=1.13.0' -- --ssh-option 'IdentityFile=${build.SSHPrivateKey}' --ssh-option 'StrictHostKeyChecking=no' --ssh-option 'UserKnownHostsFile=/dev/null' --flake 'github:lucawalz/vigil/${var.nixos_commit_sha}?dir=infra/nixos#hetzner-${var.role}' root@${build.Host}"
     ]
   }
 
