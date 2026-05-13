@@ -73,3 +73,25 @@ def test_run_diagnosis_returns_tuple_with_usage() -> None:
     assert "result.usage()" in source
     assert "result.all_messages()" in source
     assert "return result.output, result.usage(), result.all_messages()" in source
+
+
+def test_diagnosis_system_prompt_contains_action_selection_rule() -> None:
+    source = inspect.getsource(_diag_module)
+    assert "recommended_action selection" in source
+
+
+def test_diagnosis_report_escalate_is_invalid() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        DiagnosisReport(
+            root_cause="test",
+            root_cause_component="vigil-app",
+            severity="high",
+            affected_resources=["default/vigil-app"],
+            evidence="test evidence",
+            recommended_action="escalate",
+            confidence=0.9,
+            requires_os_level=False,
+        )

@@ -19,9 +19,7 @@ class DiagnosisReport(BaseModel):
         description="Exact resource names from kubectl output, including namespace"
     )
     evidence: str = Field(description="Verbatim log line or event proving root cause")
-    recommended_action: Literal[
-        "apply_patch", "rollout_undo", "rebuild_nixos", "escalate"
-    ]
+    recommended_action: Literal["apply_patch", "rollout_undo", "rebuild_nixos"]
     confidence: float = Field(ge=0.0, le=1.0)
     requires_os_level: bool
     target_host: str | None = Field(
