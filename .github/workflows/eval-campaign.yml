@@ -59,7 +59,7 @@ jobs:
         with:
           terraform_version: "~1.15"
 
-      - uses: astral-sh/setup-uv@v8.0.0
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
 
@@ -182,7 +182,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
 
-      - uses: astral-sh/setup-uv@v8.0.0
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
 
