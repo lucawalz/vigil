@@ -86,7 +86,11 @@ def aggregate_runs(
     model_summary: dict[str, dict] = {}
     for model, runs in by_model.items():
         successes = [r for r in runs if r.get("success_rate")]
-        mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
+        mttrs = [
+            r["MTTR_s"]
+            for r in runs
+            if isinstance(r.get("MTTR_s"), (int, float)) and r.get("success_rate")
+        ]
         diag_acc = [r for r in runs if r.get("diagnosis_accuracy") is not None]
         diag_correct = [r for r in diag_acc if r["diagnosis_accuracy"]]
         dest = [r for r in runs if r.get("destructive_repair")]
