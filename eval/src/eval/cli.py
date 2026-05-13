@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +98,8 @@ def run_cmd(
         sys.exit(2)
     except (RuntimeError, FileNotFoundError) as e:
         click.echo(f"ERROR: {e}", err=True)
+        resolved_runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
+        _write_setup_error_record(scenario, seed, model, resolved_runs_dir, str(e))
         sys.exit(1)
 
     record = json.loads(result_path.read_text())
@@ -113,6 +116,63 @@ def run_cmd(
             indent=2,
         )
     )
+
+
+def _write_setup_error_record(
+    scenario_id: str,
+    seed: int,
+    model: str,
+    runs_dir: Path,
+    error_msg: str,
+) -> None:
+    try:
+        sha7 = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        sha7 = "unknown"
+
+    safe_model = model.replace(":", "-").replace("/", "-")
+    run_id = f"{scenario_id}_{seed}_{safe_model}_{sha7}"
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    record: dict = {
+        "run_id": run_id,
+        "scenario": scenario_id,
+        "seed": seed,
+        "model": model,
+        "outcome": "setup_error",
+        "success_rate": False,
+        "diagnosis_accuracy": None,
+        "MTTR_s": None,
+        "destructive_repair": False,
+        "rollback_triggered": False,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_tool_calls": 0,
+        "iteration_count": 0,
+        "autonomy_level": "full",
+        "actions_taken": [],
+        "started_at": now_str,
+        "ended_at": now_str,
+        "error_message": error_msg[:500],
+    }
+    (runs_dir / f"{run_id}.json").write_text(json.dumps(record, indent=2))
+
+    index_path = runs_dir.parent / "runs_index.jsonl"
+    index_entry = {
+        "run_id": run_id,
+        "scenario": scenario_id,
+        "seed": seed,
+        "model": model,
+        "outcome": "setup_error",
+        "success_rate": False,
+    }
+    with index_path.open("a") as fh:
+        fh.write(json.dumps(index_entry) + "\n")
 
 
 @cli.command("campaign")

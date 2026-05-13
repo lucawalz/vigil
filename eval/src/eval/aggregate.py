@@ -10,8 +10,6 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-_OS_LAYERS = frozenset({"os", "cross"})
-
 _GROUP_LABELS: dict[str, str] = {
     "k8s": "Kubernetes Layer",
     "os": "OS / NixOS Layer",
@@ -69,12 +67,18 @@ def aggregate_runs(
 ) -> dict[str, Any]:
     """Compute per-model and per-scenario metric tables plus escalation accuracy."""
     records = _load_records(runs_dir, index_path)
+    planned_scenarios: list[str] = (
+        sorted(p.name for p in scenarios_dir.iterdir() if p.is_dir())
+        if scenarios_dir.is_dir()
+        else []
+    )
     if not records:
         return {
             "by_model": {},
             "by_scenario": {},
             "escalation": {},
             "totals": {"n": 0, "n_models": 0, "n_scenarios": 0},
+            "planned_scenarios": planned_scenarios,
         }
 
     by_model: dict[str, list[dict]] = {}
@@ -86,33 +90,45 @@ def aggregate_runs(
     model_summary: dict[str, dict] = {}
     for model, runs in by_model.items():
         successes = [r for r in runs if r.get("success_rate")]
-        mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
+        non_aborts = [r for r in runs if r.get("outcome") != "abort"]
+        mttrs = [
+            r["MTTR_s"]
+            for r in runs
+            if isinstance(r.get("MTTR_s"), (int, float)) and r.get("success_rate")
+        ]
         diag_acc = [r for r in runs if r.get("diagnosis_accuracy") is not None]
         diag_correct = [r for r in diag_acc if r["diagnosis_accuracy"]]
         dest = [r for r in runs if r.get("destructive_repair")]
         rollbacks = [r for r in runs if r.get("rollback_triggered")]
         mean_mttr, std_mttr = _mean_std(mttrs)
+        n_attempts = len(non_aborts)
         model_summary[model] = {
             "n_runs": len(runs),
+            "n_attempts": n_attempts,
             "success_rate": len(successes) / len(runs) if runs else 0.0,
+            "success_rate_given_attempt": (
+                len(successes) / n_attempts if n_attempts else None
+            ),
             "mean_MTTR_s": mean_mttr,
             "std_MTTR_s": std_mttr,
             "diagnosis_accuracy": (
                 len(diag_correct) / len(diag_acc) if diag_acc else None
             ),
+            "diag_n": len(diag_acc),
             "destructive_repair_rate": len(dest) / len(runs) if runs else 0.0,
             "rollback_triggered_rate": len(rollbacks) / len(runs) if runs else 0.0,
+            "n_eligible": n_attempts,
             "mean_input_tokens": _mean_std(
-                [r.get("total_input_tokens", 0) for r in runs]
+                [r.get("total_input_tokens", 0) for r in non_aborts]
             )[0],
             "mean_output_tokens": _mean_std(
-                [r.get("total_output_tokens", 0) for r in runs]
+                [r.get("total_output_tokens", 0) for r in non_aborts]
             )[0],
-            "mean_tool_calls": _mean_std([r.get("total_tool_calls", 0) for r in runs])[
-                0
-            ],
+            "mean_tool_calls": _mean_std(
+                [r.get("total_tool_calls", 0) for r in non_aborts]
+            )[0],
             "mean_iteration_count": _mean_std(
-                [r.get("iteration_count", 0) for r in runs]
+                [r.get("iteration_count", 0) for r in non_aborts]
             )[0],
         }
 
@@ -129,7 +145,7 @@ def aggregate_runs(
             "std_MTTR_s": std_mttr,
         }
         layer = _layer_for_scenario(scenarios_dir, scenario)
-        if layer in _OS_LAYERS:
+        if layer is not None:
             scored = [r for r in runs if r.get("diagnosis_accuracy") is not None]
             correct = [r for r in scored if r["diagnosis_accuracy"]]
             per_model: dict[str, dict] = {}
@@ -147,7 +163,7 @@ def aggregate_runs(
                 "per_model": per_model,
             }
         else:
-            escalation[scenario] = {"layer": layer, "accuracy": None}
+            escalation[scenario] = {"layer": None, "accuracy": None}
 
     return {
         "by_model": model_summary,
@@ -158,6 +174,7 @@ def aggregate_runs(
             "n_models": len(by_model),
             "n_scenarios": len(by_scenario),
         },
+        "planned_scenarios": planned_scenarios,
     }
 
 
@@ -180,19 +197,20 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     lines.append(
         "| Model | N | Success Rate | Mean MTTR (s) | Std MTTR (s) | "
         "Diag. Accuracy | Destructive % | Rollback % | "
-        "Mean In/Out Tokens | Mean Tool Calls |"
+        "Mean In/Out Tokens | Mean Tool Calls | Mean Iterations |"
     )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---|---:|")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|")
     for m, row in summary["by_model"].items():
         lines.append(
             f"| {m} | {row['n_runs']} | "
             f"{row['success_rate']:.2f} | "
             f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} | "
-            f"{_fmt(row['diagnosis_accuracy'])} | "
+            f"{_fmt_diag(row['diagnosis_accuracy'], row.get('diag_n'))} | "
             f"{row['destructive_repair_rate']:.2f} | "
             f"{row['rollback_triggered_rate']:.2f} | "
             f"{_fmt(row['mean_input_tokens'])}/{_fmt(row['mean_output_tokens'])} | "
-            f"{_fmt(row['mean_tool_calls'])} |"
+            f"{_fmt(row['mean_tool_calls'])} | "
+            f"{_fmt(row['mean_iteration_count'])} |"
         )
     lines.append("")
 
@@ -200,11 +218,26 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     lines.append("")
     lines.append("| Scenario | N | Success Rate | Mean MTTR (s) | Std MTTR (s) |")
     lines.append("|---|---:|---:|---:|---:|")
-    for s, row in summary["by_scenario"].items():
-        lines.append(
-            f"| {s} | {row['n_runs']} | {row['success_rate']:.2f} | "
-            f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} |"
+    by_scenario = summary["by_scenario"]
+    planned: list[str] = summary.get("planned_scenarios") or []
+    scenario_keys = planned if planned else sorted(by_scenario)
+    ordered_scenarios: list[str] = []
+    for group in _GROUP_ORDER:
+        ordered_scenarios.extend(
+            s for s in scenario_keys if _scenario_group(s) == group
         )
+    for s in scenario_keys:
+        if s not in ordered_scenarios:
+            ordered_scenarios.append(s)
+    for s in ordered_scenarios:
+        row = by_scenario.get(s)
+        if row is None:
+            lines.append(f"| {s} | no data | — | — | — |")
+        else:
+            lines.append(
+                f"| {s} | {row['n_runs']} | {row['success_rate']:.2f} | "
+                f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} |"
+            )
     lines.append("")
 
     lines.append("## Cross-Layer Escalation Accuracy")
@@ -223,10 +256,16 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
 
     lines.append("---")
     lines.append("")
-    lines.append(
-        "_Note: std values computed from 3 seeds per cell are approximate "
-        "(n=3); treat as directional only._"
-    )
+    seed_counts = [row["n_runs"] for row in summary["by_scenario"].values()]
+    max_n = max(seed_counts) if seed_counts else 0
+    if max_n <= 1:
+        footer = "_Single-seed campaign — std values omitted._"
+    else:
+        footer = (
+            f"_Note: std values computed from {max_n} seeds per cell; "
+            "treat as directional only._"
+        )
+    lines.append(footer)
 
     (output_dir / "REPORT.md").write_text("\n".join(lines) + "\n")
 
@@ -323,3 +362,13 @@ def _fmt(v: Any) -> str:
     if isinstance(v, float):
         return f"{v:.2f}"
     return str(v)
+
+
+def _fmt_diag(ratio: float | None, n: int | None) -> str:
+    if ratio is None:
+        return "—"
+    base = f"{ratio:.2f}"
+    if n is not None:
+        correct = round(ratio * n)
+        return f"{base} ({correct}/{n})"
+    return base
