@@ -61,7 +61,11 @@ Return a RemediationResult with:
 - destructive_repair: True if any mutation tool (apply_patch, rollout_undo,
   rebuild_nixos/rebuild_test) was invoked.
 
-Do not call any tool from ssh-mcp; it is not in your toolset."""
+Do not call any tool from ssh-mcp; it is not in the toolset.
+
+If recommended_action is anything other than "apply_patch", "rollout_undo", or
+"rebuild_nixos", return immediately with success=False, actions_taken=[],
+tool_calls_count=0, destructive_repair=False. Do not call any tools."""
 
 
 remediation_agent: Agent[RemediationDeps, RemediationResult] = Agent(
