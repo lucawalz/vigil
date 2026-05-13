@@ -1,7 +1,4 @@
 { pkgs, ... }:
-let
-  metadataUrl = "http://169.254.169.254/hetzner/v1/metadata";
-in
 {
   systemd.services.cloud-keys = {
     description = "Inject operator SSH keys from Hetzner metadata";
@@ -14,22 +11,55 @@ in
       RemainAfterExit = true;
       Restart = "on-failure";
       RestartSec = "5";
+      StartLimitBurst = 10;
+      StartLimitIntervalSec = 600;
     };
     script = ''
+      set -Eeuo pipefail
+
       install -m 700 -d /root/.ssh
       touch /root/.ssh/authorized_keys
       chmod 600 /root/.ssh/authorized_keys
-      TMPKEYS=$(mktemp)
-      ${pkgs.curl}/bin/curl -sf --connect-timeout 5 --max-time 10 --retry 3 --retry-delay 2 \
-        ${metadataUrl} \
-        | ${pkgs.gnugrep}/bin/grep -E '^- (ssh-|ecdsa-)' \
-        | ${pkgs.gnused}/bin/sed 's/^- //' \
-        > "$TMPKEYS"
-      if [[ -s "$TMPKEYS" ]]; then
-        cat "$TMPKEYS" >> /root/.ssh/authorized_keys
-        ${pkgs.coreutils}/bin/sort -u /root/.ssh/authorized_keys -o /root/.ssh/authorized_keys
+
+      RAW=$(mktemp)
+      PARSED=$(mktemp)
+      trap 'rm -f "$RAW" "$PARSED"' EXIT
+
+      HTTP_CODE=$(${pkgs.curl}/bin/curl -sS -o "$RAW" \
+        -w '%{http_code}' \
+        --connect-timeout 5 --max-time 10 --retry 3 --retry-delay 2 \
+        http://169.254.169.254/hetzner/v1/metadata)
+
+      RAW_BYTES=$(${pkgs.coreutils}/bin/wc -c < "$RAW")
+      echo "cloud-keys: metadata http_code=$HTTP_CODE bytes=$RAW_BYTES"
+
+      if [ "$HTTP_CODE" != "200" ]; then
+        echo "cloud-keys: metadata fetch failed" >&2
+        exit 1
       fi
-      rm -f "$TMPKEYS"
+
+      ${pkgs.gnugrep}/bin/grep -E '^- (ssh-|ecdsa-)' "$RAW" \
+        | ${pkgs.gnused}/bin/sed 's/^- //' \
+        > "$PARSED" || true
+
+      PARSED_LINES=$(${pkgs.coreutils}/bin/wc -l < "$PARSED")
+      echo "cloud-keys: parsed_keys=$PARSED_LINES"
+
+      while IFS= read -r KEY; do
+        FP=$(echo "$KEY" | ${pkgs.openssh}/bin/ssh-keygen -lf - 2>/dev/null || echo "fingerprint-failed")
+        echo "cloud-keys: fingerprint $FP"
+      done < "$PARSED"
+
+      if [ "$PARSED_LINES" -lt 1 ]; then
+        echo "cloud-keys: no operator keys parsed from metadata" >&2
+        exit 1
+      fi
+
+      cat "$PARSED" >> /root/.ssh/authorized_keys
+      ${pkgs.coreutils}/bin/sort -u /root/.ssh/authorized_keys -o /root/.ssh/authorized_keys
+
+      FINAL_LINES=$(${pkgs.coreutils}/bin/wc -l < /root/.ssh/authorized_keys)
+      echo "cloud-keys: authorized_keys lines=$FINAL_LINES"
     '';
   };
 }
