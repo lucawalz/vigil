@@ -202,11 +202,26 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     lines.append("")
     lines.append("| Scenario | N | Success Rate | Mean MTTR (s) | Std MTTR (s) |")
     lines.append("|---|---:|---:|---:|---:|")
-    for s, row in summary["by_scenario"].items():
-        lines.append(
-            f"| {s} | {row['n_runs']} | {row['success_rate']:.2f} | "
-            f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} |"
+    by_scenario = summary["by_scenario"]
+    planned: list[str] = summary.get("planned_scenarios") or []
+    scenario_keys = planned if planned else sorted(by_scenario)
+    ordered_scenarios: list[str] = []
+    for group in _GROUP_ORDER:
+        ordered_scenarios.extend(
+            s for s in scenario_keys if _scenario_group(s) == group
         )
+    for s in scenario_keys:
+        if s not in ordered_scenarios:
+            ordered_scenarios.append(s)
+    for s in ordered_scenarios:
+        row = by_scenario.get(s)
+        if row is None:
+            lines.append(f"| {s} | no data | — | — | — |")
+        else:
+            lines.append(
+                f"| {s} | {row['n_runs']} | {row['success_rate']:.2f} | "
+                f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} |"
+            )
     lines.append("")
 
     lines.append("## Cross-Layer Escalation Accuracy")
