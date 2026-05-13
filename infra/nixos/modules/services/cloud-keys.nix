@@ -27,7 +27,7 @@
       HTTP_CODE=$(${pkgs.curl}/bin/curl -sS -o "$RAW" \
         -w '%{http_code}' \
         --connect-timeout 5 --max-time 10 --retry 3 --retry-delay 2 \
-        http://169.254.169.254/hetzner/v1/metadata/public-keys)
+        http://169.254.169.254/hetzner/v1/metadata)
 
       RAW_BYTES=$(${pkgs.coreutils}/bin/wc -c < "$RAW")
       echo "cloud-keys: metadata http_code=$HTTP_CODE bytes=$RAW_BYTES"
@@ -37,7 +37,8 @@
         exit 1
       fi
 
-      cp "$RAW" "$PARSED"
+      ${pkgs.gnugrep}/bin/grep -oE '(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp[0-9]+) [A-Za-z0-9+/=]+( [^[:space:]]+)?' "$RAW" \
+        > "$PARSED" || true
 
       PARSED_LINES=$(${pkgs.coreutils}/bin/wc -l < "$PARSED")
       echo "cloud-keys: parsed_keys=$PARSED_LINES"
