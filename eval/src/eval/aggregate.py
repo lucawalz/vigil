@@ -88,6 +88,7 @@ def aggregate_runs(
     model_summary: dict[str, dict] = {}
     for model, runs in by_model.items():
         successes = [r for r in runs if r.get("success_rate")]
+        non_aborts = [r for r in runs if r.get("outcome") != "abort"]
         mttrs = [
             r["MTTR_s"]
             for r in runs
@@ -98,9 +99,14 @@ def aggregate_runs(
         dest = [r for r in runs if r.get("destructive_repair")]
         rollbacks = [r for r in runs if r.get("rollback_triggered")]
         mean_mttr, std_mttr = _mean_std(mttrs)
+        n_attempts = len(non_aborts)
         model_summary[model] = {
             "n_runs": len(runs),
+            "n_attempts": n_attempts,
             "success_rate": len(successes) / len(runs) if runs else 0.0,
+            "success_rate_given_attempt": (
+                len(successes) / n_attempts if n_attempts else None
+            ),
             "mean_MTTR_s": mean_mttr,
             "std_MTTR_s": std_mttr,
             "diagnosis_accuracy": (
