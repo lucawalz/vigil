@@ -46,6 +46,7 @@ class RunRecord(BaseModel):
     autonomy_level: Literal["full", "supervised"]
     actions_taken: list[str]
     model_version: str | None = None
+    setup_error: str | None = None
 
 
 class CircuitBreakerTripped(Exception):
