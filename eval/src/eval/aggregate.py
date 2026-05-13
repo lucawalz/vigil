@@ -10,8 +10,6 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-_OS_LAYERS = frozenset({"os", "cross"})
-
 _GROUP_LABELS: dict[str, str] = {
     "k8s": "Kubernetes Layer",
     "os": "OS / NixOS Layer",
@@ -133,7 +131,7 @@ def aggregate_runs(
             "std_MTTR_s": std_mttr,
         }
         layer = _layer_for_scenario(scenarios_dir, scenario)
-        if layer in _OS_LAYERS:
+        if layer is not None:
             scored = [r for r in runs if r.get("diagnosis_accuracy") is not None]
             correct = [r for r in scored if r["diagnosis_accuracy"]]
             per_model: dict[str, dict] = {}
@@ -151,7 +149,7 @@ def aggregate_runs(
                 "per_model": per_model,
             }
         else:
-            escalation[scenario] = {"layer": layer, "accuracy": None}
+            escalation[scenario] = {"layer": None, "accuracy": None}
 
     return {
         "by_model": model_summary,
