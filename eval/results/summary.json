@@ -1,10 +1,112 @@
 {
-  "by_model": {},
-  "by_scenario": {},
-  "escalation": {},
+  "by_model": {
+    "qwen3-coder-next:cloud": {
+      "n_runs": 7,
+      "success_rate": 0.42857142857142855,
+      "mean_MTTR_s": 157.2441515318,
+      "std_MTTR_s": 22.065456519356438,
+      "diagnosis_accuracy": 0.6,
+      "destructive_repair_rate": 0.5714285714285714,
+      "rollback_triggered_rate": 0.0,
+      "mean_input_tokens": 61532,
+      "mean_output_tokens": 1526,
+      "mean_tool_calls": 14.714285714285714,
+      "mean_iteration_count": 5.285714285714286
+    }
+  },
+  "by_scenario": {
+    "cross-1": {
+      "n_runs": 1,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 164.54144300100003,
+      "std_MTTR_s": null
+    },
+    "cross-3": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": 186.04373129699997,
+      "std_MTTR_s": null
+    },
+    "k8s-1": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-2": {
+      "n_runs": 1,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 140.60451739299998,
+      "std_MTTR_s": null
+    },
+    "k8s-3": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4": {
+      "n_runs": 1,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 164.817292522,
+      "std_MTTR_s": null
+    },
+    "k8s-5": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": 130.213773446,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "cross-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3-coder-next:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "cross-3": {
+      "layer": "os",
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0,
+      "per_model": {
+        "qwen3-coder-next:cloud": {
+          "correct": 0,
+          "total": 1
+        }
+      }
+    },
+    "k8s-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
   "totals": {
-    "n": 0,
-    "n_models": 0,
-    "n_scenarios": 0
+    "n": 7,
+    "n_models": 1,
+    "n_scenarios": 7
   }
 }
