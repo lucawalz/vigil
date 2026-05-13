@@ -27,15 +27,31 @@ jobs:
         id: hash
         run: echo "nixos_hash=$(git rev-parse HEAD:infra/nixos)" >> $GITHUB_OUTPUT
 
+      - name: Check for existing snapshot
+        id: check
+        env:
+          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+        run: |
+          COUNT=$(curl -sf -G \
+            -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            --data-urlencode "type=snapshot" \
+            --data-urlencode "label_selector=vigil-role=${{ matrix.role }},vigil-nixos-hash=${{ steps.hash.outputs.nixos_hash }}" \
+            "https://api.hetzner.cloud/v1/images" \
+            | jq '.images | length')
+          echo "exists=$([ "$COUNT" -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
+
       - name: Generate ephemeral SSH key
+        if: steps.check.outputs.exists != 'true'
         run: ssh-keygen -t ed25519 -f /tmp/packer_key -N ""
 
       - name: Packer init
+        if: steps.check.outputs.exists != 'true'
         working-directory: infra/packer
         run: packer init .
 
       - name: Build snapshot
         id: build
+        if: steps.check.outputs.exists != 'true'
         working-directory: infra/packer
         env:
           PKR_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
