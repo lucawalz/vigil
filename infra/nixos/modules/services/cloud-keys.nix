@@ -1,4 +1,7 @@
 { pkgs, ... }:
+let
+  metadataUrl = "http://169.254.169.254/hetzner/v1/metadata";
+in
 {
   systemd.services.cloud-keys = {
     description = "Inject operator SSH keys from Hetzner metadata";
@@ -9,6 +12,8 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      Restart = "on-failure";
+      RestartSec = "5";
     };
     script = ''
       install -m 700 -d /root/.ssh
@@ -16,10 +21,10 @@
       chmod 600 /root/.ssh/authorized_keys
       TMPKEYS=$(mktemp)
       ${pkgs.curl}/bin/curl -sf --connect-timeout 5 --max-time 10 --retry 3 --retry-delay 2 \
-        http://169.254.169.254/hetzner/v1/metadata \
+        ${metadataUrl} \
         | ${pkgs.gnugrep}/bin/grep -E '^- (ssh-|ecdsa-)' \
         | ${pkgs.gnused}/bin/sed 's/^- //' \
-        > "$TMPKEYS" || true
+        > "$TMPKEYS"
       if [[ -s "$TMPKEYS" ]]; then
         cat "$TMPKEYS" >> /root/.ssh/authorized_keys
         ${pkgs.coreutils}/bin/sort -u /root/.ssh/authorized_keys -o /root/.ssh/authorized_keys
