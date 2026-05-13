@@ -115,17 +115,18 @@ def aggregate_runs(
             "diag_n": len(diag_acc),
             "destructive_repair_rate": len(dest) / len(runs) if runs else 0.0,
             "rollback_triggered_rate": len(rollbacks) / len(runs) if runs else 0.0,
+            "n_eligible": n_attempts,
             "mean_input_tokens": _mean_std(
-                [r.get("total_input_tokens", 0) for r in runs]
+                [r.get("total_input_tokens", 0) for r in non_aborts]
             )[0],
             "mean_output_tokens": _mean_std(
-                [r.get("total_output_tokens", 0) for r in runs]
+                [r.get("total_output_tokens", 0) for r in non_aborts]
             )[0],
-            "mean_tool_calls": _mean_std([r.get("total_tool_calls", 0) for r in runs])[
-                0
-            ],
+            "mean_tool_calls": _mean_std(
+                [r.get("total_tool_calls", 0) for r in non_aborts]
+            )[0],
             "mean_iteration_count": _mean_std(
-                [r.get("iteration_count", 0) for r in runs]
+                [r.get("iteration_count", 0) for r in non_aborts]
             )[0],
         }
 
