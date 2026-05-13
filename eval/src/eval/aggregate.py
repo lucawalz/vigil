@@ -254,10 +254,16 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
 
     lines.append("---")
     lines.append("")
-    lines.append(
-        "_Note: std values computed from 3 seeds per cell are approximate "
-        "(n=3); treat as directional only._"
-    )
+    seed_counts = [row["n_runs"] for row in summary["by_scenario"].values()]
+    max_n = max(seed_counts) if seed_counts else 0
+    if max_n <= 1:
+        footer = "_Single-seed campaign — std values omitted._"
+    else:
+        footer = (
+            f"_Note: std values computed from {max_n} seeds per cell; "
+            "treat as directional only._"
+        )
+    lines.append(footer)
 
     (output_dir / "REPORT.md").write_text("\n".join(lines) + "\n")
 
