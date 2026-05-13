@@ -53,7 +53,7 @@ jobs:
         with:
           ref: ${{ env.VIGIL_BRANCH }}
 
-      - uses: DeterminateSystems/nix-installer-action@v17
+      - uses: DeterminateSystems/nix-installer-action@v22
 
       - uses: hashicorp/setup-terraform@v3
         with:
