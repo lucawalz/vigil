@@ -35,4 +35,12 @@ build {
     ]
   }
 
+  provisioner "shell" {
+    pause_before = "90s"
+    inline = [
+      "systemctl is-system-running --wait || true",
+      "sync",
+    ]
+  }
+
 }

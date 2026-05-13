@@ -8,6 +8,8 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      Restart = "on-failure";
+      RestartSec = "5";
     };
     script = ''
       install -m 700 -d /root/.ssh
@@ -16,7 +18,7 @@
         http://169.254.169.254/hetzner/v1/metadata \
         | ${pkgs.gnugrep}/bin/grep -E '^- (ssh-|ecdsa-)' \
         | ${pkgs.gnused}/bin/sed 's/^- //' \
-        > "$TMPKEYS" || true
+        > "$TMPKEYS"
       if [[ -s "$TMPKEYS" ]]; then
         install -m 600 "$TMPKEYS" /root/.ssh/authorized_keys
       fi
