@@ -66,6 +66,8 @@ jobs:
     needs: [build]
     if: always()
     steps:
+      - uses: actions/checkout@v4
+
       - name: Cleanup leaked Packer servers
         env:
           HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
@@ -77,4 +79,24 @@ jobs:
             echo "Deleting leaked Packer server $ID"
             curl -sf -X DELETE -H "Authorization: Bearer $HCLOUD_TOKEN" \
               "https://api.hetzner.cloud/v1/servers/$ID"
+          done
+
+      - name: Delete stale snapshots
+        env:
+          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+        run: |
+          CURRENT_HASH=$(git rev-parse HEAD:infra/nixos)
+          for ROLE in master worker-1 worker-2 agent; do
+            OLD_IDS=$(curl -sf -G \
+              -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              --data-urlencode "type=snapshot" \
+              --data-urlencode "label_selector=vigil-role=$ROLE,vigil-managed=true" \
+              "https://api.hetzner.cloud/v1/images?per_page=50" \
+              | jq -r --arg hash "$CURRENT_HASH" \
+                '.images[] | select(.labels["vigil-nixos-hash"] != $hash) | .id')
+            for ID in $OLD_IDS; do
+              echo "Deleting stale snapshot $ID (role=$ROLE)"
+              curl -sf -X DELETE -H "Authorization: Bearer $HCLOUD_TOKEN" \
+                "https://api.hetzner.cloud/v1/images/$ID"
+            done
           done
