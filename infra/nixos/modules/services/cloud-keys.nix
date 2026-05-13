@@ -3,7 +3,6 @@
   systemd.services.cloud-keys = {
     description = "Inject operator SSH keys from Hetzner metadata";
     wantedBy = [ "multi-user.target" ];
-    before = [ "sshd.service" ];
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
     serviceConfig = {
@@ -28,7 +27,7 @@
       HTTP_CODE=$(${pkgs.curl}/bin/curl -sS -o "$RAW" \
         -w '%{http_code}' \
         --connect-timeout 5 --max-time 10 --retry 3 --retry-delay 2 \
-        http://169.254.169.254/hetzner/v1/metadata)
+        http://169.254.169.254/hetzner/v1/metadata/public-keys)
 
       RAW_BYTES=$(${pkgs.coreutils}/bin/wc -c < "$RAW")
       echo "cloud-keys: metadata http_code=$HTTP_CODE bytes=$RAW_BYTES"
@@ -38,9 +37,7 @@
         exit 1
       fi
 
-      ${pkgs.gnugrep}/bin/grep -E '^- (ssh-|ecdsa-)' "$RAW" \
-        | ${pkgs.gnused}/bin/sed 's/^- //' \
-        > "$PARSED" || true
+      cp "$RAW" "$PARSED"
 
       PARSED_LINES=$(${pkgs.coreutils}/bin/wc -l < "$PARSED")
       echo "cloud-keys: parsed_keys=$PARSED_LINES"
@@ -51,7 +48,7 @@
       done < "$PARSED"
 
       if [ "$PARSED_LINES" -lt 1 ]; then
-        echo "cloud-keys: no operator keys parsed from metadata" >&2
+        echo "cloud-keys: no keys in metadata response" >&2
         exit 1
       fi
 
