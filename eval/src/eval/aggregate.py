@@ -195,9 +195,9 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     lines.append(
         "| Model | N | Success Rate | Mean MTTR (s) | Std MTTR (s) | "
         "Diag. Accuracy | Destructive % | Rollback % | "
-        "Mean In/Out Tokens | Mean Tool Calls |"
+        "Mean In/Out Tokens | Mean Tool Calls | Mean Iterations |"
     )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---|---:|")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|")
     for m, row in summary["by_model"].items():
         lines.append(
             f"| {m} | {row['n_runs']} | "
@@ -207,7 +207,8 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
             f"{row['destructive_repair_rate']:.2f} | "
             f"{row['rollback_triggered_rate']:.2f} | "
             f"{_fmt(row['mean_input_tokens'])}/{_fmt(row['mean_output_tokens'])} | "
-            f"{_fmt(row['mean_tool_calls'])} |"
+            f"{_fmt(row['mean_tool_calls'])} | "
+            f"{_fmt(row['mean_iteration_count'])} |"
         )
     lines.append("")
 
