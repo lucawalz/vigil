@@ -112,6 +112,7 @@ def aggregate_runs(
             "diagnosis_accuracy": (
                 len(diag_correct) / len(diag_acc) if diag_acc else None
             ),
+            "diag_n": len(diag_acc),
             "destructive_repair_rate": len(dest) / len(runs) if runs else 0.0,
             "rollback_triggered_rate": len(rollbacks) / len(runs) if runs else 0.0,
             "mean_input_tokens": _mean_std(
@@ -201,7 +202,7 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
             f"| {m} | {row['n_runs']} | "
             f"{row['success_rate']:.2f} | "
             f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} | "
-            f"{_fmt(row['diagnosis_accuracy'])} | "
+            f"{_fmt_diag(row['diagnosis_accuracy'], row.get('diag_n'))} | "
             f"{row['destructive_repair_rate']:.2f} | "
             f"{row['rollback_triggered_rate']:.2f} | "
             f"{_fmt(row['mean_input_tokens'])}/{_fmt(row['mean_output_tokens'])} | "
@@ -351,3 +352,13 @@ def _fmt(v: Any) -> str:
     if isinstance(v, float):
         return f"{v:.2f}"
     return str(v)
+
+
+def _fmt_diag(ratio: float | None, n: int | None) -> str:
+    if ratio is None:
+        return "—"
+    base = f"{ratio:.2f}"
+    if n is not None:
+        correct = round(ratio * n)
+        return f"{base} ({correct}/{n})"
+    return base
