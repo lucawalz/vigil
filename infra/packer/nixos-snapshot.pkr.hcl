@@ -35,11 +35,10 @@ build {
     ]
   }
 
-  provisioner "shell" {
-    pause_before = "90s"
+  provisioner "shell-local" {
     inline = [
-      "systemctl is-system-running --wait || true",
-      "sync",
+      "sleep 120",
+      "until ssh -i ${var.ssh_private_key_file} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes root@${build.Host} 'systemctl is-system-running --wait || true && sync' 2>/dev/null; do sleep 15; done"
     ]
   }
 
