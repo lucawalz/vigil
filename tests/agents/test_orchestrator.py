@@ -11,6 +11,7 @@ import json
 import os
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,7 +22,11 @@ os.environ.setdefault("LLM_API_KEY", "sk-test")
 
 from diagnosis.models import DiagnosisReport
 from orchestrator import agent as orch_mod
-from orchestrator.agent import build_run_id, run_orchestration
+from orchestrator.agent import (
+    _score_diagnosis_accuracy,
+    build_run_id,
+    run_orchestration,
+)
 from orchestrator.models import CircuitBreakerTripped, FaultEvent, RunRecord
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import Usage
@@ -634,3 +639,62 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
     )
     assert (tmp_path / "custom" / "runs_index.jsonl").exists()
     assert record.outcome == "success"
+
+
+async def test_diagnosis_inconsistency_aborts_run(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    inconsistent_report = DiagnosisReport(
+        root_cause="kernel panic on node",
+        root_cause_component="node/worker-1",
+        severity="critical",
+        affected_resources=["node/worker-1"],
+        evidence="kernel oops in dmesg",
+        recommended_action="apply_patch",
+        confidence=0.80,
+        requires_os_level=True,
+    )
+    diag_rv = (inconsistent_report, Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+    )
+    assert record.outcome == "abort"
+    assert record.setup_error == "diagnosis_inconsistent"
+
+
+def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
+    tmp_path: Path,
+) -> None:
+    scenario_dir = tmp_path / "boundary-2"
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "scenario.yaml").write_text(
+        "layer: boundary\nroot_cause_layer: k8s\n"
+    )
+    report = SimpleNamespace(requires_os_level=True)
+
+    import os as _os
+
+    orig = _os.environ.get("VIGIL_SCENARIOS_DIR")
+    _os.environ["VIGIL_SCENARIOS_DIR"] = str(tmp_path)
+    try:
+        result = _score_diagnosis_accuracy("boundary-2", report)
+    finally:
+        if orig is None:
+            _os.environ.pop("VIGIL_SCENARIOS_DIR", None)
+        else:
+            _os.environ["VIGIL_SCENARIOS_DIR"] = orig
+
+    assert result is False

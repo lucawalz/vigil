@@ -89,6 +89,8 @@ def build_run_id(
 
 
 _OS_LAYERS = frozenset({"os", "cross"})
+_OS_REPAIR_ACTIONS = frozenset({"rebuild_nixos"})
+_K8S_REPAIR_ACTIONS = frozenset({"apply_patch", "rollout_undo"})
 
 
 def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
@@ -105,7 +107,10 @@ def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
     if expected_layer is None:
         return None
     expected_os = expected_layer in _OS_LAYERS
-    return report.requires_os_level == expected_os
+    layer_correct = report.requires_os_level == expected_os
+    if data.get("layer") == "boundary" and report.requires_os_level:
+        return False
+    return layer_correct
 
 
 def _write_run_record(record: RunRecord) -> None:
@@ -250,6 +255,45 @@ async def run_orchestration(
             trace.write_trace(run_id, "diagnosis", diag_msgs)
             breaker.success()
             iteration_count += 1
+
+            action_is_os = report.recommended_action in _OS_REPAIR_ACTIONS
+            action_is_k8s = report.recommended_action in _K8S_REPAIR_ACTIONS
+            layer_os = report.requires_os_level
+            if (layer_os and action_is_k8s) or (not layer_os and action_is_os):
+                log.error(
+                    "run %s aborted: diagnosis_inconsistent "
+                    "(requires_os_level=%s recommended_action=%s)",
+                    run_id,
+                    report.requires_os_level,
+                    report.recommended_action,
+                )
+                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record = RunRecord(
+                    run_id=run_id,
+                    scenario=scenario,
+                    seed=seed_str,
+                    model=model_name,
+                    git_sha7=sha7,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    outcome="abort",
+                    success_rate=False,
+                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                    MTTR_s=None,
+                    destructive_repair=False,
+                    rollback_triggered=False,
+                    rollback_success=None,
+                    total_input_tokens=total_usage.input_tokens or 0,
+                    total_output_tokens=total_usage.output_tokens or 0,
+                    total_tool_calls=total_tool_calls,
+                    iteration_count=iteration_count,
+                    autonomy_level="full",
+                    actions_taken=[],
+                    model_version=model_name,
+                    setup_error="diagnosis_inconsistent",
+                )
+                _write_run_record(record)
+                return record
 
             baseline = await capture_health_snapshot(watchdog_deps)
 

@@ -32,7 +32,6 @@ Rules:
 - evidence must be a verbatim log line or event quoted from tool output.
 - requires_os_level=True only when kubectl evidence is insufficient and the fault
   involves a node condition or NixOS service. Do not escalate for pure K8s faults.
-- confidence below 0.6 means you need more evidence before recommending an action.
 - Use kubectl-mcp tools directly for all Kubernetes operations.
 
 OS-level fault rules:
@@ -41,6 +40,17 @@ OS-level fault rules:
   nixos-mcp calls. Never use the scenario ID (e.g., "os-1") as a host.
 - When requires_os_level=True, set target_host to the value from the "node" label.
 - Call get_nodes first to confirm which node is NotReady before touching nixos-mcp.
+
+recommended_action selection:
+- If requires_os_level=False: use "apply_patch" for manifest drift, missing
+  resources, or wrong field values; use "rollout_undo" only when a recent
+  Deployment rollout is the direct cause and the previous revision is healthy.
+- If requires_os_level=True: use "rebuild_nixos".
+- requires_os_level and recommended_action must agree: never return "apply_patch"
+  when requires_os_level=True, never return "rebuild_nixos" when
+  requires_os_level=False.
+- When confidence is below 0.6, gather more evidence with additional tool calls
+  rather than committing to a repair action prematurely.
 
 Do not call apply_patch, rollout_undo, switch_generation, or etcd_snapshot_save.
 Those are remediation actions; diagnosis is read-only."""

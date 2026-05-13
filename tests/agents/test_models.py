@@ -51,7 +51,7 @@ def test_diagnosis_report_confidence_bounds() -> None:
             severity="low",
             affected_resources=[],
             evidence="z",
-            recommended_action="escalate",
+            recommended_action="apply_patch",
             confidence=1.5,  # out of range
             requires_os_level=False,
         )
