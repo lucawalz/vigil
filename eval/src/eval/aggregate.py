@@ -67,9 +67,11 @@ def aggregate_runs(
 ) -> dict[str, Any]:
     """Compute per-model and per-scenario metric tables plus escalation accuracy."""
     records = _load_records(runs_dir, index_path)
-    planned_scenarios: list[str] = sorted(
-        p.name for p in scenarios_dir.iterdir() if p.is_dir()
-    ) if scenarios_dir.is_dir() else []
+    planned_scenarios: list[str] = (
+        sorted(p.name for p in scenarios_dir.iterdir() if p.is_dir())
+        if scenarios_dir.is_dir()
+        else []
+    )
     if not records:
         return {
             "by_model": {},
