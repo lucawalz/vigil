@@ -7,6 +7,15 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+    open-pull-requests-limit: 10
+    rebase-strategy: auto
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
 
   - package-ecosystem: gomod
     directory: /mcp-servers/kubectl-mcp
@@ -14,6 +23,15 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+    open-pull-requests-limit: 10
+    rebase-strategy: auto
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
 
   - package-ecosystem: gomod
     directory: /mcp-servers/flux-mcp
@@ -21,6 +39,15 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+    open-pull-requests-limit: 10
+    rebase-strategy: auto
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
 
   - package-ecosystem: gomod
     directory: /mcp-servers/ssh-mcp
@@ -28,6 +55,15 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+    open-pull-requests-limit: 10
+    rebase-strategy: auto
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
 
   - package-ecosystem: gomod
     directory: /mcp-servers/nixos-mcp
@@ -35,6 +71,15 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+    open-pull-requests-limit: 10
+    rebase-strategy: auto
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
 
   - package-ecosystem: uv
     directory: /
@@ -42,3 +87,12 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+    open-pull-requests-limit: 10
+    rebase-strategy: auto
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
