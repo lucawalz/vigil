@@ -26,7 +26,9 @@ class DiagnosisReport(BaseModel):
         description="Exact resource names from kubectl output, including namespace"
     )
     evidence: str = Field(description="Verbatim log line or event proving root cause")
-    recommended_action: Literal["apply_patch", "rollout_undo", "rebuild_nixos", "git_commit"]
+    recommended_action: Literal[
+        "apply_patch", "rollout_undo", "rebuild_nixos", "git_commit"
+    ]
     confidence: float = Field(ge=0.0, le=1.0)
     requires_os_level: bool
     target_host: str | None = Field(
@@ -35,11 +37,16 @@ class DiagnosisReport(BaseModel):
     )
     manifest_path: str | None = Field(
         default=None,
-        description="Repo-relative path to the manifest file the patch_body should overwrite",
+        description=(
+            "Repo-relative path to the manifest file the patch_body should overwrite"
+        ),
     )
     proposed_patch: ProposedPatch | None = Field(
         default=None,
-        description="Full replacement manifest YAML and resource identifiers for git-mcp.write_manifest",
+        description=(
+            "Full replacement manifest YAML and resource identifiers"
+            " for git-mcp.write_manifest"
+        ),
     )
 
 
