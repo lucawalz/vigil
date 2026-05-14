@@ -55,10 +55,12 @@ func (s *GitServer) CloneDir() string {
 	return s.cloneDir
 }
 
+const serverVersion = "1.0.0"
+
 func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 	s := &GitServer{}
 
-	mcpServer := server.NewMCPServer("git-mcp", "1.0.0",
+	mcpServer := server.NewMCPServer("git-mcp", serverVersion,
 		server.WithToolCapabilities(true),
 	)
 

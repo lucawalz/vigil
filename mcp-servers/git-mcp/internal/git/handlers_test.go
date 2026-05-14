@@ -567,7 +567,7 @@ func TestWaitForGateHandler_Success(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number": float64(42),
 	})
