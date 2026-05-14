@@ -147,7 +147,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Default 540"),
 			),
 		),
-		git.HandleWaitForGate(client, s, cfg.MaxOutputBytes),
+		git.HandleWaitForGate(client, s, cfg.MaxOutputBytes, git.DefaultPollInterval),
 	)
 
 	mcpServer.AddTool(
