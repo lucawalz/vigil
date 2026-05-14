@@ -7,6 +7,13 @@ from pydantic import BaseModel, Field
 from pydantic_ai.mcp import MCPServerStdio
 
 
+class ProposedPatch(BaseModel):
+    resource_kind: str
+    resource_name: str
+    resource_namespace: str
+    patch_body: str
+
+
 class DiagnosisReport(BaseModel):
     """8-field output from the Diagnosis agent."""
 
@@ -19,12 +26,20 @@ class DiagnosisReport(BaseModel):
         description="Exact resource names from kubectl output, including namespace"
     )
     evidence: str = Field(description="Verbatim log line or event proving root cause")
-    recommended_action: Literal["apply_patch", "rollout_undo", "rebuild_nixos"]
+    recommended_action: Literal["apply_patch", "rollout_undo", "rebuild_nixos", "git_commit"]
     confidence: float = Field(ge=0.0, le=1.0)
     requires_os_level: bool
     target_host: str | None = Field(
         default=None,
         description="NixOS hostname for OS tools. Set when requires_os_level=True.",
+    )
+    manifest_path: str | None = Field(
+        default=None,
+        description="Repo-relative path to the manifest file the patch_body should overwrite",
+    )
+    proposed_patch: ProposedPatch | None = Field(
+        default=None,
+        description="Full replacement manifest YAML and resource identifiers for git-mcp.write_manifest",
     )
 
 
