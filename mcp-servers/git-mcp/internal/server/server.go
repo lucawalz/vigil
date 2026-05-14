@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -19,11 +18,45 @@ type GitServer struct {
 	cloneDir      string
 }
 
+func (s *GitServer) BeginSession(runID, cloneDir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runID = runID
+	s.cloneDir = cloneDir
+}
+
+func (s *GitServer) Branch() (string, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.currentBranch, s.cloneDir
+}
+
+func (s *GitServer) SetBranch(branch string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentBranch = branch
+}
+
+func (s *GitServer) SetLastCommit(sha string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastCommitSHA = sha
+}
+
+func (s *GitServer) RunID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.runID
+}
+
+func (s *GitServer) CloneDir() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cloneDir
+}
+
 func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
-	_ = client
-	_ = cfg
 	s := &GitServer{}
-	_ = s
 
 	mcpServer := server.NewMCPServer("git-mcp", "1.0.0",
 		server.WithToolCapabilities(true),
@@ -37,9 +70,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Run identifier; must match ^[a-zA-Z0-9-]+$"),
 			),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: create_branch"), nil
-		},
+		git.HandleCreateBranch(client, s, cfg.AuthURL(), cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -54,9 +85,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Full replacement manifest YAML"),
 			),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: write_manifest"), nil
-		},
+		git.HandleWriteManifest(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -67,18 +96,14 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Commit message"),
 			),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: commit_files"), nil
-		},
+		git.HandleCommitFiles(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
 		mcp.NewTool("push_branch",
 			mcp.WithDescription("Push the remediation branch to origin"),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: push_branch"), nil
-		},
+		git.HandlePushBranch(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -97,9 +122,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Base branch (default: main)"),
 			),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: create_pr"), nil
-		},
+		git.HandleCreatePR(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -110,9 +133,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Pull request number"),
 			),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: get_pr_status"), nil
-		},
+		git.HandleGetPRStatus(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -126,9 +147,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Default 540"),
 			),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: wait_for_gate"), nil
-		},
+		git.HandleWaitForGate(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -139,9 +158,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("SHA of the merge commit to revert"),
 			),
 		),
-		func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return mcp.NewToolResultError("handler not wired: revert_commit"), nil
-		},
+		git.HandleRevertCommit(client, s, cfg.MaxOutputBytes),
 	)
 
 	return mcpServer
