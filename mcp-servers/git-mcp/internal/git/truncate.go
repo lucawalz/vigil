@@ -10,8 +10,8 @@ func truncateOutput(s string, maxBytes int) string {
 		return s
 	}
 	clipped := s[:maxBytes]
-	clippedLines := strings.Split(clipped, "\n")
-	totalLines := len(strings.Split(s, "\n"))
-	omitted := totalLines - len(clippedLines)
-	return strings.Join(clippedLines, "\n") + fmt.Sprintf("\n[TRUNCATED: %d lines omitted]", omitted)
+	shown := len(strings.Split(strings.TrimRight(clipped, "\n"), "\n"))
+	total := len(strings.Split(s, "\n"))
+	omitted := total - shown
+	return strings.TrimRight(clipped, "\n") + fmt.Sprintf("\n[TRUNCATED: %d lines omitted]", omitted)
 }
