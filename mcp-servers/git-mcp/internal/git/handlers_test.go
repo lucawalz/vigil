@@ -567,11 +567,9 @@ func TestWaitForGateHandler_Success(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes)
-
+handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number": float64(42),
-		// No timeout_seconds: use default; we rely on context cancellation via test timeout
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -592,7 +590,7 @@ func TestWaitForGateHandler_DomainError(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes)
+	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number":       float64(42),
@@ -613,7 +611,7 @@ func TestWaitForGateHandler_TimeoutRespected(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes)
+	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
 
 	start := time.Now()
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
@@ -641,7 +639,7 @@ func TestWaitForGateHandler_MissingArgument(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes)
+	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{})
 	if err != nil {

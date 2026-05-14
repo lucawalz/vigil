@@ -19,6 +19,8 @@ const (
 	defaultWaitForGateTimeoutSeconds = 540
 )
 
+const DefaultPollInterval = pollIntervalSeconds * time.Second
+
 var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
 var commitSHAPattern = regexp.MustCompile(`^[a-f0-9]{7,40}$`)
@@ -178,7 +180,7 @@ func HandleGetPRStatus(client GitClient, state SessionState, maxBytes int) serve
 	}
 }
 
-func HandleWaitForGate(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleWaitForGate(client GitClient, state SessionState, maxBytes int, pollInterval time.Duration) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		prNumF, ok := args["pr_number"].(float64)
@@ -194,7 +196,7 @@ func HandleWaitForGate(client GitClient, state SessionState, maxBytes int) serve
 
 		timer := time.NewTimer(time.Duration(timeoutSecs) * time.Second)
 		defer timer.Stop()
-		ticker := time.NewTicker(pollIntervalSeconds * time.Second)
+		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
 		for {
