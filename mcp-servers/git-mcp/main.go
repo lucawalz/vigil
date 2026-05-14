@@ -16,6 +16,12 @@ func main() {
 	log.SetOutput(os.Stderr)
 
 	cfg := config.Load()
+	if cfg.GitHubToken == "" {
+		log.Fatal("git-mcp: GITHUB_TOKEN is required")
+	}
+	if cfg.RepoURL == "" {
+		log.Fatal("git-mcp: REPO_URL is required")
+	}
 	client := git.NewRealGitClient(cfg)
 	s := mcpserver.NewServer(client, cfg)
 
