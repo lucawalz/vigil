@@ -3,6 +3,8 @@ mcp-servers/kubectl-mcp/kubectl-mcp
 mcp-servers/flux-mcp/flux-mcp
 mcp-servers/ssh-mcp/ssh-mcp
 mcp-servers/nixos-mcp/nixos-mcp
+mcp-servers/git-mcp/git-mcp
+git-mcp
 
 # Python
 __pycache__/
