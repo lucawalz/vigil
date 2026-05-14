@@ -238,6 +238,7 @@ func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) serv
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleRevertCommit: %v", err)), nil
 		}
+		state.SetBranch(defaultBaseBranch)
 		return mcp.NewToolResultText("reverted: " + revertSHA), nil
 	}
 }
