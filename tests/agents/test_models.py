@@ -1,7 +1,7 @@
 """Schema validation tests for agent Pydantic models."""
 
 import pytest
-from diagnosis.models import DiagnosisReport
+from diagnosis.models import DiagnosisReport, ProposedPatch
 from orchestrator.models import FaultEvent, RunRecord
 from pydantic import ValidationError
 from watchdog.models import HealthSnapshot, WatchdogResult
@@ -53,6 +53,86 @@ def test_diagnosis_report_confidence_bounds() -> None:
             evidence="z",
             recommended_action="apply_patch",
             confidence=1.5,  # out of range
+            requires_os_level=False,
+        )
+
+
+def test_diagnosis_report_accepts_git_commit_action() -> None:
+    r = DiagnosisReport(
+        root_cause="image tag wrong",
+        root_cause_component="vigil-app:bad-tag-v9",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="Failed to pull image",
+        recommended_action="git_commit",
+        confidence=0.9,
+        requires_os_level=False,
+    )
+    assert r.manifest_path is None
+    assert r.proposed_patch is None
+
+
+def test_diagnosis_report_backward_compat_no_new_fields() -> None:
+    r = DiagnosisReport(
+        root_cause="image tag wrong",
+        root_cause_component="vigil-app:bad-tag-v9",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="Failed to pull image",
+        recommended_action="apply_patch",
+        confidence=0.9,
+        requires_os_level=False,
+    )
+    assert r.manifest_path is None
+    assert r.proposed_patch is None
+
+
+def test_diagnosis_report_with_proposed_patch_roundtrip() -> None:
+    patch = ProposedPatch(
+        resource_kind="Deployment",
+        resource_name="vigil-app",
+        resource_namespace="default",
+        patch_body="apiVersion: apps/v1\nkind: Deployment\n",
+    )
+    r = DiagnosisReport(
+        root_cause="image tag wrong",
+        root_cause_component="vigil-app:bad-tag-v9",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="Failed to pull image",
+        recommended_action="git_commit",
+        confidence=0.9,
+        requires_os_level=False,
+        manifest_path="apps/vigil/deployment.yaml",
+        proposed_patch=patch,
+    )
+    j = r.model_dump_json()
+    assert DiagnosisReport.model_validate_json(j) == r
+
+
+def test_proposed_patch_requires_all_four_fields() -> None:
+    base = dict(
+        resource_kind="Deployment",
+        resource_name="vigil-app",
+        resource_namespace="default",
+        patch_body="apiVersion: apps/v1\nkind: Deployment\n",
+    )
+    for field in ("resource_kind", "resource_name", "resource_namespace", "patch_body"):
+        kwargs = {k: v for k, v in base.items() if k != field}
+        with pytest.raises(ValidationError):
+            ProposedPatch(**kwargs)
+
+
+def test_diagnosis_report_rejects_delete_cluster_still_invalid() -> None:
+    with pytest.raises(ValidationError):
+        DiagnosisReport(
+            root_cause="image tag wrong",
+            root_cause_component="vigil-app:bad-tag-v9",
+            severity="high",
+            affected_resources=["default/vigil-app"],
+            evidence="Failed to pull image",
+            recommended_action="delete_cluster",
+            confidence=0.9,
             requires_os_level=False,
         )
 
