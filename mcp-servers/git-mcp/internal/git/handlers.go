@@ -93,7 +93,7 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 		if err := client.WriteFile(ctx, cloneDir, cleaned, patchBody); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleWriteManifest: %v", err)), nil
 		}
-		return mcp.NewToolResultText("wrote manifest: " + manifestPath), nil
+		return mcp.NewToolResultText(truncateOutput("wrote manifest: "+manifestPath, maxBytes)), nil
 	}
 }
 
@@ -115,7 +115,7 @@ func HandleCommitFiles(client GitClient, state SessionState, maxBytes int) serve
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCommitFiles: %v", err)), nil
 		}
 		state.SetLastCommit(sha)
-		return mcp.NewToolResultText("commit: " + sha), nil
+		return mcp.NewToolResultText(truncateOutput("commit: "+sha, maxBytes)), nil
 	}
 }
 
@@ -129,7 +129,7 @@ func HandlePushBranch(client GitClient, state SessionState, maxBytes int) server
 		if err := client.Push(ctx, cloneDir, branch); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandlePushBranch: %v", err)), nil
 		}
-		return mcp.NewToolResultText("pushed: " + branch), nil
+		return mcp.NewToolResultText(truncateOutput("pushed: "+branch, maxBytes)), nil
 	}
 }
 
@@ -158,7 +158,7 @@ func HandleCreatePR(client GitClient, state SessionState, maxBytes int) server.T
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCreatePR: %v", err)), nil
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("pr created: #%d", prNumber)), nil
+		return mcp.NewToolResultText(truncateOutput(fmt.Sprintf("pr created: #%d", prNumber), maxBytes)), nil
 	}
 }
 
@@ -243,6 +243,6 @@ func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) serv
 			return mcp.NewToolResultError(fmt.Sprintf("HandleRevertCommit: %v", err)), nil
 		}
 		state.SetBranch(defaultBaseBranch)
-		return mcp.NewToolResultText("reverted: " + revertSHA), nil
+		return mcp.NewToolResultText(truncateOutput("reverted: "+revertSHA, maxBytes)), nil
 	}
 }
