@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -46,12 +47,13 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
 		}
-		state.BeginSession(runID, cloneDir)
 
 		branch := branchPrefix + runID
 		if err := client.CreateBranch(ctx, cloneDir, branch); err != nil {
+			_ = os.RemoveAll(cloneDir)
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
 		}
+		state.BeginSession(runID, cloneDir)
 		state.SetBranch(branch)
 
 		return mcp.NewToolResultText("branch created: " + branch), nil
