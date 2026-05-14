@@ -58,7 +58,7 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 		state.BeginSession(runID, cloneDir)
 		state.SetBranch(branch)
 
-		return mcp.NewToolResultText("branch created: " + branch), nil
+		return mcp.NewToolResultText(truncateOutput("branch created: "+branch, maxBytes)), nil
 	}
 }
 
