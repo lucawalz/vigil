@@ -15,7 +15,7 @@ class ProposedPatch(BaseModel):
 
 
 class DiagnosisReport(BaseModel):
-    """8-field output from the Diagnosis agent."""
+    """Structured output from the Diagnosis agent."""
 
     root_cause: str = Field(description="One-sentence root cause, not a symptom")
     root_cause_component: str = Field(
