@@ -104,11 +104,11 @@ func (c *realGitClient) Clone(ctx context.Context, authURL string) (string, erro
 func (c *realGitClient) CreateBranch(_ context.Context, cloneDir, branch string) error {
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
-		return fmt.Errorf("create_branch: open repo: %w", err)
+		return sanitiseAuthError(fmt.Errorf("create_branch: open repo: %w", err), c.cfg.AuthURL())
 	}
 	wt, err := r.Worktree()
 	if err != nil {
-		return fmt.Errorf("create_branch: worktree: %w", err)
+		return sanitiseAuthError(fmt.Errorf("create_branch: worktree: %w", err), c.cfg.AuthURL())
 	}
 	err = wt.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.NewBranchReferenceName(branch),
@@ -116,7 +116,7 @@ func (c *realGitClient) CreateBranch(_ context.Context, cloneDir, branch string)
 		Keep:   false,
 	})
 	if err != nil {
-		return fmt.Errorf("create_branch: checkout: %w", err)
+		return sanitiseAuthError(fmt.Errorf("create_branch: checkout: %w", err), c.cfg.AuthURL())
 	}
 	return nil
 }
@@ -135,14 +135,14 @@ func (c *realGitClient) WriteFile(_ context.Context, cloneDir, manifestPath, con
 func (c *realGitClient) CommitFiles(_ context.Context, cloneDir, _ string, message string) (string, error) {
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
-		return "", fmt.Errorf("commit_files: open repo: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("commit_files: open repo: %w", err), c.cfg.AuthURL())
 	}
 	wt, err := r.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("commit_files: worktree: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("commit_files: worktree: %w", err), c.cfg.AuthURL())
 	}
 	if err := wt.AddGlob("."); err != nil {
-		return "", fmt.Errorf("commit_files: add: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("commit_files: add: %w", err), c.cfg.AuthURL())
 	}
 	hash, err := wt.Commit(message, &git.CommitOptions{
 		Author: &object.Signature{
@@ -152,7 +152,7 @@ func (c *realGitClient) CommitFiles(_ context.Context, cloneDir, _ string, messa
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("commit_files: commit: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("commit_files: commit: %w", err), c.cfg.AuthURL())
 	}
 	return hash.String(), nil
 }
@@ -202,28 +202,28 @@ func (c *realGitClient) GetPRStatus(ctx context.Context, prNumber int) (string, 
 func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA string) (string, error) {
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
-		return "", fmt.Errorf("revert_commit: open repo: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: open repo: %w", err), c.cfg.AuthURL())
 	}
 	wt, err := r.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("revert_commit: worktree: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: worktree: %w", err), c.cfg.AuthURL())
 	}
 
 	if err := wt.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.NewBranchReferenceName(defaultBaseBranch),
 		Create: false,
 	}); err != nil {
-		return "", fmt.Errorf("revert_commit: checkout main: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: checkout main: %w", err), c.cfg.AuthURL())
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "revert", "--no-edit", mergeCommitSHA)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("revert_commit: git revert: %w: %s", err, strings.TrimSpace(string(out)))
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: git revert: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
 	}
 
 	head, err := r.Head()
 	if err != nil {
-		return "", fmt.Errorf("revert_commit: read HEAD after revert: %w", err)
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: read HEAD after revert: %w", err), c.cfg.AuthURL())
 	}
 	return head.Hash().String(), nil
 }
