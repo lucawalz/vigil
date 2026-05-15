@@ -1,4 +1,4 @@
-"""Deterministic lookup of (kind, namespace, name) -> repo-relative manifest path for the Diagnosis agent."""
+"""Deterministic (kind, namespace, name) -> repo-relative manifest path lookup."""
 
 from __future__ import annotations
 

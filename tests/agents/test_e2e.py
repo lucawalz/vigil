@@ -43,7 +43,10 @@ def _canned_report() -> DiagnosisReport:
 def _canned_remediation() -> RemediationResult:
     return RemediationResult(
         success=True,
-        actions_taken=["create_branch", "write_manifest", "commit_files", "push_branch", "create_pr", "wait_for_gate", "reconcile_kustomization"],
+        actions_taken=[
+            "create_branch", "write_manifest", "commit_files",
+            "push_branch", "create_pr", "wait_for_gate", "reconcile_kustomization",
+        ],
         tool_calls_count=7,
         destructive_repair=False,
     )
@@ -109,6 +112,7 @@ async def test_webhook_to_audit_log_end_to_end(
     test_app.state.flux_mcp = AsyncMock()
     test_app.state.ssh_mcp = AsyncMock()
     test_app.state.nixos_mcp = AsyncMock()
+    test_app.state.git_mcp = AsyncMock()
 
     payload = {
         "version": "4",

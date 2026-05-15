@@ -70,7 +70,8 @@ There is no separate imperative rollback action — the GitOps path handles regr
 via the same git_commit mechanism.
 
 Do not call switch_generation or etcd_snapshot_save; diagnosis is read-only.
-Imperative repair tools have been retired from all MCP servers; do not invent tool names."""
+Imperative repair tools have been retired from all MCP servers;
+do not invent tool names."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(

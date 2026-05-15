@@ -26,7 +26,7 @@ class RemediationResult(BaseModel):
 
 @dataclass(frozen=True)
 class RemediationDeps:
-    """git + flux + nixos scope only. No kubectl client; reads happen at diagnosis time."""
+    """git + flux + nixos scope only. No kubectl client; reads at diagnosis time."""
 
     git_mcp: MCPServerStdio
     flux_mcp: MCPServerStdio

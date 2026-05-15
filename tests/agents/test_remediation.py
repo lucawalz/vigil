@@ -52,7 +52,9 @@ def test_remediation_prompt_mandates_git_commit_sequence() -> None:
     assert "create_pr" in mod_source
     assert "wait_for_gate" in mod_source
     assert "reconcile_kustomization" in mod_source
-    has_emphasis = any(kw in mod_source for kw in ("FIRST", "MANDATORY", "MUST", "exactly once"))
+    has_emphasis = any(
+        kw in mod_source for kw in ("FIRST", "MANDATORY", "MUST", "exactly once")
+    )
     assert has_emphasis, "Prompt must emphasise ordering of git-mcp sequence"
 
 

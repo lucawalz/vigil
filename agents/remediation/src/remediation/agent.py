@@ -9,9 +9,6 @@ Tool scope: git, flux, and nixos MCP clients only.
 
 from __future__ import annotations
 
-import os
-
-from common.constants import GIT_COMMIT_BUDGET
 from common.provider import build_model
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
@@ -88,7 +85,8 @@ Return a RemediationResult with:
     None on gate failure or OS path.
   - agent_branch: 'remediation/run-<run_id>' on K8s path; None on OS path.
   - agent_commits: list of commit SHAs from commit_files responses; None on OS path.
-  - gate_status: 'merged' on K8s gate success, 'closed' on gate failure, None on OS path.
+  - gate_status: 'merged' on K8s gate success, 'closed' on gate failure,
+    None on OS path.
 
 Do not call any tool from ssh-mcp; it is not in the toolset.
 

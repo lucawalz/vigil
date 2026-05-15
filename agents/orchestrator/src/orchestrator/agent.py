@@ -321,7 +321,8 @@ async def run_orchestration(
                         or "Suspended: true" in kust_text
                     ):
                         log.error(
-                            "run %s aborted: flux_degraded (cluster-apps unhealthy): %s",
+                            "run %s aborted: flux_degraded"
+                            " (cluster-apps unhealthy): %s",
                             run_id,
                             kust_text,
                         )
@@ -411,7 +412,9 @@ async def run_orchestration(
             trace.write_trace(run_id, "remediation", rem_msgs)
 
             destructive_repair = remediation_result.destructive_repair
-            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+            total_tool_calls = (
+                _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+            )
             iteration_count += _count_tool_calls(rem_msgs)
 
             outcome: str
@@ -434,7 +437,9 @@ async def run_orchestration(
                     rollback_success = await _issue_rollback(
                         git_mcp, flux_mcp, remediation_result.merge_commit_sha
                     )
-                    outcome = "rollback_succeeded" if rollback_success else "rollback_failed"
+                    outcome = (
+                        "rollback_succeeded" if rollback_success else "rollback_failed"
+                    )
                 else:
                     rollback_success = False
                     outcome = "rollback_failed"
