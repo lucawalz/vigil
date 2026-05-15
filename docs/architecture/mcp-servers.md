@@ -1,6 +1,6 @@
 # Vigil — MCP Servers
 
-Four Go MCP servers run as long-lived child processes of the agent host, communicating with the Python agent layer over stdio JSON-RPC 2.0 [1]. These servers (`kubectl-mcp`, `flux-mcp`, `ssh-mcp`, and `nixos-mcp`) form the only interface through which agents touch external systems. No Python agent code ever calls `subprocess`, invokes the Kubernetes API directly, or opens an SSH connection; all such operations are mediated by a typed MCP tool call that crosses the process boundary.
+Five Go MCP servers run as long-lived child processes of the agent host, communicating with the Python agent layer over stdio JSON-RPC 2.0 [1]. These servers (`kubectl-mcp`, `flux-mcp`, `git-mcp`, `ssh-mcp`, and `nixos-mcp`) form the only interface through which agents touch external systems. No Python agent code ever calls `subprocess`, invokes the Kubernetes API directly, or opens an SSH connection; all such operations are mediated by a typed MCP tool call that crosses the process boundary.
 
 Each server is started once per FastAPI lifespan via Pydantic AI's `MCPServerStdio` context manager, which spawns the Go binary as a child process and maintains the stdio pipe for the lifetime of the application. The parent Python process and the Go child share no memory; the only communication channel is the JSON-RPC 2.0 message stream over stdin/stdout. This process boundary is the primary trust boundary of the Vigil system: the Python layer expresses intent through typed MCP tool arguments, and the Go layer performs the actual operations against cluster infrastructure, SSH targets, and NixOS nodes.
 
@@ -8,7 +8,7 @@ Each server is started once per FastAPI lifespan via Pydantic AI's `MCPServerStd
 
 The decision to expose a single MCP-only tool surface is justified in [ADR-0002](../adr/0002-mcp-exclusive-tool-surface.md): typed argument validation prevents injection from string-interpolated shell commands, every mutation is traceable to a named operation in the audit log, and servers can be unit-tested with `io.Pipe()` fake stdio transports without a live cluster.
 
-The choice of Go for all four servers is justified in [ADR-0003](../adr/0003-go-mcp-servers.md): a single static binary requires no runtime on the agent host, the Go standard library provides `crypto/ssh` and `net/http` without external dependencies, and the servers are entirely decoupled from the Python virtualenv. The `mark3labs/mcp-go` SDK [2] provides the stdio server scaffolding and handles MCP protocol framing, tool registration, and JSON-RPC dispatch.
+The choice of Go for all five servers is justified in [ADR-0003](../adr/0003-go-mcp-servers.md): a single static binary requires no runtime on the agent host, the Go standard library provides `crypto/ssh` and `net/http` without external dependencies, and the servers are entirely decoupled from the Python virtualenv. The `mark3labs/mcp-go` SDK [2] provides the stdio server scaffolding and handles MCP protocol framing, tool registration, and JSON-RPC dispatch.
 
 An alternative where the Python agents invoke shell commands via `subprocess`, or call `kubectl` and `ssh` directly, satisfies none of the three requirements: argument arrays constructed at runtime from LLM-generated strings are susceptible to injection; direct subprocess calls produce no structured audit record; and verifying such calls in tests requires either a live cluster or a mock that mirrors the full CLI behaviour of the targeted commands. The Go MCP boundary resolves all three concerns simultaneously, at the cost of a Go toolchain in CI and the modest per-call overhead of JSON-RPC serialization over a local pipe.
 
@@ -16,73 +16,52 @@ Each Go binary is compiled with `go build ./...` into a single statically-linked
 
 ## Trust Boundary
 
-The stdio pipe between the Python process and each Go child is the trust boundary of the Vigil system. The Python agent layer reasons about what to do; the Go layer controls what can be done. This separation has a concrete security consequence: even if the LLM produces an argument string containing a shell metacharacter, a SQL fragment, or a path traversal sequence, that string reaches the Go server as a typed MCP argument; it is never interpreted by a shell. The Go server validates it against typed parameter declarations and, where applicable, against the allowlist or the guardMutation state before passing it to the underlying API.
+The stdio pipe between the Python process and each Go child is the trust boundary of the Vigil system. The Python agent layer reasons about what to do; the Go layer controls what can be done. This separation has a concrete security consequence: even if the LLM produces an argument string containing a shell metacharacter, a SQL fragment, or a path traversal sequence, that string reaches the Go server as a typed MCP argument; it is never interpreted by a shell. The Go server validates it against typed parameter declarations before passing it to the underlying API.
 
 The boundary is enforced by process isolation, not by policy. The Python agent has no file descriptor to the Kubernetes API server, no socket to SSH targets, and no reference to the NixOS CLI binaries. The only channel available to the Python layer is the stdin pipe to each Go child, and the only operations that pipe supports are those defined in the MCP tool schema.
 
 
 ## Server Inventory
 
-All four servers implement the MCP specification (revision 2024-11-05) [1] using `mark3labs/mcp-go` [2] at version v0.48.0.
+All five servers implement the MCP specification (revision 2024-11-05) [1] using `mark3labs/mcp-go` [2] at version v0.48.0.
 
 | Server | Language | SDK | go.mod version | Tools |
 |--------|----------|-----|----------------|-------|
-| kubectl-mcp | Go | mark3labs/mcp-go | v0.48.0 | `get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_undo`, `apply_patch`, `rollout_status` |
-| flux-mcp | Go | mark3labs/mcp-go | v0.48.0 | `suspend_kustomization`, `resume_kustomization`, `reconcile_kustomization`, `get_kustomization_status` |
+| kubectl-mcp | Go | mark3labs/mcp-go | v0.48.0 | `get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_status` |
+| flux-mcp | Go | mark3labs/mcp-go | v0.48.0 | `reconcile_kustomization`, `get_kustomization_status`, `get_gitrepository_status` |
+| git-mcp | Go | mark3labs/mcp-go | v0.48.0 | `create_branch`, `write_manifest`, `commit_files`, `push_branch`, `create_pr`, `get_pr_status`, `wait_for_gate`, `revert_commit`, `close_pr`, `delete_branch` |
 | ssh-mcp | Go | mark3labs/mcp-go | v0.48.0 | `run_allowed_command` (with static allowlist) |
 | nixos-mcp | Go | mark3labs/mcp-go | v0.48.0 | `get_generations`, `switch_generation`, `rebuild_test`, `get_journal`, `get_systemd_status`, `etcd_snapshot_save` |
 
 ## kubectl-mcp
 
-`kubectl-mcp` exposes both read and write access to the Kubernetes API via the `client-go` library. The read tools (`get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_status`) are available to both the Diagnosis and Remediation agents. The write tools (`apply_patch` and `rollout_undo`) are excluded from the Diagnosis agent's tool scope via `FilteredToolset`, ensuring that the diagnostic phase can observe cluster state without risking inadvertent mutation.
-
-`apply_patch` performs a strategic-merge or server-side apply patch against a named Kubernetes resource; it is the primary K8s remediation verb for workload-level faults such as adjusting resource requests, correcting image tags, or restoring a misconfigured ConfigMap. `rollout_undo` triggers a rollback of a Deployment or DaemonSet to its previous revision; it is invoked by the Orchestrator (not the Remediation agent) when the Watchdog reports `WatchdogResult.degraded=True` after a remediation attempt, signalling that the repair itself caused regression.
+`kubectl-mcp` exposes read-only access to the Kubernetes API via the `client-go` library. The five read tools (`get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_status`) are available to both the Diagnosis and Remediation agents. Cluster mutations are performed exclusively through the GitOps path documented in [ADR-0005](../adr/0005-multi-agent-architecture.md): the Remediation agent writes manifests via git-mcp and Flux reconciles the merged commit, so kubectl-mcp carries no write surface.
 
 Output from every `kubectl-mcp` tool is passed through `truncateOutput` before returning to the agent. The general context limit (4 KB) applies to `describe_pod` and most reads; `get_logs` is capped separately at 2 KB because log streams are typically unbounded. See [Output Truncation](#output-truncation) for the full table and implementation detail.
 
 Authentication to the Kubernetes API is provided by a ServiceAccount kubeconfig. The scope of that ServiceAccount, enforcing least privilege, is the primary K8s-side trust boundary; the MCP server itself makes no additional access decisions beyond what the kubeconfig permits.
 
-## flux-mcp and the guardMutation Correctness Argument
+## flux-mcp
 
-`flux-mcp` exposes four tools for controlling Flux Kustomization resources: `suspend_kustomization`, `resume_kustomization`, `reconcile_kustomization`, and `get_kustomization_status`. Two of the four are guarded by a middleware called `guardMutation`. Understanding why this guard exists is central to understanding the correctness model of the K8s remediation path.
+`flux-mcp` exposes three tools: `reconcile_kustomization`, `get_kustomization_status`, and `get_gitrepository_status`. None of these tools performs a direct cluster mutation. The Orchestrator calls `get_kustomization_status` and `get_gitrepository_status` for the Flux health pre-check before any K8s remediation run; the Remediation agent calls `reconcile_kustomization` at the end of its GitOps sequence to force Flux to pull the merged commit immediately rather than wait for the next reconciliation tick.
 
-When Flux is active, it continuously reconciles Kustomization resources against the desired state in Git. If an agent patches a Kubernetes resource while the corresponding Kustomization is reconciling, Flux will overwrite the agent's patch on its next reconciliation cycle, silently undoing the repair. This is not a rare edge case; Flux's default reconciliation interval is short enough that mid-remediation overwrites occur in practice. The fix applied by the agent disappears, and subsequent health checks reflect the reverted state rather than the agent's intervention.
+Earlier versions of flux-mcp exposed `suspend_kustomization` and `resume_kustomization`, along with a per-resource `guardMutation` middleware that required suspending a Kustomization before any cluster mutation could proceed. The pivot to GitOps remediation makes this guard structurally unnecessary: there is no in-cluster mutation to protect against Flux overwriting, because the agent's repair is a commit on `main` and Flux reconciliation is the application mechanism, not a competing process. The guard was protecting the agent from a problem the agent no longer has.
 
-The `guardMutation` middleware enforces a mandatory protocol at the Go layer: a Kustomization must be suspended before any mutating tool call can proceed for that resource. This is not a naming convention or a prompt instruction to the LLM; it is a hard Go-layer check that the named resource was previously registered in the suspended set. The enforcement mechanism is a `suspendedNames map[string]bool` protected by a `sync.Mutex` inside the `FluxServer` struct:
+The K8s remediation round-trip is now `create_branch → write_manifest → commit_files → push_branch → create_pr → wait_for_gate → reconcile_kustomization`. The git-mcp `wait_for_gate` step blocks until the `remediation-gate.yml` workflow has validated and merged the PR (auto-merge is enabled on creation) or rejected it; on success the agent calls `reconcile_kustomization(namespace="flux-system", name="cluster-apps")` to trigger immediate Flux reconciliation against the merged commit. Cluster state converges to the manifest committed on `main` by structural argument: Flux is the only writer to the underlying resources, and the manifest in Git is the only input.
 
-```go
-// mcp-servers/flux-mcp/internal/server/server.go
-func (s *FluxServer) guardMutation(next server.ToolHandlerFunc) server.ToolHandlerFunc {
-    return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-        name, _ := req.GetArguments()["name"].(string)
-        s.mu.Lock()
-        allowed := name != "" && s.suspendedNames[name]
-        s.mu.Unlock()
-        if !allowed {
-            return mcp.NewToolResultError(
-                "flux_suspended guard: call suspend_kustomization for this resource before any mutating tool",
-            ), nil
-        }
-        return next(ctx, req)
-    }
-}
-```
+The Orchestrator runs a Flux health pre-check before any K8s remediation: `get_kustomization_status` against `flux-system/cluster-apps` (rejects on `Ready=False`, `Stalled=True`, or `Suspended=true`) and `get_gitrepository_status` against `flux-system/flux-system` (rejects on `Ready=False`). Both checks return `outcome=flux_degraded` and abort the run. The `get_gitrepository_status` check is load-bearing: a broken pull cycle means Flux can still report Kustomization `Ready=True` against a stale commit, but it will not pick up the agent's PR after merge.
 
-The guard is wrapped around `resume_kustomization` and `reconcile_kustomization`. It is deliberately absent from `suspend_kustomization`, which is the gate enabler: calling `suspend_kustomization(name="apps")` registers `"apps"` in `suspendedNames` and simultaneously suspends the Kustomization in the Flux API, halting further reconciliation for that resource.
+On Watchdog-detected regression, the Orchestrator calls `git-mcp.revert_commit(merge_commit_sha)` followed by `flux-mcp.reconcile_kustomization` to force the revert to apply immediately. This makes K8s rollback structurally equivalent to OS rollback (`switch_generation` for NixOS): both undo by reverting to a known-good state declared in version control, not by issuing an imperative restart. ADR-0011 documents the deterministic-Watchdog and the structural symmetry argument in full.
 
-The call sequence for a correct K8s remediation round-trip is therefore:
+## git-mcp
 
-1. `suspend_kustomization(name="apps")` — registers `"apps"` in `suspendedNames`; Flux stops reconciling `apps`
-2. `apply_patch(...)` or `rollout_undo(...)` (kubectl-mcp) — the repair action; Flux is suspended so it will not overwrite the change
-3. `resume_kustomization(name="apps")` — removes `"apps"` from `suspendedNames`; Flux resumes reconciliation
+`git-mcp` exposes ten tools for the GitOps remediation workflow. `create_branch` accepts a `run_id` argument and creates a branch named `remediation/run-<run_id>`; that branch name pattern is exactly what the `remediation-gate.yml` workflow's job-level `if: startsWith(github.head_ref, 'remediation/run-')` condition matches. `write_manifest` overwrites a file at a specified repo-relative path with the provided content. `commit_files` stages and commits the written files. `push_branch` pushes the branch to `origin`. `create_pr` opens a pull request from the branch to `main` and enables auto-merge (squash) via the `gh` CLI. `get_pr_status` returns the current merge or check status of the open PR. `wait_for_gate` blocks until the PR is merged or closed, returning the merge commit SHA on success and an error on CI rejection. `revert_commit` checks out `main` and pushes a revert of the specified merge commit SHA. `close_pr` closes an open PR without merging. `delete_branch` removes the remote branch, cleaning up after a failed gate run.
 
-`reconcile_kustomization` is also gated by `guardMutation` (it requires prior suspension) and may be called between steps 2 and 3 to force an immediate Flux re-sync, but it is not the repair verb.
+`git-mcp` is session-scoped per run. `create_branch` clones the repo into a fresh temporary directory and stores the clone path in process-local memory; subsequent calls (`write_manifest`, `commit_files`, `push_branch`) operate within that session directory. Cloning happens once per `create_branch` invocation; no persistent global clone is kept across runs. If the agent process restarts between calls, the session state is lost and the run must start a new session from `create_branch`.
 
-If the agent attempts `reconcile_kustomization(name="infra")` without first suspending `"infra"`, the guard rejects the call immediately with a `ToolResultError` containing the message shown in the excerpt above. The state is per-session (process lifetime) and per-resource: suspending `"apps"` does not permit mutations on `"infra"`, and restarting the agent process clears all suspend state because `suspendedNames` is an in-memory map with no persistence.
+`create_pr` enables auto-merge (squash) on the PR via the `gh` CLI immediately after creation. The `remediation-gate.yml` workflow carries no `pull-requests: write` permission and does not call `gh pr merge` itself — the auto-merge flag is honoured by GitHub once the required status checks pass. `wait_for_gate` polls the PR status until merged or closed; on merge it returns `gate passed: merged sha=<sha>`; on close-without-merge it returns an error that the Remediation agent handles by calling `close_pr` + `delete_branch` to leave the repo in a clean state.
 
-The `resume_kustomization` step is also gated by `guardMutation`. This prevents a double-resume (calling resume on a resource that was never suspended in this session), which would produce a confusing Flux API error rather than a clear guard rejection. The `onResume` callback deletes the name from the set; a subsequent resume attempt for the same name will find the guard empty and return an error before any Flux API call is made.
-
-The locking discipline is intentional: `name != ""` is checked inside the lock to avoid a race between a concurrent `onSuspend` callback and the guard read. The `sync.Mutex` is the only synchronisation primitive; no channel or condition variable is needed because the guard is a single boolean map lookup.
+`revert_commit` checks out `main` in the existing session clone, runs `git revert --no-edit <merge_sha>`, and pushes the result to `origin/main` directly. The Orchestrator immediately calls `flux-mcp.reconcile_kustomization` after the revert push to force Flux to pull the reverted state without waiting for the next reconciliation tick. `close_pr` and `delete_branch` — used on gate failure only — keep the repo state clean across eval campaigns by ensuring no orphan open PRs accumulate between runs.
 
 ## ssh-mcp and the Allowlist
 
@@ -134,7 +113,7 @@ The `rebuild_test` tool is the only nixos-mcp tool classified as read-like rathe
 
 ## Output Truncation
 
-Every tool in all four MCP servers passes its string output through `truncateOutput` before returning a `CallToolResult`. The motivation is context-window protection: unrestricted log output or `kubectl describe` dumps can easily exceed the token budget of the downstream LLM, corrupting the agent's working context or triggering a request failure due to token limits.
+Every tool in all five MCP servers passes its string output through `truncateOutput` before returning a `CallToolResult`. The motivation is context-window protection: unrestricted log output or `kubectl describe` dumps can easily exceed the token budget of the downstream LLM, corrupting the agent's working context or triggering a request failure due to token limits.
 
 The byte limits are defined as named constants in each server's `internal/config/config.go` and are overridable via environment variables at server startup:
 
@@ -166,23 +145,23 @@ The same `truncateOutput` function (or a local equivalent) is used by `flux-mcp`
 
 ## Server Lifecycle
 
-All four servers are started once during the FastAPI application lifespan and remain running for the duration of the process. The boot-once pattern is critical: starting a new MCP server subprocess per agent request would incur the full Go binary startup cost on each call, and more importantly would lose any per-session state, including the `suspendedNames` set in `flux-mcp`. By keeping the servers alive for the full lifespan, the `suspendedNames` map persists across all tool calls within a single Orchestrator run.
+All five servers are started once during the FastAPI application lifespan and remain running for the duration of the process. The boot-once pattern is critical: starting a new MCP server subprocess per agent request would incur the full Go binary startup cost on each call, and more importantly would lose any per-session state in git-mcp (the session clone directory path). By keeping the servers alive for the full lifespan, the session state persists across all tool calls within a single Orchestrator run.
 
 The Pydantic AI `MCPServerStdio` context manager handles the subprocess lifecycle: on entry it spawns the Go binary and performs the MCP `initialize` handshake; on exit it sends a termination signal and waits for the child to exit cleanly. If the Go server crashes during a run, `MCPServerStdio` surfaces the error as a tool call failure, which the circuit breaker counts as a consecutive error toward the trip threshold.
 
-The four servers are independent processes with no shared state. `flux-mcp`'s `suspendedNames` map is not visible to `kubectl-mcp` or any other server. The only coordination between servers happens at the Python layer, where the Remediation agent sequences tool calls across servers in a defined order (suspend via flux-mcp, then patch via kubectl-mcp, then resume via flux-mcp).
+The five servers are independent processes with no shared state. The only coordination between servers happens at the Python layer, where the Remediation agent sequences tool calls across servers in a defined order (git operations via git-mcp, then Flux reconciliation via flux-mcp).
 
-Error handling follows a consistent pattern across all four servers: when an operation against an external system fails, the handler returns a `mcp.NewToolResultError(...)` rather than an error return value. The MCP specification [1] distinguishes tool errors (failures within the tool's domain, reported as `isError: true` in the result) from protocol errors (failures in the JSON-RPC transport itself). Vigil uses tool errors for all cluster-side failures (Kubernetes API errors, SSH connection failures, NixOS rebuild failures) so that the LLM receives a structured description of what went wrong rather than an opaque transport failure. The circuit breaker in the Orchestrator counts consecutive tool errors (not transport errors) toward the trip threshold.
+Error handling follows a consistent pattern across all five servers: when an operation against an external system fails, the handler returns a `mcp.NewToolResultError(...)` rather than an error return value. The MCP specification [1] distinguishes tool errors (failures within the tool's domain, reported as `isError: true` in the result) from protocol errors (failures in the JSON-RPC transport itself). Vigil uses tool errors for all cluster-side failures (Kubernetes API errors, SSH connection failures, NixOS rebuild failures) so that the LLM receives a structured description of what went wrong rather than an opaque transport failure. The circuit breaker in the Orchestrator counts consecutive tool errors (not transport errors) toward the trip threshold.
 
 ## Testing Strategy
 
 Each MCP server has a Go unit test suite that runs entirely without a live cluster. The stdio transport layer is replaced with `io.Pipe()` fakes: one end of the pipe drives the MCP JSON-RPC protocol as a test client, the other end runs the real server handler under test. This approach verifies that JSON-RPC framing, argument parsing, typed argument validation, and error handling all behave correctly without any network dependency.
 
-The `guardMutation` state transitions are tested by calling `suspend_kustomization` and then verifying that subsequent calls to `reconcile_kustomization` and `resume_kustomization` succeed or fail as expected depending on the resource name supplied. The `validateCommand` allowlist logic is tested with both permitted and forbidden binaries, permitted and forbidden sub-commands, and arguments containing shell metacharacters. The `truncateOutput` byte limits are tested with strings that are exactly at the limit, one byte over, and significantly over.
+The `validateCommand` allowlist logic in ssh-mcp is tested with both permitted and forbidden binaries, permitted and forbidden sub-commands, and arguments containing shell metacharacters. The `truncateOutput` byte limits are tested with strings that are exactly at the limit, one byte over, and significantly over. The git-mcp session model is tested with fake git clients that return deterministic responses, verifying that `create_branch` initialises the session and that subsequent calls within the same session use the stored clone path.
 
 Integration tests run against the local K3s homelab cluster and exercise the full call path including the Kubernetes API via `client-go`, the Flux REST API, and the SSH connection to a real node. These tests are not required to pass in CI environments without cluster access; the unit-test suite is the CI gate.
 
-The CI pipeline runs two independent lint and test stages: `ruff` and `pytest` for the Python agent layer, and `golangci-lint` plus `go test ./...` for the four Go MCP servers. The Go test stage covers all four servers and runs without cluster access, relying entirely on the `io.Pipe()` fake transport. A test that requires a live cluster is a test that cannot run in CI; this constraint is by design and is enforced by the test suite structure, not by convention.
+The CI pipeline runs two independent lint and test stages: `ruff` and `pytest` for the Python agent layer, and `golangci-lint` plus `go test ./...` for the five Go MCP servers. The Go test stage covers all five servers and runs without cluster access, relying entirely on the `io.Pipe()` fake transport. A test that requires a live cluster is a test that cannot run in CI; this constraint is by design and is enforced by the test suite structure, not by convention.
 
 The `io.Pipe()` approach also validates a property that cannot be tested against a real cluster: the JSON-RPC framing itself. A real cluster call succeeds or fails based on cluster state, not on whether the MCP message was correctly serialised. The fake transport lets the test assert on the exact bytes exchanged, catching protocol-level regressions in tool definitions, argument schemas, and result encoding that would be invisible in a live integration test.
 
@@ -190,8 +169,8 @@ The `io.Pipe()` approach also validates a property that cannot be tested against
 
 - [ADR-0002](../adr/0002-mcp-exclusive-tool-surface.md) — decision record for the MCP-only tool surface, including the alternatives considered and their failure modes in the Vigil context
 - [ADR-0003](../adr/0003-go-mcp-servers.md) — decision record for Go as the MCP server implementation language
-- `docs/architecture/overview.md` — system topology, showing how the four MCP servers fit within the full component graph including the Python agent layer, K8s cluster, and Flux GitOps controller
-- `docs/architecture/agent-design.md` — agent responsibilities and the asyncio.TaskGroup remediation+watchdog parallel pattern that sequences calls across kubectl-mcp and flux-mcp
+- `docs/architecture/overview.md` — system topology, showing how the five MCP servers fit within the full component graph including the Python agent layer, K8s cluster, and Flux GitOps controller
+- `docs/architecture/agent-design.md` — agent responsibilities and the sequential K8s remediation sequencing (git-mcp GitOps sequence, then Watchdog) and the concurrent OS remediation pattern
 
 ## References
 
