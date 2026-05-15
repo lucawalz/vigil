@@ -51,8 +51,7 @@ def _canned_report() -> DiagnosisReport:
             resource_name="vigil-app",
             resource_namespace="default",
             patch_body=(
-                "apiVersion: apps/v1\nkind: Deployment\n"
-                "metadata:\n  name: vigil-app\n"
+                "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\n"
             ),
         ),
     )
@@ -842,8 +841,10 @@ async def test_flux_degraded_precheck_gitrepository(
                 )
             }
             if tool == "get_gitrepository_status"
-            else {"content": "Kustomization: flux-system/cluster-apps\n"
-                             "Conditions:\n  Ready: True"}
+            else {
+                "content": "Kustomization: flux-system/cluster-apps\n"
+                "Conditions:\n  Ready: True"
+            }
         )
     )
     record = await run_orchestration(
@@ -933,9 +934,7 @@ async def test_outcome_rollback_failed(
     )
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = AsyncMock(
-        side_effect=RuntimeError("revert failed")
-    )
+    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=RuntimeError("revert failed"))
 
     record = await run_orchestration(
         sample_fault_event,
@@ -1013,8 +1012,12 @@ async def test_outcome_gate_failed(
     failed_rem = RemediationResult(
         success=False,
         actions_taken=[
-            "create_branch", "write_manifest", "commit_files",
-            "push_branch", "create_pr", "wait_for_gate",
+            "create_branch",
+            "write_manifest",
+            "commit_files",
+            "push_branch",
+            "create_pr",
+            "wait_for_gate",
         ],
         tool_calls_count=6,
         destructive_repair=False,

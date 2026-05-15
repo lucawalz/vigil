@@ -412,8 +412,8 @@ async def run_orchestration(
             trace.write_trace(run_id, "remediation", rem_msgs)
 
             destructive_repair = remediation_result.destructive_repair
-            total_tool_calls = (
-                _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
+            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(
+                rem_msgs
             )
             iteration_count += _count_tool_calls(rem_msgs)
 

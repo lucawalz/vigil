@@ -44,8 +44,13 @@ def _canned_remediation() -> RemediationResult:
     return RemediationResult(
         success=True,
         actions_taken=[
-            "create_branch", "write_manifest", "commit_files",
-            "push_branch", "create_pr", "wait_for_gate", "reconcile_kustomization",
+            "create_branch",
+            "write_manifest",
+            "commit_files",
+            "push_branch",
+            "create_pr",
+            "wait_for_gate",
+            "reconcile_kustomization",
         ],
         tool_calls_count=7,
         destructive_repair=False,
