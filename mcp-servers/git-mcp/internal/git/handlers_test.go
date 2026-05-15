@@ -140,7 +140,6 @@ func preloadedState(cloneDir, branch string) *fakeSessionState {
 	return s
 }
 
-
 func TestCreateBranchHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{cloneDir: t.TempDir()}
 	state := &fakeSessionState{}
@@ -233,7 +232,6 @@ func TestCreateBranchHandler_NoTokenInOutput(t *testing.T) {
 		t.Errorf("token sentinel leaked into response: %s", text)
 	}
 }
-
 
 func TestWriteManifestHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
@@ -331,7 +329,6 @@ func TestWriteManifestHandler_RejectsAbsolutePath(t *testing.T) {
 	}
 }
 
-
 func TestCommitFilesHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{commitSHA: "abc1234"}
@@ -384,7 +381,6 @@ func TestCommitFilesHandler_MissingArgument(t *testing.T) {
 	}
 }
 
-
 func TestPushBranchHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{}
@@ -435,7 +431,6 @@ func TestPushBranchHandler_NoSession(t *testing.T) {
 		t.Error("expected IsError=true when session not initialised")
 	}
 }
-
 
 func TestCreatePRHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
@@ -509,7 +504,6 @@ func TestCreatePRHandler_MissingArgument(t *testing.T) {
 	}
 }
 
-
 func TestGetPRStatusHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{prState: "open", prMerged: false, prMergeSHA: ""}
 	state := &fakeSessionState{}
@@ -558,7 +552,6 @@ func TestGetPRStatusHandler_MissingArgument(t *testing.T) {
 		t.Error("expected IsError=true for missing pr_number")
 	}
 }
-
 
 func TestWaitForGateHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{prState: "open", prMerged: true, prMergeSHA: "deadbeef"}
@@ -650,7 +643,6 @@ func TestWaitForGateHandler_MissingArgument(t *testing.T) {
 	}
 }
 
-
 func TestRevertCommitHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{revertSHA: "cafebabe"}
@@ -708,7 +700,6 @@ func TestRevertCommitHandler_InvalidSHA(t *testing.T) {
 		t.Error("expected IsError=true for invalid SHA format")
 	}
 }
-
 
 func TestSessionStateMutex_Concurrent(t *testing.T) {
 	s := &gitserver.GitServer{}

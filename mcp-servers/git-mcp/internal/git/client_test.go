@@ -13,7 +13,7 @@ func TestNewRealGitClient_implementsInterface(t *testing.T) {
 		GitHubToken: "test-token",
 		RepoURL:     "https://github.com/lucawalz/vigil.git",
 	}
-	var _ GitClient = NewRealGitClient(cfg)
+	var _ = NewRealGitClient(cfg)
 }
 
 func TestRealGitClient_errorPathsSanitiseURL(t *testing.T) {
