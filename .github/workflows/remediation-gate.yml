@@ -1,0 +1,70 @@
+name: Remediation Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'remediation/**'
+
+permissions:
+  contents: read
+
+jobs:
+  remediation-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute diff files
+        id: diff
+        run: |
+          FILES=$(git diff --name-only origin/main...HEAD \
+            | grep '\.yaml$' \
+            | grep -v '\.sops\.yaml$' \
+            | tr '\n' ' ')
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+
+      - name: Install kustomize
+        run: |
+          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kustomize
+
+      - name: Install conftest
+        run: |
+          curl -sL https://github.com/open-policy-agent/conftest/releases/download/v0.68.2/conftest_0.68.2_Linux_x86_64.tar.gz \
+            | tar -xz -C /usr/local/bin conftest
+
+      - name: Download Flux CRD schemas
+        run: |
+          mkdir -p /tmp/flux-crd-schemas/master-standalone-strict
+          curl -sL https://github.com/fluxcd/flux2/releases/latest/download/crd-schemas.tar.gz \
+            | tar -xz -C /tmp/flux-crd-schemas/master-standalone-strict
+
+      - name: kubeconform
+        if: steps.diff.outputs.files != ''
+        run: |
+          # shellcheck disable=SC2086
+          kubeconform \
+            -strict \
+            -ignore-missing-schemas \
+            -schema-location default \
+            -schema-location /tmp/flux-crd-schemas \
+            -skip Secret \
+            ${{ steps.diff.outputs.files }}
+
+      - name: kustomize build
+        run: |
+          kustomize build infra/overlays/hetzner/kubernetes/clusters/hetzner/apps > /dev/null
+
+      - name: conftest
+        if: steps.diff.outputs.files != ''
+        run: |
+          # shellcheck disable=SC2086
+          conftest test --policy infra/policy/ ${{ steps.diff.outputs.files }}
