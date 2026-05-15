@@ -48,6 +48,7 @@ jobs:
             | tar -xz -C /tmp/flux-crd-schemas/master-standalone-strict
 
       - name: kubeconform
+        if: steps.diff.outputs.files != ''
         run: |
           # shellcheck disable=SC2086
           kubeconform \
@@ -63,6 +64,7 @@ jobs:
           kustomize build infra/overlays/hetzner/kubernetes/clusters/hetzner/apps > /dev/null
 
       - name: conftest
+        if: steps.diff.outputs.files != ''
         run: |
           # shellcheck disable=SC2086
           conftest test --policy infra/policy/ ${{ steps.diff.outputs.files }}
