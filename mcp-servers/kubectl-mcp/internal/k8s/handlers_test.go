@@ -10,20 +10,20 @@ import (
 	"github.com/mark3labs/mcp-go/mcptest"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/lucawalz/vigil/mcp-servers/kubectl-mcp/internal/config"
 	"github.com/lucawalz/vigil/mcp-servers/kubectl-mcp/internal/k8s"
+	kubectlserver "github.com/lucawalz/vigil/mcp-servers/kubectl-mcp/internal/server"
 )
 
-// fakeK8sClient implements K8sClient for testing. Each method returns its fixture
-// string and the configured err field.
 type fakeK8sClient struct {
 	pods          string
 	describePod   string
 	logs          string
-	rolloutUndo   string
-	applyPatch    string
 	rolloutStatus string
 	err           error
 }
+
+var _ k8s.K8sClient = &fakeK8sClient{}
 
 func (f *fakeK8sClient) GetPods(_ context.Context, _ string) (string, error) {
 	return f.pods, f.err
@@ -37,14 +37,6 @@ func (f *fakeK8sClient) GetLogs(_ context.Context, _, _, _ string, _ int64) (str
 	return f.logs, f.err
 }
 
-func (f *fakeK8sClient) RolloutUndo(_ context.Context, _, _ string) (string, error) {
-	return f.rolloutUndo, f.err
-}
-
-func (f *fakeK8sClient) ApplyPatch(_ context.Context, _, _, _, _ string) (string, error) {
-	return f.applyPatch, f.err
-}
-
 func (f *fakeK8sClient) GetNodes(_ context.Context) (string, error) {
 	return "", f.err
 }
@@ -53,8 +45,6 @@ func (f *fakeK8sClient) RolloutStatus(_ context.Context, _, _ string) (string, e
 	return f.rolloutStatus, f.err
 }
 
-// callGetPods is a test helper that creates an mcptest server with the get_pods
-// tool and calls it with the provided arguments.
 func callGetPods(t *testing.T, fake *fakeK8sClient, maxBytes int, args map[string]any) (*mcp.CallToolResult, error) {
 	t.Helper()
 	srv, err := mcptest.NewServer(t, server.ServerTool{
@@ -196,73 +186,6 @@ func TestGetLogsHandler_Success(t *testing.T) {
 	}
 }
 
-func TestRolloutUndoHandler_Success(t *testing.T) {
-	fake := &fakeK8sClient{rolloutUndo: "deployment.apps/my-app rolled back"}
-	srv, err := mcptest.NewServer(t, server.ServerTool{
-		Tool: mcp.NewTool("rollout_undo",
-			mcp.WithString("namespace", mcp.Required()),
-			mcp.WithString("deployment", mcp.Required()),
-		),
-		Handler: k8s.HandleRolloutUndo(fake, 4096),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.Close()
-
-	var req mcp.CallToolRequest
-	req.Params.Name = "rollout_undo"
-	req.Params.Arguments = map[string]any{"namespace": "default", "deployment": "my-app"}
-	result, err := srv.Client().CallTool(context.Background(), req)
-	if err != nil {
-		t.Fatalf("CallTool error: %v", err)
-	}
-	if result.IsError {
-		t.Errorf("expected success, got error result")
-	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "rolled back") {
-		t.Errorf("expected rollback confirmation, got: %s", text)
-	}
-}
-
-func TestApplyPatchHandler_Success(t *testing.T) {
-	fake := &fakeK8sClient{applyPatch: "deployment.apps/my-app patched"}
-	srv, err := mcptest.NewServer(t, server.ServerTool{
-		Tool: mcp.NewTool("apply_patch",
-			mcp.WithString("namespace", mcp.Required()),
-			mcp.WithString("resource_type", mcp.Required()),
-			mcp.WithString("name", mcp.Required()),
-			mcp.WithString("patch", mcp.Required()),
-		),
-		Handler: k8s.HandleApplyPatch(fake, 4096),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.Close()
-
-	var req mcp.CallToolRequest
-	req.Params.Name = "apply_patch"
-	req.Params.Arguments = map[string]any{
-		"namespace":     "default",
-		"resource_type": "deployment",
-		"name":          "my-app",
-		"patch":         `{"spec":{"replicas":3}}`,
-	}
-	result, err := srv.Client().CallTool(context.Background(), req)
-	if err != nil {
-		t.Fatalf("CallTool error: %v", err)
-	}
-	if result.IsError {
-		t.Errorf("expected success, got error result")
-	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "patched") {
-		t.Errorf("expected patch confirmation, got: %s", text)
-	}
-}
-
 func TestRolloutStatusHandler_Success(t *testing.T) {
 	fake := &fakeK8sClient{rolloutStatus: "Deployment: default/my-app\nDesired: 3\nReady: 3\n"}
 	srv, err := mcptest.NewServer(t, server.ServerTool{
@@ -290,5 +213,33 @@ func TestRolloutStatusHandler_Success(t *testing.T) {
 	text := result.Content[0].(mcp.TextContent).Text
 	if !strings.Contains(text, "my-app") {
 		t.Errorf("expected deployment name in response, got: %s", text)
+	}
+}
+
+func TestKubectlToolInventory(t *testing.T) {
+	fake := &fakeK8sClient{}
+	cfg := &config.Config{MaxOutputBytesDescribe: 4096, MaxOutputBytesLogs: 4096}
+	mcpSrv := kubectlserver.NewServer(fake, cfg)
+
+	tools := mcpSrv.ListTools()
+	names := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		names[tool.Tool.Name] = true
+	}
+
+	required := []string{"get_nodes", "get_pods", "describe_pod", "get_logs", "rollout_status"}
+	for _, name := range required {
+		if !names[name] {
+			t.Errorf("expected tool %q to be registered", name)
+		}
+	}
+	if names["rollout_undo"] {
+		t.Error("rollout_undo must not be registered")
+	}
+	if names["apply_patch"] {
+		t.Error("apply_patch must not be registered")
+	}
+	if len(tools) != 5 {
+		t.Errorf("expected exactly 5 tools, got %d", len(tools))
 	}
 }

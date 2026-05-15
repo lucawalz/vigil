@@ -11,21 +11,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
-// K8sClient is the interface handlers depend on. The real implementation uses
-// client-go; tests inject a fake struct. The Go compiler enforces that
-// internal/ packages can only be used within this module.
 type K8sClient interface {
 	GetNodes(ctx context.Context) (string, error)
 	GetPods(ctx context.Context, namespace string) (string, error)
 	DescribePod(ctx context.Context, namespace, name string) (string, error)
 	GetLogs(ctx context.Context, namespace, name, container string, tailLines int64) (string, error)
-	RolloutUndo(ctx context.Context, namespace, deploymentName string) (string, error)
-	ApplyPatch(ctx context.Context, namespace, resourceType, name, patch string) (string, error)
 	RolloutStatus(ctx context.Context, namespace, deploymentName string) (string, error)
 }
 
@@ -130,47 +124,6 @@ func (c *realK8sClient) GetLogs(ctx context.Context, namespace, name, container 
 		return "", fmt.Errorf("read logs: %w", err)
 	}
 	return string(data), nil
-}
-
-func (c *realK8sClient) RolloutUndo(ctx context.Context, namespace, deploymentName string) (string, error) {
-	// Trigger a rolling restart by setting restartedAt to the current time.
-	// This causes the deployment controller to replace all pods one by one.
-	patch := fmt.Sprintf(
-		`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":%q}}}}}`,
-		time.Now().UTC().Format(time.RFC3339),
-	)
-	_, err := c.cs.AppsV1().Deployments(namespace).Patch(
-		ctx, deploymentName, types.MergePatchType, []byte(patch), metav1.PatchOptions{},
-	)
-	if err != nil {
-		return "", fmt.Errorf("rollout undo patch: %w", err)
-	}
-	return fmt.Sprintf("deployment.apps/%s restarted", deploymentName), nil
-}
-
-func (c *realK8sClient) ApplyPatch(ctx context.Context, namespace, resourceType, name, patch string) (string, error) {
-	var result string
-	switch resourceType {
-	case "deployment", "deployments":
-		dep, err := c.cs.AppsV1().Deployments(namespace).Patch(
-			ctx, name, types.MergePatchType, []byte(patch), metav1.PatchOptions{},
-		)
-		if err != nil {
-			return "", fmt.Errorf("patch deployment: %w", err)
-		}
-		result = fmt.Sprintf("deployment.apps/%s patched", dep.Name)
-	case "statefulset", "statefulsets":
-		ss, err := c.cs.AppsV1().StatefulSets(namespace).Patch(
-			ctx, name, types.MergePatchType, []byte(patch), metav1.PatchOptions{},
-		)
-		if err != nil {
-			return "", fmt.Errorf("patch statefulset: %w", err)
-		}
-		result = fmt.Sprintf("statefulset.apps/%s patched", ss.Name)
-	default:
-		return "", fmt.Errorf("unsupported resource type: %s (supported: deployment, statefulset)", resourceType)
-	}
-	return result, nil
 }
 
 func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deploymentName string) (string, error) {

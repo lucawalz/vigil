@@ -69,44 +69,6 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 	)
 
 	s.AddTool(
-		mcp.NewTool("rollout_undo",
-			mcp.WithDescription("Rolling restart of all pods in a deployment — not a rollback."),
-			mcp.WithString("namespace",
-				mcp.Required(),
-				mcp.Description("Kubernetes namespace"),
-			),
-			mcp.WithString("deployment",
-				mcp.Required(),
-				mcp.Description("Deployment name"),
-			),
-		),
-		k8s.HandleRolloutUndo(client, cfg.MaxOutputBytesDescribe),
-	)
-
-	s.AddTool(
-		mcp.NewTool("apply_patch",
-			mcp.WithDescription("Apply a strategic merge patch to a resource"),
-			mcp.WithString("namespace",
-				mcp.Required(),
-				mcp.Description("Kubernetes namespace"),
-			),
-			mcp.WithString("resource_type",
-				mcp.Required(),
-				mcp.Description("Resource type (e.g. deployment, statefulset)"),
-			),
-			mcp.WithString("name",
-				mcp.Required(),
-				mcp.Description("Resource name"),
-			),
-			mcp.WithString("patch",
-				mcp.Required(),
-				mcp.Description("JSON merge patch body"),
-			),
-		),
-		k8s.HandleApplyPatch(client, cfg.MaxOutputBytesDescribe),
-	)
-
-	s.AddTool(
 		mcp.NewTool("rollout_status",
 			mcp.WithDescription("Get rollout status of a deployment"),
 			mcp.WithString("namespace",
