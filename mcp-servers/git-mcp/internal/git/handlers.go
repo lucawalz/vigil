@@ -158,6 +158,9 @@ func HandleCreatePR(client GitClient, state SessionState, maxBytes int) server.T
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCreatePR: %v", err)), nil
 		}
+		if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("HandleCreatePR: enable auto-merge: %v", err)), nil
+		}
 		return mcp.NewToolResultText(truncateOutput(fmt.Sprintf("pr created: #%d", prNumber), maxBytes)), nil
 	}
 }

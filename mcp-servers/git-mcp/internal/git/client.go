@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ type GitClient interface {
 	CommitFiles(ctx context.Context, cloneDir, branch, message string) (sha string, err error)
 	Push(ctx context.Context, cloneDir, branch string) error
 	CreatePR(ctx context.Context, title, head, base, body string) (prNumber int, err error)
+	EnableAutoMerge(ctx context.Context, prNumber int) error
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
 	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA string) (revertSHA string, err error)
 }
@@ -188,6 +190,16 @@ func (c *realGitClient) CreatePR(ctx context.Context, title, head, base, body st
 		return 0, fmt.Errorf("create_pr: %w", err)
 	}
 	return pr.GetNumber(), nil
+}
+
+func (c *realGitClient) EnableAutoMerge(ctx context.Context, prNumber int) error {
+	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", "--auto", "--squash", strconv.Itoa(prNumber))
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+c.cfg.GitHubToken, "GH_REPO="+c.owner+"/"+c.repo)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("enable_auto_merge: gh pr merge --auto: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func (c *realGitClient) GetPRStatus(ctx context.Context, prNumber int) (string, bool, string, error) {
