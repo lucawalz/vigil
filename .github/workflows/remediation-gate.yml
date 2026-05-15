@@ -3,8 +3,6 @@ name: Remediation Gate
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'remediation/**'
 
 permissions:
   contents: read
@@ -12,6 +10,7 @@ permissions:
 jobs:
   remediation-gate:
     runs-on: ubuntu-latest
+    if: startsWith(github.head_ref, 'remediation/run-')
     steps:
       - uses: actions/checkout@v6
         with:

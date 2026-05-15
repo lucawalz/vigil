@@ -23,7 +23,7 @@ def test_diagnosis_report_rejects_bad_severity() -> None:
             severity="catastrophic",
             affected_resources=["default/vigil-app"],
             evidence="Failed to pull image",
-            recommended_action="apply_patch",
+            recommended_action="git_commit",
             confidence=0.9,
             requires_os_level=False,
         )
@@ -51,7 +51,7 @@ def test_diagnosis_report_confidence_bounds() -> None:
             severity="low",
             affected_resources=[],
             evidence="z",
-            recommended_action="apply_patch",
+            recommended_action="git_commit",
             confidence=1.5,  # out of range
             requires_os_level=False,
         )
@@ -79,7 +79,7 @@ def test_diagnosis_report_backward_compat_no_new_fields() -> None:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image",
-        recommended_action="apply_patch",
+        recommended_action="git_commit",
         confidence=0.9,
         requires_os_level=False,
     )

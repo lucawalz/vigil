@@ -39,6 +39,8 @@ type GitClient interface {
 	EnableAutoMerge(ctx context.Context, prNumber int) error
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
 	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA string) (revertSHA string, err error)
+	ClosePR(ctx context.Context, prNumber int) error
+	DeleteBranch(ctx context.Context, branch string) error
 }
 
 type realGitClient struct {
@@ -208,6 +210,29 @@ func (c *realGitClient) GetPRStatus(ctx context.Context, prNumber int) (string, 
 		return "", false, "", fmt.Errorf("get_pr_status: %w", err)
 	}
 	return pr.GetState(), pr.GetMerged(), pr.GetMergeCommitSHA(), nil
+}
+
+func (c *realGitClient) ClosePR(ctx context.Context, prNumber int) error {
+	cmd := exec.CommandContext(ctx, "gh", "pr", "close", "--delete-branch", strconv.Itoa(prNumber))
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+c.cfg.GitHubToken, "GH_REPO="+c.owner+"/"+c.repo)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("close_pr: gh pr close: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func (c *realGitClient) DeleteBranch(ctx context.Context, branch string) error {
+	cmd := exec.CommandContext(ctx, "gh", "api",
+		"-X", "DELETE",
+		fmt.Sprintf("repos/%s/%s/git/refs/heads/%s", c.owner, c.repo, branch),
+	)
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+c.cfg.GitHubToken)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("delete_branch: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // go-git v5 does not expose a native Revert; fall back to the git binary.

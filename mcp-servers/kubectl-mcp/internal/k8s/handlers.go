@@ -79,52 +79,6 @@ func HandleGetLogs(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 	}
 }
 
-func HandleRolloutUndo(client K8sClient, maxBytes int) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
-		ns, ok := args["namespace"].(string)
-		if !ok || ns == "" {
-			return mcp.NewToolResultError("namespace: missing or wrong type"), nil
-		}
-		deployment, ok := args["deployment"].(string)
-		if !ok || deployment == "" {
-			return mcp.NewToolResultError("deployment: missing or wrong type"), nil
-		}
-		output, err := client.RolloutUndo(ctx, ns, deployment)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("RolloutUndo: %v", err)), nil
-		}
-		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
-	}
-}
-
-func HandleApplyPatch(client K8sClient, maxBytes int) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
-		ns, ok := args["namespace"].(string)
-		if !ok || ns == "" {
-			return mcp.NewToolResultError("namespace: missing or wrong type"), nil
-		}
-		resourceType, ok := args["resource_type"].(string)
-		if !ok || resourceType == "" {
-			return mcp.NewToolResultError("resource_type: missing or wrong type"), nil
-		}
-		name, ok := args["name"].(string)
-		if !ok || name == "" {
-			return mcp.NewToolResultError("name: missing or wrong type"), nil
-		}
-		patch, ok := args["patch"].(string)
-		if !ok || patch == "" {
-			return mcp.NewToolResultError("patch: missing or wrong type"), nil
-		}
-		output, err := client.ApplyPatch(ctx, ns, resourceType, name, patch)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("ApplyPatch: %v", err)), nil
-		}
-		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
-	}
-}
-
 func HandleRolloutStatus(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -20,7 +21,7 @@ os.environ.setdefault("LLM_MODEL_NAME", "test-model")
 os.environ.setdefault("LLM_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("LLM_API_KEY", "sk-test")
 
-from diagnosis.models import DiagnosisReport
+from diagnosis.models import DiagnosisReport, ProposedPatch
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
     _score_diagnosis_accuracy,
@@ -41,18 +42,39 @@ def _canned_report() -> DiagnosisReport:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
-        recommended_action="apply_patch",
+        recommended_action="git_commit",
         confidence=0.95,
         requires_os_level=False,
+        manifest_path="infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml",
+        proposed_patch=ProposedPatch(
+            resource_kind="Deployment",
+            resource_name="vigil-app",
+            resource_namespace="default",
+            patch_body=(
+                "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\n"
+            ),
+        ),
     )
 
 
 def _canned_remediation(success: bool = True) -> RemediationResult:
     return RemediationResult(
         success=success,
-        actions_taken=["suspend_kustomization", "apply_patch", "resume_kustomization"],
-        tool_calls_count=3,
+        actions_taken=[
+            "create_branch",
+            "write_manifest",
+            "commit_files",
+            "push_branch",
+            "create_pr",
+            "wait_for_gate",
+            "reconcile_kustomization",
+        ],
+        tool_calls_count=7,
         destructive_repair=True,
+        merge_commit_sha="deadbeef1234567",
+        agent_branch="remediation/run-k8s-1",
+        agent_commits=["deadbeef1234567"],
+        gate_status="merged",
     )
 
 
@@ -75,10 +97,12 @@ async def test_run_orchestration_happy_path(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -98,6 +122,7 @@ async def test_run_orchestration_happy_path(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert isinstance(record, RunRecord)
     assert record.outcome == "success"
@@ -119,10 +144,12 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -140,9 +167,10 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     )
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_kubectl_mcp.direct_call_tool = AsyncMock(
-        return_value={"content": "rolled back"}
+    mock_git_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "reverted: cafebabe"}
     )
+    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
 
     record = await run_orchestration(
         sample_fault_event,
@@ -150,15 +178,17 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert record.rollback_triggered is True
     assert record.rollback_success is True
     calls = [
         c
-        for c in mock_kubectl_mcp.direct_call_tool.call_args_list
-        if c.args and c.args[0] == "rollout_undo"
+        for c in mock_git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "revert_commit"
     ]
     assert len(calls) >= 1
+    assert record.outcome in ("rollback_succeeded", "rollback_failed")
 
 
 async def test_run_orchestration_record_has_all_eval_07_fields(
@@ -167,10 +197,12 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -190,6 +222,7 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert record.total_input_tokens == 300
     assert record.total_output_tokens == 130
@@ -218,10 +251,12 @@ async def test_run_orchestration_run_id_format(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -248,6 +283,7 @@ async def test_run_orchestration_run_id_format(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
         model_name="test-model",
     )
     pattern = r"^k8s-1_seed-\d{8}T\d{6}Z_test-model_[0-9a-f]{7}$"
@@ -319,10 +355,12 @@ async def test_run_orchestration_forwards_seed_to_run_id(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -350,6 +388,7 @@ async def test_run_orchestration_forwards_seed_to_run_id(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
         scenario="k8s-3",
         seed=5,
     )
@@ -398,6 +437,7 @@ def test_build_run_id_falls_back_to_0000000_when_env_empty_and_git_missing(
 def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.delenv("GIT_SHA7", raising=False)
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -418,6 +458,7 @@ async def test_run_record_has_actions_taken_populated(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -428,11 +469,16 @@ async def test_run_record_has_actions_taken_populated(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert record.actions_taken == [
-        "suspend_kustomization",
-        "apply_patch",
-        "resume_kustomization",
+        "create_branch",
+        "write_manifest",
+        "commit_files",
+        "push_branch",
+        "create_pr",
+        "wait_for_gate",
+        "reconcile_kustomization",
     ]
 
 
@@ -442,6 +488,7 @@ async def test_run_record_has_model_version_populated(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -452,6 +499,7 @@ async def test_run_record_has_model_version_populated(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
         model_name="qwen3-coder-next:cloud",
     )
     assert record.model_version == "qwen3-coder-next:cloud"
@@ -463,6 +511,7 @@ async def test_diagnosis_accuracy_scored_true_for_k8s_scenario(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -477,6 +526,7 @@ async def test_diagnosis_accuracy_scored_true_for_k8s_scenario(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
         scenario="k8s-1",
     )
     assert record.diagnosis_accuracy is True
@@ -488,6 +538,7 @@ async def test_diagnosis_accuracy_scored_false_for_os_scenario_missed_escalation
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -502,6 +553,7 @@ async def test_diagnosis_accuracy_scored_false_for_os_scenario_missed_escalation
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
         scenario="os-1",
     )
     assert record.diagnosis_accuracy is False
@@ -513,6 +565,7 @@ async def test_diagnosis_accuracy_none_when_scenario_yaml_absent(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -524,6 +577,7 @@ async def test_diagnosis_accuracy_none_when_scenario_yaml_absent(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
         scenario="nonexistent-scenario",
     )
     assert record.diagnosis_accuracy is None
@@ -535,6 +589,7 @@ async def test_abort_record_also_carries_actions_taken_and_model_version(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -550,6 +605,7 @@ async def test_abort_record_also_carries_actions_taken_and_model_version(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
         model_name="qwen3-coder-next:cloud",
     )
     assert record.outcome == "abort"
@@ -563,6 +619,7 @@ async def test_runs_index_written_on_abort_path_usage_limit(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -578,6 +635,7 @@ async def test_runs_index_written_on_abort_path_usage_limit(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     index = tmp_path / "runs_index.jsonl"
     assert index.exists()
@@ -593,6 +651,7 @@ async def test_runs_index_written_on_abort_path_circuit_breaker(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -608,6 +667,7 @@ async def test_runs_index_written_on_abort_path_circuit_breaker(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     index = tmp_path / "runs_index.jsonl"
     assert index.exists()
@@ -623,6 +683,7 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -636,6 +697,7 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert (tmp_path / "custom" / "runs_index.jsonl").exists()
     assert record.outcome == "success"
@@ -647,6 +709,7 @@ async def test_diagnosis_inconsistency_aborts_run(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -657,7 +720,7 @@ async def test_diagnosis_inconsistency_aborts_run(
         severity="critical",
         affected_resources=["node/worker-1"],
         evidence="kernel oops in dmesg",
-        recommended_action="apply_patch",
+        recommended_action="git_commit",
         confidence=0.80,
         requires_os_level=True,
     )
@@ -670,6 +733,7 @@ async def test_diagnosis_inconsistency_aborts_run(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert record.outcome == "abort"
     assert record.setup_error == "diagnosis_inconsistent"
@@ -698,3 +762,289 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
             _os.environ["VIGIL_SCENARIOS_DIR"] = orig
 
     assert result is False
+
+
+def test_orchestrator_constants_have_correct_defaults() -> None:
+    assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 750.0
+    assert orch_mod.REMEDIATION_TIMEOUT_S == 600.0
+    assert orch_mod.WATCHDOG_RECONCILE_GRACE_S == 90.0
+
+
+async def test_flux_degraded_precheck_kustomization(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {
+                "content": (
+                    "Kustomization: flux-system/cluster-apps\n"
+                    "Suspended: false\n"
+                    "Conditions:\n"
+                    "  Ready: False — Stalled"
+                )
+            }
+            if tool == "get_kustomization_status"
+            else {"content": "ok"}
+        )
+    )
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "flux_degraded"
+
+
+async def test_flux_degraded_precheck_gitrepository(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {
+                "content": (
+                    "GitRepository: flux-system/flux-system\n"
+                    "Conditions:\n"
+                    "  Ready: False — auth"
+                )
+            }
+            if tool == "get_gitrepository_status"
+            else {
+                "content": "Kustomization: flux-system/cluster-apps\n"
+                "Conditions:\n  Ready: True"
+            }
+        )
+    )
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "flux_degraded"
+
+
+async def test_outcome_rollback_succeeded(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "reverted: cafebabe"}
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "rollback_succeeded"
+    assert record.rollback_triggered is True
+    assert record.rollback_success is True
+
+
+async def test_outcome_rollback_failed(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=RuntimeError("revert failed"))
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "rollback_failed"
+    assert record.rollback_success is False
+
+
+async def test_sequential_watchdog_k8s_path(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.05)
+
+    rem_done_at: list[float] = []
+    wtch_started_at: list[float] = []
+
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+
+    async def _rem_side_effect(*args, **kwargs):
+        rem_done_at.append(time.monotonic())
+        return (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+
+    async def _wtch_side_effect(*args, **kwargs):
+        wtch_started_at.append(time.monotonic())
+        return _watchdog_ok()
+
+    monkeypatch.setattr(orch_mod, "run_remediation", _rem_side_effect)
+    monkeypatch.setattr(orch_mod, "run_watchdog", _wtch_side_effect)
+
+    await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert len(rem_done_at) == 1
+    assert len(wtch_started_at) == 1
+    assert wtch_started_at[0] > rem_done_at[0]
+
+
+async def test_outcome_gate_failed(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    failed_rem = RemediationResult(
+        success=False,
+        actions_taken=[
+            "create_branch",
+            "write_manifest",
+            "commit_files",
+            "push_branch",
+            "create_pr",
+            "wait_for_gate",
+        ],
+        tool_calls_count=6,
+        destructive_repair=False,
+        gate_status="closed",
+    )
+    rem_rv = (failed_rem, Usage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "gate_failed"
+
+
+def test_outcome_budget_exhausted() -> None:
+    pytest.skip("budget enforcement is prompt-level; see test_remediation.py")

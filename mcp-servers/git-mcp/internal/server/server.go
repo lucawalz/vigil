@@ -163,5 +163,27 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 		git.HandleRevertCommit(client, s, cfg.MaxOutputBytes),
 	)
 
+	mcpServer.AddTool(
+		mcp.NewTool("close_pr",
+			mcp.WithDescription("Close a pull request and delete its branch"),
+			mcp.WithNumber("pr_number",
+				mcp.Required(),
+				mcp.Description("Pull request number"),
+			),
+		),
+		git.HandleClosePR(client, s, cfg.MaxOutputBytes),
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("delete_branch",
+			mcp.WithDescription("Delete a remote branch"),
+			mcp.WithString("branch",
+				mcp.Required(),
+				mcp.Description("Branch name to delete"),
+			),
+		),
+		git.HandleDeleteBranch(client, s, cfg.MaxOutputBytes),
+	)
+
 	return mcpServer
 }

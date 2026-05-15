@@ -95,3 +95,43 @@ def test_diagnosis_report_escalate_is_invalid() -> None:
             confidence=0.9,
             requires_os_level=False,
         )
+
+
+def test_system_prompt_uses_git_commit_for_k8s_faults() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    assert "git_commit" in _SYSTEM_PROMPT
+    assert "apply_patch" not in _SYSTEM_PROMPT
+    assert "rollout_undo" not in _SYSTEM_PROMPT
+
+
+def test_system_prompt_mandates_lookup_manifest_path() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    assert "lookup_manifest_path" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_instructs_patch_body_population() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    assert "patch_body" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_covers_rollout_regression_reconstruction() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    assert any(
+        phrase in _SYSTEM_PROMPT
+        for phrase in ("rollout history", "ReplicaSet", "previous revision")
+    )
+
+
+def test_lookup_manifest_path_registered_as_tool() -> None:
+    source = inspect.getsource(_diag_module)
+    assert "@diagnosis_agent.tool_plain" in source
+    assert "def lookup_manifest_path" in source
+
+
+def test_kubectl_write_tools_is_empty_frozenset() -> None:
+    source = inspect.getsource(_diag_module)
+    assert "_kubectl_write_tools = frozenset()" in source

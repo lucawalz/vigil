@@ -10,7 +10,7 @@ informed: []
 
 ## Context and Problem Statement
 
-During OS-layer remediation the Watchdog agent runs concurrently with Remediation (via `asyncio.TaskGroup`) and observes cluster health on a fixed poll interval. When health degrades, the Watchdog signals `WatchdogResult.degraded=True` and the Orchestrator issues `kubectl-mcp rollout_undo`. This path is safety-critical: a false negative (missed degradation) leaves a broken node live; a false positive triggers an unnecessary rollback that aborts a valid repair.
+During OS-layer remediation the Watchdog agent runs concurrently with Remediation (via `asyncio.TaskGroup`) and observes cluster health on a fixed poll interval. When health degrades, the Watchdog signals `WatchdogResult.degraded=True` and the Orchestrator issues `git-mcp revert_commit` followed by `flux-mcp reconcile_kustomization` for K8s faults (or `nixos-mcp switch_generation` for OS faults). This path is safety-critical: a false negative (missed degradation) leaves a broken node live; a false positive triggers an unnecessary rollback that aborts a valid repair.
 
 Two properties of LLM-backed health assessment make it unsuitable for this path:
 
@@ -38,18 +38,18 @@ Chosen option: "Deterministic Watchdog", because it eliminates hallucination sur
 
 - Good: The rollback trigger path contains no LLM call; degradation classification is a deterministic comparison of `HealthSnapshot` fields (ready-pod count, restart counts, node-ready status)
 - Good: Watchdog poll loop incurs zero token cost regardless of how many ticks occur during the remediation window
-- Good: The Watchdog only returns `WatchdogResult`; the Orchestrator calls `rollout_undo`. No agent can bypass this boundary.
+- Good: The Watchdog only returns `WatchdogResult`; the Orchestrator calls `revert_commit`. No agent can bypass this boundary.
 - Bad: The deterministic diff cannot reason about partial degradation (e.g., a pod that is Ready but serving 5xx responses); application-layer health is outside the Watchdog's scope
 - Bad: Health classification logic must be maintained in Python; adding a new signal (e.g., HPA scale-down event) requires a code change, not a prompt update
 
-**Validation Status:** Verified — Watchdog implementation in `agents/watchdog/` contains no LLM calls; health assessment is a `HealthSnapshot` delta in pure Python. ADR-0005 confirms Watchdog runs concurrently with Remediation via `asyncio.TaskGroup`.
+**Validation Status:** Verified — Watchdog implementation in `agents/watchdog/` contains no LLM calls; health assessment is a `HealthSnapshot` delta in pure Python. ADR-0005 confirms Watchdog runs concurrently with Remediation via `asyncio.TaskGroup`. Updated 2026-05-15 for the GitOps pivot: the rollback verb is `revert_commit` followed by `reconcile_kustomization` (GitOps path). The deterministic-Watchdog rationale is unchanged — the Watchdog still observes, the Orchestrator still decides — only the rollback mechanism changed.
 
 ### Confirmation
 
 The decision holds as long as:
 - `agents/watchdog/src/watchdog/agent.py` contains no `model=` parameter or LLM client instantiation
 - `HealthSnapshot` comparison is the sole basis for `WatchdogResult.degraded`
-- The Orchestrator (not the Watchdog) issues `rollout_undo` in response to `WatchdogResult.degraded=True`
+- The Orchestrator (not the Watchdog) issues `revert_commit` in response to `WatchdogResult.degraded=True`
 
 ### Pros and Cons of the Options
 

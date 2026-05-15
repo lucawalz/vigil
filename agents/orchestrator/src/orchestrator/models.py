@@ -32,7 +32,16 @@ class RunRecord(BaseModel):
     git_sha7: str
     started_at: str
     ended_at: str
-    outcome: Literal["success", "abort", "quota_exhausted"]
+    outcome: Literal[
+        "success",
+        "rollback_succeeded",
+        "rollback_failed",
+        "gate_failed",
+        "budget_exhausted",
+        "flux_degraded",
+        "abort",
+        "quota_exhausted",
+    ]
     success_rate: bool
     diagnosis_accuracy: bool | None
     MTTR_s: float | None

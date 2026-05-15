@@ -92,6 +92,7 @@ def test_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     new_app.state.flux_mcp = AsyncMock()
     new_app.state.ssh_mcp = AsyncMock()
     new_app.state.nixos_mcp = AsyncMock()
+    new_app.state.git_mcp = AsyncMock()
     return new_app
 
 

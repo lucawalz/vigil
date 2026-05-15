@@ -34,7 +34,7 @@ def _canned_report() -> DiagnosisReport:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
-        recommended_action="apply_patch",
+        recommended_action="git_commit",
         confidence=0.95,
         requires_os_level=False,
     )
@@ -43,9 +43,17 @@ def _canned_report() -> DiagnosisReport:
 def _canned_remediation() -> RemediationResult:
     return RemediationResult(
         success=True,
-        actions_taken=["suspend_kustomization", "apply_patch", "resume_kustomization"],
-        tool_calls_count=3,
-        destructive_repair=True,
+        actions_taken=[
+            "create_branch",
+            "write_manifest",
+            "commit_files",
+            "push_branch",
+            "create_pr",
+            "wait_for_gate",
+            "reconcile_kustomization",
+        ],
+        tool_calls_count=7,
+        destructive_repair=False,
     )
 
 
@@ -109,6 +117,7 @@ async def test_webhook_to_audit_log_end_to_end(
     test_app.state.flux_mcp = AsyncMock()
     test_app.state.ssh_mcp = AsyncMock()
     test_app.state.nixos_mcp = AsyncMock()
+    test_app.state.git_mcp = AsyncMock()
 
     payload = {
         "version": "4",

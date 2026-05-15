@@ -40,15 +40,15 @@ Chosen option: "Multi-agent decomposition with dedicated roles", because focused
 - Good: Each agent operates with a focused context window; diagnosis reasoning does not bleed into remediation state
 - Good: Watchdog runs concurrently with Remediation via `asyncio.TaskGroup` (Python 3.11+ structured concurrency); when either task raises, the sibling is cancelled and the orchestrator handles the `ExceptionGroup` via `except*`
 - Good: Agent handoffs use typed Pydantic models, preventing implicit state passing between agents
-- Good: Watchdog observes health only; the Orchestrator owns the rollback decision and issues `kubectl-mcp rollout_undo` when `WatchdogResult.degraded=True`
+- Good: Watchdog observes health only; the Orchestrator owns the rollback decision and issues `git-mcp revert_commit` plus `flux-mcp reconcile_kustomization` when `WatchdogResult.degraded=True`. For OS faults, the rollback is `nixos-mcp switch_generation`.
 - Bad: Four distinct agent lifecycles require careful asyncio management, particularly around MCP client teardown
 - Bad: The Orchestrator coordinates workflow without reasoning about fault semantics directly; it delegates all LLM work to sub-agents
 
-**Validation Status:** Verified — `asyncio.TaskGroup` pattern confirmed in production; circuit breaker essential; v1.0 Hetzner eval campaign confirms parallel pattern reduces MTTR vs sequential remediation and monitoring.
+**Validation Status:** Verified — `asyncio.TaskGroup` pattern confirmed in production; circuit breaker essential; v1.0 Hetzner eval campaign confirms parallel pattern reduces MTTR vs sequential remediation and monitoring. Updated 2026-05-15 for the GitOps pivot: K8s rollback verb is `revert_commit` (GitOps path); Watchdog sequencing is sequential for K8s, concurrent for OS.
 
 ### Confirmation
 
-The `asyncio.TaskGroup` pattern is confirmed in `agents/orchestrator/src/orchestrator/agent.py`. The four-agent split is verified by the module structure: `agents/orchestrator/`, `agents/diagnosis/`, `agents/remediation/`, `agents/watchdog/`. All eval campaign results use this decomposition.
+The `asyncio.TaskGroup` pattern is confirmed in `agents/orchestrator/src/orchestrator/agent.py`. The four-agent split is verified by the module structure: `agents/orchestrator/`, `agents/diagnosis/`, `agents/remediation/`, `agents/watchdog/`. All eval campaign results use this decomposition. The K8s remediation path runs Watchdog sequentially after a fixed grace period (`WATCHDOG_RECONCILE_GRACE_S=90s`); the OS remediation path retains the concurrent `asyncio.TaskGroup` pattern. This asymmetry reflects the cluster's response latency: a Flux reconcile takes seconds to apply, whereas a NixOS rebuild is synchronous and the concurrent Watchdog catches a degradation during the rebuild itself.
 
 ### Pros and Cons of the Options
 
