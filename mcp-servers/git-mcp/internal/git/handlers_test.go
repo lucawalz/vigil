@@ -23,15 +23,17 @@ const (
 )
 
 type fakeGitClient struct {
-	cloneDir   string
-	commitSHA  string
-	prNumber   int
-	prState    string
-	prMerged   bool
-	prMergeSHA string
-	revertSHA  string
-	err        error
-	getPRCalls int
+	cloneDir       string
+	commitSHA      string
+	prNumber       int
+	prState        string
+	prMerged       bool
+	prMergeSHA     string
+	revertSHA      string
+	err            error
+	getPRCalls     int
+	autoMergeErr   error
+	autoMergeCalls int
 }
 
 var _ git.GitClient = &fakeGitClient{}
@@ -58,6 +60,11 @@ func (f *fakeGitClient) Push(_ context.Context, _, _ string) error {
 
 func (f *fakeGitClient) CreatePR(_ context.Context, _, _, _, _ string) (int, error) {
 	return f.prNumber, f.err
+}
+
+func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error {
+	f.autoMergeCalls++
+	return f.autoMergeErr
 }
 
 func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, string, error) {
@@ -458,6 +465,9 @@ func TestCreatePRHandler_Success(t *testing.T) {
 	if !strings.Contains(text, "#42") {
 		t.Errorf("expected PR number in response, got: %s", text)
 	}
+	if fake.autoMergeCalls != 1 {
+		t.Errorf("expected EnableAutoMerge called once, got %d", fake.autoMergeCalls)
+	}
 }
 
 func TestCreatePRHandler_DomainError(t *testing.T) {
@@ -481,6 +491,30 @@ func TestCreatePRHandler_DomainError(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected IsError=true for domain error")
+	}
+}
+
+func TestCreatePRHandler_AutoMergeError(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{prNumber: 42, autoMergeErr: fmt.Errorf("gh: authentication required")}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("create_pr",
+		mcp.WithString("title", mcp.Required()),
+		mcp.WithString("body", mcp.Required()),
+		mcp.WithString("base", mcp.Required()),
+	)
+	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
+		"title": "fix: reduce OOMKilled replicas",
+		"body":  "Automated remediation",
+		"base":  "main",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true when EnableAutoMerge fails")
 	}
 }
 

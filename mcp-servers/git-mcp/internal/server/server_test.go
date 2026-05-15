@@ -21,6 +21,7 @@ func (f *fakeGitClient) CreatePR(_ context.Context, _, _, _, _ string) (int, err
 func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, string, error) {
 	return "", false, "", nil
 }
+func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error              { return nil }
 func (f *fakeGitClient) RevertCommit(_ context.Context, _, _ string) (string, error) { return "", nil }
 
 var _ git.GitClient = &fakeGitClient{}
