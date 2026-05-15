@@ -23,20 +23,20 @@ const (
 )
 
 type fakeGitClient struct {
-	cloneDir         string
-	commitSHA        string
-	prNumber         int
-	prState          string
-	prMerged         bool
-	prMergeSHA       string
-	revertSHA        string
-	err              error
-	getPRCalls       int
-	autoMergeErr     error
-	autoMergeCalls   int
-	closePRErr       error
-	closePRCalls     int
-	deleteBranchErr  error
+	cloneDir          string
+	commitSHA         string
+	prNumber          int
+	prState           string
+	prMerged          bool
+	prMergeSHA        string
+	revertSHA         string
+	err               error
+	getPRCalls        int
+	autoMergeErr      error
+	autoMergeCalls    int
+	closePRErr        error
+	closePRCalls      int
+	deleteBranchErr   error
 	deleteBranchCalls int
 }
 
