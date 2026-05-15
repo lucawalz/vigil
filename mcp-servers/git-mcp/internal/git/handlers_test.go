@@ -23,17 +23,21 @@ const (
 )
 
 type fakeGitClient struct {
-	cloneDir       string
-	commitSHA      string
-	prNumber       int
-	prState        string
-	prMerged       bool
-	prMergeSHA     string
-	revertSHA      string
-	err            error
-	getPRCalls     int
-	autoMergeErr   error
-	autoMergeCalls int
+	cloneDir         string
+	commitSHA        string
+	prNumber         int
+	prState          string
+	prMerged         bool
+	prMergeSHA       string
+	revertSHA        string
+	err              error
+	getPRCalls       int
+	autoMergeErr     error
+	autoMergeCalls   int
+	closePRErr       error
+	closePRCalls     int
+	deleteBranchErr  error
+	deleteBranchCalls int
 }
 
 var _ git.GitClient = &fakeGitClient{}
@@ -74,6 +78,16 @@ func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, str
 
 func (f *fakeGitClient) RevertCommit(_ context.Context, _, _ string) (string, error) {
 	return f.revertSHA, f.err
+}
+
+func (f *fakeGitClient) ClosePR(_ context.Context, _ int) error {
+	f.closePRCalls++
+	return f.closePRErr
+}
+
+func (f *fakeGitClient) DeleteBranch(_ context.Context, _ string) error {
+	f.deleteBranchCalls++
+	return f.deleteBranchErr
 }
 
 type fakeSessionState struct {
@@ -732,6 +746,123 @@ func TestRevertCommitHandler_InvalidSHA(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected IsError=true for invalid SHA format")
+	}
+}
+
+func TestClosePRHandler_Success(t *testing.T) {
+	fake := &fakeGitClient{}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("close_pr", mcp.WithNumber("pr_number", mcp.Required()))
+	handler := git.HandleClosePR(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "close_pr", tool, handler, map[string]any{"pr_number": float64(42)})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "pr #42 closed") {
+		t.Errorf("expected confirmation in response, got: %s", text)
+	}
+}
+
+func TestClosePRHandler_DomainError(t *testing.T) {
+	fake := &fakeGitClient{closePRErr: fmt.Errorf("gh: failed")}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("close_pr", mcp.WithNumber("pr_number", mcp.Required()))
+	handler := git.HandleClosePR(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "close_pr", tool, handler, map[string]any{"pr_number": float64(42)})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for domain error")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "HandleClosePR:") {
+		t.Errorf("expected 'HandleClosePR:' in error message, got: %s", text)
+	}
+	if !strings.Contains(text, "gh: failed") {
+		t.Errorf("expected underlying error in message, got: %s", text)
+	}
+}
+
+func TestClosePRHandler_MissingArgument(t *testing.T) {
+	fake := &fakeGitClient{}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("close_pr", mcp.WithNumber("pr_number", mcp.Required()))
+	handler := git.HandleClosePR(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "close_pr", tool, handler, map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing pr_number")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "pr_number") {
+		t.Errorf("expected 'pr_number' in error message, got: %s", text)
+	}
+}
+
+func TestDeleteBranchHandler_Success(t *testing.T) {
+	fake := &fakeGitClient{}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("delete_branch", mcp.WithString("branch", mcp.Required()))
+	handler := git.HandleDeleteBranch(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "delete_branch", tool, handler, map[string]any{"branch": "remediation/run-k8s-1"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "branch deleted: remediation/run-k8s-1") {
+		t.Errorf("expected confirmation in response, got: %s", text)
+	}
+}
+
+func TestDeleteBranchHandler_DomainError(t *testing.T) {
+	fake := &fakeGitClient{deleteBranchErr: fmt.Errorf("gh: not found")}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("delete_branch", mcp.WithString("branch", mcp.Required()))
+	handler := git.HandleDeleteBranch(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "delete_branch", tool, handler, map[string]any{"branch": "remediation/run-k8s-1"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for domain error")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "HandleDeleteBranch:") {
+		t.Errorf("expected 'HandleDeleteBranch:' in error message, got: %s", text)
+	}
+}
+
+func TestDeleteBranchHandler_MissingArgument(t *testing.T) {
+	fake := &fakeGitClient{}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("delete_branch", mcp.WithString("branch", mcp.Required()))
+	handler := git.HandleDeleteBranch(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "delete_branch", tool, handler, map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing branch")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "branch") {
+		t.Errorf("expected 'branch' in error message, got: %s", text)
 	}
 }
 

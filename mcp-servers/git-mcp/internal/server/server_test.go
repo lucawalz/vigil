@@ -23,10 +23,12 @@ func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, str
 }
 func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error              { return nil }
 func (f *fakeGitClient) RevertCommit(_ context.Context, _, _ string) (string, error) { return "", nil }
+func (f *fakeGitClient) ClosePR(_ context.Context, _ int) error                      { return nil }
+func (f *fakeGitClient) DeleteBranch(_ context.Context, _ string) error              { return nil }
 
 var _ git.GitClient = &fakeGitClient{}
 
-func TestNewServer_registersEightTools(t *testing.T) {
+func TestServerRegisters10Tools(t *testing.T) {
 	cfg := &config.Config{
 		GitHubToken:    "tok",
 		RepoURL:        "https://github.com/lucawalz/vigil.git",
@@ -36,6 +38,28 @@ func TestNewServer_registersEightTools(t *testing.T) {
 	mcpSrv := NewServer(client, cfg)
 	if mcpSrv == nil {
 		t.Fatal("NewServer returned nil")
+	}
+
+	tools := mcpSrv.ListTools()
+	want := map[string]bool{
+		"create_branch":  true,
+		"write_manifest": true,
+		"commit_files":   true,
+		"push_branch":    true,
+		"create_pr":      true,
+		"get_pr_status":  true,
+		"wait_for_gate":  true,
+		"revert_commit":  true,
+		"close_pr":       true,
+		"delete_branch":  true,
+	}
+	if len(tools) != len(want) {
+		t.Errorf("expected %d tools, got %d", len(want), len(tools))
+	}
+	for name := range want {
+		if _, ok := tools[name]; !ok {
+			t.Errorf("missing tool: %s", name)
+		}
 	}
 }
 
