@@ -62,6 +62,7 @@ async def test_run_orchestration_abort_on_usage_limit_exceeded(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -78,6 +79,7 @@ async def test_run_orchestration_abort_on_usage_limit_exceeded(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert record.outcome == "abort"
     assert record.success_rate is False
@@ -92,6 +94,7 @@ async def test_run_orchestration_abort_on_unexpected_model_behavior(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -110,6 +113,7 @@ async def test_run_orchestration_abort_on_unexpected_model_behavior(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert record.outcome == "abort"
     assert record.success_rate is False
@@ -121,6 +125,7 @@ async def test_run_orchestration_abort_on_circuit_breaker_tripped(
     mock_flux_mcp: AsyncMock,
     mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -137,5 +142,6 @@ async def test_run_orchestration_abort_on_circuit_breaker_tripped(
         flux_mcp=mock_flux_mcp,
         ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
     )
     assert record.outcome == "abort"
