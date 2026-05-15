@@ -50,7 +50,8 @@ def mock_kubectl_mcp() -> AsyncMock:
 @pytest.fixture
 def mock_flux_mcp() -> AsyncMock:
     m = AsyncMock()
-    m.call_tool = AsyncMock(return_value={"content": "kustomization suspended"})
+    m.call_tool = AsyncMock(return_value={"content": "kustomization ok"})
+    m.direct_call_tool = AsyncMock(return_value={"content": "ok"})
     return m
 
 
@@ -65,4 +66,12 @@ def mock_ssh_mcp() -> AsyncMock:
 def mock_nixos_mcp() -> AsyncMock:
     m = AsyncMock()
     m.call_tool = AsyncMock(return_value={"content": "nixos rebuild ok"})
+    return m
+
+
+@pytest.fixture
+def mock_git_mcp() -> AsyncMock:
+    m = AsyncMock()
+    m.call_tool = AsyncMock(return_value={"content": "ok"})
+    m.direct_call_tool = AsyncMock(return_value={"content": "ok"})
     return m
