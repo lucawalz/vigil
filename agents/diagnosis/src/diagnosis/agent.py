@@ -10,6 +10,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
+from .manifest_paths import lookup_manifest_path as _lookup_manifest_path
 from .models import DiagnosisDeps, DiagnosisReport
 
 if TYPE_CHECKING:
@@ -22,6 +23,7 @@ Your only actions are tool calls using the tools listed below. Do not invent too
 Available tools:
   kubectl-mcp: get_nodes, get_pods, describe_pod, get_logs, rollout_status
   nixos-mcp:   get_journal, get_systemd_status, get_generations, rebuild_test
+  lookup_manifest_path: resolve a Kubernetes resource to its repo-relative manifest path
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
@@ -42,18 +44,33 @@ OS-level fault rules:
 - Call get_nodes first to confirm which node is NotReady before touching nixos-mcp.
 
 recommended_action selection:
-- If requires_os_level=False: use "apply_patch" for manifest drift, missing
-  resources, or wrong field values; use "rollout_undo" only when a recent
-  Deployment rollout is the direct cause and the previous revision is healthy.
-- If requires_os_level=True: use "rebuild_nixos".
-- requires_os_level and recommended_action must agree: never return "apply_patch"
+- If requires_os_level=False (K8s fault): recommended_action is always "git_commit".
+- If requires_os_level=True: recommended_action is always "rebuild_nixos".
+- requires_os_level and recommended_action must agree: never return "git_commit"
   when requires_os_level=True, never return "rebuild_nixos" when
   requires_os_level=False.
 - When confidence is below 0.6, gather more evidence with additional tool calls
   rather than committing to a repair action prematurely.
 
-Do not call apply_patch, rollout_undo, switch_generation, or etcd_snapshot_save.
-Those are remediation actions; diagnosis is read-only."""
+For K8s faults (requires_os_level=False), before emitting proposed_patch:
+1. Call lookup_manifest_path(kind, namespace, name) with the target resource's kind,
+   namespace, and name from kubectl output.
+2. Copy the result into DiagnosisReport.manifest_path.
+   If lookup_manifest_path returns a string starting with "unknown resource:", set
+   manifest_path=None and proposed_patch=None and return the report immediately.
+3. Populate DiagnosisReport.proposed_patch with a ProposedPatch whose patch_body is
+   the full replacement manifest YAML (apiVersion, kind, metadata, spec). The
+   resource_kind, resource_name, and resource_namespace fields mirror the lookup
+   arguments.
+
+For rollout regression faults (bad Deployment rollout where the previous revision is
+the fix): reconstruct the previous-good manifest by reading rollout history via
+kubectl or the previous ReplicaSet's pod template, then emit that as patch_body.
+There is no separate imperative rollback action — the GitOps path handles regression
+via the same git_commit mechanism.
+
+Do not call switch_generation or etcd_snapshot_save; diagnosis is read-only.
+Imperative repair tools have been retired from all MCP servers; do not invent tool names."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
@@ -65,13 +82,23 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 )
 
 
+@diagnosis_agent.tool_plain
+def lookup_manifest_path(kind: str, namespace: str, name: str) -> str:
+    """Resolve a Kubernetes resource to its repo-relative manifest path.
+
+    Returns the path on success; returns 'unknown resource: ...' on miss so
+    the agent can surface a None proposed_patch.
+    """
+    return _lookup_manifest_path(kind, namespace, name)
+
+
 async def run_diagnosis(
     deps: DiagnosisDeps,
     fault: FaultEvent,
     model: OpenAIChatModel | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
     _nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
-    _kubectl_write_tools = frozenset({"apply_patch", "rollout_undo"})
+    _kubectl_write_tools = frozenset()
     kubectl_readonly = FilteredToolset(
         deps.kubectl_mcp,
         filter_func=lambda _ctx, tool_def: tool_def.name not in _kubectl_write_tools,
