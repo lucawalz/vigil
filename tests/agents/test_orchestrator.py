@@ -69,6 +69,10 @@ def _canned_remediation(success: bool = True) -> RemediationResult:
         ],
         tool_calls_count=7,
         destructive_repair=True,
+        merge_commit_sha="deadbeef1234567",
+        agent_branch="remediation/run-k8s-1",
+        agent_commits=["deadbeef1234567"],
+        gate_status="merged",
     )
 
 
@@ -96,6 +100,7 @@ async def test_run_orchestration_happy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -131,7 +136,6 @@ async def test_run_orchestration_happy_path(
     assert json.loads(index_lines[0])["run_id"] == record.run_id
 
 
-@pytest.mark.xfail(reason="awaiting wave 2 rollback rewrite (git_mcp + revert_commit)", strict=True)
 async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -143,6 +147,7 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -195,6 +200,7 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -248,6 +254,7 @@ async def test_run_orchestration_run_id_format(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -351,6 +358,7 @@ async def test_run_orchestration_forwards_seed_to_run_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -427,6 +435,7 @@ def test_build_run_id_falls_back_to_0000000_when_env_empty_and_git_missing(
 def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.delenv("GIT_SHA7", raising=False)
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -759,7 +768,6 @@ def test_orchestrator_constants_have_correct_defaults() -> None:
     assert orch_mod.WATCHDOG_RECONCILE_GRACE_S == 90.0
 
 
-@pytest.mark.xfail(reason="awaiting wave 2 Flux pre-check implementation", strict=True)
 async def test_flux_degraded_precheck_kustomization(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -803,7 +811,6 @@ async def test_flux_degraded_precheck_kustomization(
     assert record.outcome == "flux_degraded"
 
 
-@pytest.mark.xfail(reason="awaiting wave 2 Flux pre-check implementation", strict=True)
 async def test_flux_degraded_precheck_gitrepository(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -846,7 +853,6 @@ async def test_flux_degraded_precheck_gitrepository(
     assert record.outcome == "flux_degraded"
 
 
-@pytest.mark.xfail(reason="awaiting wave 2 rollback rewrite (git_mcp + revert_commit)", strict=True)
 async def test_outcome_rollback_succeeded(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -858,6 +864,7 @@ async def test_outcome_rollback_succeeded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -893,7 +900,6 @@ async def test_outcome_rollback_succeeded(
     assert record.rollback_success is True
 
 
-@pytest.mark.xfail(reason="awaiting wave 2 rollback rewrite (git_mcp + revert_commit)", strict=True)
 async def test_outcome_rollback_failed(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -905,6 +911,7 @@ async def test_outcome_rollback_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -938,7 +945,6 @@ async def test_outcome_rollback_failed(
     assert record.rollback_success is False
 
 
-@pytest.mark.xfail(reason="awaiting wave 2 sequential watchdog implementation", strict=True)
 async def test_sequential_watchdog_k8s_path(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -987,7 +993,6 @@ async def test_sequential_watchdog_k8s_path(
     assert wtch_started_at[0] > rem_done_at[0]
 
 
-@pytest.mark.xfail(reason="awaiting wave 2 gate_failed outcome implementation", strict=True)
 async def test_outcome_gate_failed(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -999,12 +1004,14 @@ async def test_outcome_gate_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     failed_rem = RemediationResult(
         success=False,
         actions_taken=["create_branch", "write_manifest", "commit_files", "push_branch", "create_pr", "wait_for_gate"],
         tool_calls_count=6,
         destructive_repair=False,
+        gate_status="closed",
     )
     rem_rv = (failed_rem, Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from common import trace
+from common.constants import GIT_COMMIT_BUDGET
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.models import DiagnosisDeps
@@ -25,10 +26,13 @@ from .models import CircuitBreakerTripped, FaultEvent, RunRecord
 log = logging.getLogger("vigil.orchestrator.agent")
 
 ORCHESTRATOR_RUN_TIMEOUT_S: float = float(
-    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "540")
+    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "750")
 )
 DIAGNOSIS_TIMEOUT_S: float = float(os.environ.get("DIAGNOSIS_TIMEOUT_S", "300"))
-REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "300"))
+REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "600"))
+WATCHDOG_RECONCILE_GRACE_S: float = float(
+    os.environ.get("WATCHDOG_RECONCILE_GRACE_S", "90")
+)
 
 
 class _CircuitBreaker:
@@ -90,7 +94,7 @@ def build_run_id(
 
 _OS_LAYERS = frozenset({"os", "cross"})
 _OS_REPAIR_ACTIONS = frozenset({"rebuild_nixos"})
-_K8S_REPAIR_ACTIONS = frozenset({"apply_patch", "rollout_undo"})
+_K8S_REPAIR_ACTIONS = frozenset({"git_commit"})
 
 
 def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
@@ -123,16 +127,24 @@ def _write_run_record(record: RunRecord) -> None:
 
 
 async def _issue_rollback(
-    kubectl_mcp: MCPServerStdio, affected_resources: list[str]
+    git_mcp: MCPServerStdio,
+    flux_mcp: MCPServerStdio,
+    merge_commit_sha: str,
 ) -> bool:
-    """Issue rollout_undo for each affected resource. Return True if all succeed."""
-    all_ok = True
-    for resource in affected_resources:
-        try:
-            await kubectl_mcp.direct_call_tool("rollout_undo", {"resource": resource})
-        except Exception:
-            all_ok = False
-    return all_ok
+    """Revert the merged PR and force Flux reconcile. Returns True on full success."""
+    try:
+        await git_mcp.direct_call_tool(
+            "revert_commit",
+            {"merge_commit_sha": merge_commit_sha},
+        )
+        await flux_mcp.direct_call_tool(
+            "reconcile_kustomization",
+            {"namespace": "flux-system", "name": "cluster-apps"},
+        )
+        return True
+    except Exception:
+        log.exception("rollback failed for merge_commit_sha=%s", merge_commit_sha)
+        return False
 
 
 async def run_orchestration(
@@ -141,6 +153,7 @@ async def run_orchestration(
     flux_mcp: MCPServerStdio,
     ssh_mcp: MCPServerStdio,
     nixos_mcp: MCPServerStdio,
+    git_mcp: MCPServerStdio,
     *,
     scenario: str = "k8s-1",
     seed: int | None = None,
@@ -156,7 +169,7 @@ async def run_orchestration(
 
     diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp)
     remediation_deps = RemediationDeps(
-        kubectl_mcp=kubectl_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
+        git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
     )
     watchdog_deps = WatchdogDeps(kubectl_mcp=kubectl_mcp)
 
@@ -166,7 +179,7 @@ async def run_orchestration(
     total_tool_calls = 0
     iteration_count = 0
 
-    def _abort_record(_reason: str) -> RunRecord:
+    def _abort_record(_reason: str, _outcome: str = "abort") -> RunRecord:
         ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         return RunRecord(
             run_id=run_id,
@@ -176,7 +189,7 @@ async def run_orchestration(
             git_sha7=sha7,
             started_at=started_at,
             ended_at=ended_at,
-            outcome="abort",
+            outcome=_outcome,
             success_rate=False,
             diagnosis_accuracy=None,
             MTTR_s=None,
@@ -295,51 +308,140 @@ async def run_orchestration(
                 _write_run_record(record)
                 return record
 
+            if action_is_k8s:
+                try:
+                    kust_status = await flux_mcp.direct_call_tool(
+                        "get_kustomization_status",
+                        {"namespace": "flux-system", "name": "cluster-apps"},
+                    )
+                    kust_text = str(kust_status)
+                    if (
+                        "Ready: False" in kust_text
+                        or "Stalled: True" in kust_text
+                        or "Suspended: true" in kust_text
+                    ):
+                        log.error(
+                            "run %s aborted: flux_degraded (cluster-apps unhealthy): %s",
+                            run_id,
+                            kust_text,
+                        )
+                        record = _abort_record(
+                            "flux_degraded_kustomization", "flux_degraded"
+                        )
+                        _write_run_record(record)
+                        return record
+
+                    repo_status = await flux_mcp.direct_call_tool(
+                        "get_gitrepository_status",
+                        {"namespace": "flux-system", "name": "flux-system"},
+                    )
+                    if "Ready: False" in str(repo_status):
+                        log.error(
+                            "run %s aborted: flux_degraded (gitrepository unhealthy)",
+                            run_id,
+                        )
+                        record = _abort_record(
+                            "flux_degraded_gitrepository", "flux_degraded"
+                        )
+                        _write_run_record(record)
+                        return record
+                except Exception:
+                    log.exception(
+                        "run %s: flux pre-check failed; emitting flux_degraded", run_id
+                    )
+                    record = _abort_record("flux_precheck_exception", "flux_degraded")
+                    _write_run_record(record)
+                    return record
+
             baseline = await capture_health_snapshot(watchdog_deps)
 
-            try:
-                async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
-                    try:
-                        async with asyncio.TaskGroup() as tg:
-                            rem_task = tg.create_task(
-                                run_remediation(remediation_deps, report, model=model)
-                            )
-                            wtch_task = tg.create_task(
-                                run_watchdog(watchdog_deps, baseline)
-                            )
-                    except* (
-                        UsageLimitExceeded,
-                        UnexpectedModelBehavior,
-                        CircuitBreakerTripped,
-                    ) as eg:
-                        raise eg.exceptions[0]
-            except asyncio.TimeoutError:
-                log.error(
-                    "run %s aborted: remediation_timeout (%.0fs)",
-                    run_id,
-                    REMEDIATION_TIMEOUT_S,
-                )
-                record = _abort_record("remediation_timeout")
-                _write_run_record(record)
-                return record
+            if action_is_k8s:
+                try:
+                    async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+                        remediation_result, rem_usage, rem_msgs = await run_remediation(
+                            remediation_deps, report, model=model
+                        )
+                except asyncio.TimeoutError:
+                    log.error(
+                        "run %s aborted: remediation_timeout (%.0fs)",
+                        run_id,
+                        REMEDIATION_TIMEOUT_S,
+                    )
+                    record = _abort_record("remediation_timeout")
+                    _write_run_record(record)
+                    return record
 
-            remediation_result, rem_usage, rem_msgs = rem_task.result()
-            watchdog_result = wtch_task.result()
+                await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
+                watchdog_result = await run_watchdog(watchdog_deps, baseline)
+
+            else:
+                try:
+                    async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+                        try:
+                            async with asyncio.TaskGroup() as tg:
+                                rem_task = tg.create_task(
+                                    run_remediation(
+                                        remediation_deps, report, model=model
+                                    )
+                                )
+                                wtch_task = tg.create_task(
+                                    run_watchdog(watchdog_deps, baseline)
+                                )
+                        except* (
+                            UsageLimitExceeded,
+                            UnexpectedModelBehavior,
+                            CircuitBreakerTripped,
+                        ) as eg:
+                            raise eg.exceptions[0]
+                except asyncio.TimeoutError:
+                    log.error(
+                        "run %s aborted: remediation_timeout (%.0fs)",
+                        run_id,
+                        REMEDIATION_TIMEOUT_S,
+                    )
+                    record = _abort_record("remediation_timeout")
+                    _write_run_record(record)
+                    return record
+
+                remediation_result, rem_usage, rem_msgs = rem_task.result()
+                watchdog_result = wtch_task.result()
+
             total_usage = total_usage + rem_usage
             trace.log_messages(run_id, "remediation", rem_msgs)
             trace.write_trace(run_id, "remediation", rem_msgs)
 
             destructive_repair = remediation_result.destructive_repair
-            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(
-                rem_msgs
-            )
+            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs)
             iteration_count += _count_tool_calls(rem_msgs)
 
-            if watchdog_result.degraded:
+            outcome: str
+            if action_is_k8s and remediation_result.gate_status == "closed":
+                outcome = "gate_failed"
+                rollback_triggered = False
+                rollback_success = None
+            elif (
+                action_is_k8s
+                and remediation_result.merge_commit_sha is None
+                and remediation_result.agent_commits
+                and len(remediation_result.agent_commits) > GIT_COMMIT_BUDGET
+            ):
+                outcome = "budget_exhausted"
+                rollback_triggered = False
+                rollback_success = None
+            elif watchdog_result.degraded:
                 rollback_triggered = True
-                rollback_success = await _issue_rollback(
-                    kubectl_mcp, report.affected_resources
-                )
+                if action_is_k8s and remediation_result.merge_commit_sha:
+                    rollback_success = await _issue_rollback(
+                        git_mcp, flux_mcp, remediation_result.merge_commit_sha
+                    )
+                    outcome = "rollback_succeeded" if rollback_success else "rollback_failed"
+                else:
+                    rollback_success = False
+                    outcome = "rollback_failed"
+            else:
+                outcome = "success"
+                rollback_triggered = False
+                rollback_success = None
 
             mttr_s = asyncio.get_event_loop().time() - t0
             ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -352,7 +454,7 @@ async def run_orchestration(
                 git_sha7=sha7,
                 started_at=started_at,
                 ended_at=ended_at,
-                outcome="success",
+                outcome=outcome,
                 success_rate=(
                     remediation_result.success and not watchdog_result.degraded
                 ),
@@ -369,7 +471,7 @@ async def run_orchestration(
                 actions_taken=remediation_result.actions_taken,
                 model_version=model_name,
             )
-            log.info("run %s finished outcome=success MTTR=%.1fs", run_id, mttr_s)
+            log.info("run %s finished outcome=%s MTTR=%.1fs", run_id, outcome, mttr_s)
             _write_run_record(record)
             return record
 
