@@ -2,6 +2,8 @@ package flux_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -14,34 +16,31 @@ import (
 )
 
 type fakeFluxClient struct {
-	suspendErr      error
-	resumeErr       error
-	reconcileResult string
-	reconcileErr    error
-	statusResult    string
-	statusErr       error
+	reconcileResult           string
+	reconcileErr              error
+	statusResult              string
+	statusErr                 error
+	gitRepositoryStatusResult string
+	gitRepositoryStatusErr    error
 }
 
-func (f *fakeFluxClient) SuspendKustomization(_ context.Context, _, _ string) error {
-	return f.suspendErr
-}
-func (f *fakeFluxClient) ResumeKustomization(_ context.Context, _, _ string) error {
-	return f.resumeErr
-}
+var _ flux.FluxClient = &fakeFluxClient{}
+
 func (f *fakeFluxClient) ReconcileKustomization(_ context.Context, _, _ string) (string, error) {
 	return f.reconcileResult, f.reconcileErr
 }
 func (f *fakeFluxClient) GetKustomizationStatus(_ context.Context, _, _ string) (string, error) {
 	return f.statusResult, f.statusErr
 }
+func (f *fakeFluxClient) GetGitRepositoryStatus(_ context.Context, _, _ string) (string, error) {
+	return f.gitRepositoryStatusResult, f.gitRepositoryStatusErr
+}
 
-// buildTestServer returns a FluxServer-backed MCPServer for testing via mcptest.
 func buildTestMCPServer(t *testing.T, fake flux.FluxClient) *mcptest.Server {
 	t.Helper()
 	cfg := &config.Config{MaxOutputBytesDescribe: 4096}
 	mcpSrv := fluxserver.NewFluxServer(fake, cfg)
 
-	// Collect tools from the MCPServer and create an mcptest server.
 	tools := mcpSrv.ListTools()
 	var serverTools []server.ServerTool
 	for _, tool := range tools {
@@ -66,99 +65,11 @@ func callTool(t *testing.T, srv *mcptest.Server, toolName string, args map[strin
 	return result
 }
 
-func TestFluxGuard_ReconcileRefusedWithoutSuspend(t *testing.T) {
-	fake := &fakeFluxClient{reconcileResult: "ok"}
-	srv := buildTestMCPServer(t, fake)
-	defer srv.Close()
-
-	result := callTool(t, srv, "reconcile_kustomization", map[string]any{
-		"namespace": "flux-system", "name": "infra",
-	})
-	if !result.IsError {
-		t.Error("expected IsError=true when guard not set")
-	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if !containsStr(text, "flux_suspended guard") {
-		t.Errorf("expected guard message, got: %s", text)
-	}
-}
-
-func TestFluxGuard_ResumeRefusedWithoutSuspend(t *testing.T) {
-	fake := &fakeFluxClient{}
-	srv := buildTestMCPServer(t, fake)
-	defer srv.Close()
-
-	result := callTool(t, srv, "resume_kustomization", map[string]any{
-		"namespace": "flux-system", "name": "infra",
-	})
-	if !result.IsError {
-		t.Error("expected IsError=true when guard not set")
-	}
-}
-
-func TestFluxGuard_ReconcileAllowedAfterSuspend(t *testing.T) {
-	fake := &fakeFluxClient{reconcileResult: "reconcile requested"}
-	srv := buildTestMCPServer(t, fake)
-	defer srv.Close()
-
-	// Suspend first
-	r := callTool(t, srv, "suspend_kustomization", map[string]any{
-		"namespace": "flux-system", "name": "infra",
-	})
-	if r.IsError {
-		t.Fatalf("suspend failed: %v", r.Content)
-	}
-
-	// Now reconcile should succeed
-	r2 := callTool(t, srv, "reconcile_kustomization", map[string]any{
-		"namespace": "flux-system", "name": "infra",
-	})
-	if r2.IsError {
-		t.Errorf("expected reconcile to succeed after suspend, got error: %v", r2.Content)
-	}
-}
-
-func TestFluxGuard_ResumeResetsFlag(t *testing.T) {
-	fake := &fakeFluxClient{reconcileResult: "ok"}
-	srv := buildTestMCPServer(t, fake)
-	defer srv.Close()
-
-	callTool(t, srv, "suspend_kustomization", map[string]any{"namespace": "flux-system", "name": "infra"})
-	callTool(t, srv, "resume_kustomization", map[string]any{"namespace": "flux-system", "name": "infra"})
-
-	// Flag should be reset — reconcile must fail again
-	result := callTool(t, srv, "reconcile_kustomization", map[string]any{
-		"namespace": "flux-system", "name": "infra",
-	})
-	if !result.IsError {
-		t.Error("expected guard to block reconcile after full resume")
-	}
-}
-
-func TestFluxGuard_MultiSuspendPartialResume(t *testing.T) {
-	fake := &fakeFluxClient{reconcileResult: "ok"}
-	srv := buildTestMCPServer(t, fake)
-	defer srv.Close()
-
-	callTool(t, srv, "suspend_kustomization", map[string]any{"namespace": "flux-system", "name": "a"})
-	callTool(t, srv, "suspend_kustomization", map[string]any{"namespace": "flux-system", "name": "b"})
-	callTool(t, srv, "resume_kustomization", map[string]any{"namespace": "flux-system", "name": "a"})
-
-	// "b" still suspended — flag still set, reconcile should succeed
-	result := callTool(t, srv, "reconcile_kustomization", map[string]any{
-		"namespace": "flux-system", "name": "b",
-	})
-	if result.IsError {
-		t.Error("expected reconcile to succeed while 'b' still suspended")
-	}
-}
-
 func TestGetKustomizationStatus_NoGuard(t *testing.T) {
 	fake := &fakeFluxClient{statusResult: "Kustomization: flux-system/infra\nSuspended: true\n"}
 	srv := buildTestMCPServer(t, fake)
 	defer srv.Close()
 
-	// No suspend called — status should still work
 	result := callTool(t, srv, "get_kustomization_status", map[string]any{
 		"namespace": "flux-system", "name": "infra",
 	})
@@ -167,13 +78,118 @@ func TestGetKustomizationStatus_NoGuard(t *testing.T) {
 	}
 }
 
-func containsStr(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && func() bool {
-		for i := 0; i <= len(s)-len(sub); i++ {
-			if s[i:i+len(sub)] == sub {
-				return true
-			}
+func TestReconcileKustomization_NoGuard(t *testing.T) {
+	fake := &fakeFluxClient{reconcileResult: "kustomization flux-system/cluster-apps reconciliation requested"}
+	srv := buildTestMCPServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "reconcile_kustomization", map[string]any{
+		"namespace": "flux-system", "name": "cluster-apps",
+	})
+	if result.IsError {
+		t.Errorf("reconcile_kustomization must succeed without prior suspend, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "reconciliation requested") {
+		t.Errorf("expected reconciliation confirmation, got: %s", text)
+	}
+}
+
+func TestGetGitRepositoryStatus_Success(t *testing.T) {
+	fake := &fakeFluxClient{
+		gitRepositoryStatusResult: "GitRepository: flux-system/flux-system\nConditions:\n  Ready: True — Applied revision: main/abc1234\n",
+	}
+	srv := buildTestMCPServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_gitrepository_status", map[string]any{
+		"namespace": "flux-system", "name": "flux-system",
+	})
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "GitRepository: flux-system/flux-system") {
+		t.Errorf("expected GitRepository header in response, got: %s", text)
+	}
+}
+
+func TestGetGitRepositoryStatus_DomainError(t *testing.T) {
+	fake := &fakeFluxClient{gitRepositoryStatusErr: fmt.Errorf("not found")}
+	srv := buildTestMCPServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_gitrepository_status", map[string]any{
+		"namespace": "flux-system", "name": "flux-system",
+	})
+	if !result.IsError {
+		t.Error("expected IsError=true for domain error")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "GetGitRepositoryStatus:") {
+		t.Errorf("expected handler prefix in error, got: %s", text)
+	}
+	if !strings.Contains(text, "not found") {
+		t.Errorf("expected original error in message, got: %s", text)
+	}
+}
+
+func TestGetGitRepositoryStatus_MissingArgument(t *testing.T) {
+	fake := &fakeFluxClient{}
+	srv := buildTestMCPServer(t, fake)
+	defer srv.Close()
+
+	t.Run("missing namespace", func(t *testing.T) {
+		result := callTool(t, srv, "get_gitrepository_status", map[string]any{
+			"name": "flux-system",
+		})
+		if !result.IsError {
+			t.Error("expected error for missing namespace")
 		}
-		return false
-	}())
+		text := result.Content[0].(mcp.TextContent).Text
+		if !strings.Contains(text, "namespace") {
+			t.Errorf("expected 'namespace' in error, got: %s", text)
+		}
+	})
+
+	t.Run("missing name", func(t *testing.T) {
+		result := callTool(t, srv, "get_gitrepository_status", map[string]any{
+			"namespace": "flux-system",
+		})
+		if !result.IsError {
+			t.Error("expected error for missing name")
+		}
+		text := result.Content[0].(mcp.TextContent).Text
+		if !strings.Contains(text, "name") {
+			t.Errorf("expected 'name' in error, got: %s", text)
+		}
+	})
+}
+
+func TestFluxToolInventory(t *testing.T) {
+	fake := &fakeFluxClient{}
+	cfg := &config.Config{MaxOutputBytesDescribe: 4096}
+	mcpSrv := fluxserver.NewFluxServer(fake, cfg)
+
+	tools := mcpSrv.ListTools()
+	names := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		names[tool.Tool.Name] = true
+	}
+
+	required := []string{"reconcile_kustomization", "get_kustomization_status", "get_gitrepository_status"}
+	for _, name := range required {
+		if !names[name] {
+			t.Errorf("expected tool %q to be registered", name)
+		}
+	}
+	if names["suspend_kustomization"] {
+		t.Error("suspend_kustomization must not be registered")
+	}
+	if names["resume_kustomization"] {
+		t.Error("resume_kustomization must not be registered")
+	}
+	if len(tools) != 3 {
+		t.Errorf("expected exactly 3 tools, got %d", len(tools))
+	}
 }
