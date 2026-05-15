@@ -225,6 +225,40 @@ func HandleWaitForGate(client GitClient, state SessionState, maxBytes int, pollI
 	}
 }
 
+func HandleClosePR(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		prNumF, ok := args["pr_number"].(float64)
+		if !ok {
+			return mcp.NewToolResultError("pr_number: missing or wrong type"), nil
+		}
+		prNumber := int(prNumF)
+		if prNumber <= 0 {
+			return mcp.NewToolResultError("pr_number: must be positive"), nil
+		}
+
+		if err := client.ClosePR(ctx, prNumber); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("HandleClosePR: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(fmt.Sprintf("pr #%d closed", prNumber), maxBytes)), nil
+	}
+}
+
+func HandleDeleteBranch(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		branch, ok := args["branch"].(string)
+		if !ok || branch == "" {
+			return mcp.NewToolResultError("branch: missing or wrong type"), nil
+		}
+
+		if err := client.DeleteBranch(ctx, branch); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("HandleDeleteBranch: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput("branch deleted: "+branch, maxBytes)), nil
+	}
+}
+
 func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
