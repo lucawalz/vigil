@@ -18,6 +18,7 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0010](0010-github-actions-eval-runner.md) | GitHub Actions eval campaign runner | Accepted |
 | [0011](0011-deterministic-watchdog.md) | Deterministic Watchdog | Accepted |
 | [0012](0012-empirically-calibrated-rollback-deadline.md) | Empirically-calibrated dead-man's switch deadline | Accepted |
+| [0013](0013-gitops-k8s-remediation.md) | K8s-layer remediation via GitOps | Accepted |
 
 Architecture-level rationale that spans multiple ADRs lives in [`docs/architecture/`](../architecture/).
 
