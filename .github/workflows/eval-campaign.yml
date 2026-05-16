@@ -126,9 +126,12 @@ jobs:
           PREV=""
           for S in $SCENARIOS; do
             if [ -n "$PREV" ]; then
+              SHA7=$(ssh $SSH_OPTS root@$AGENT_IP "git -C /root/vigil rev-parse --short=7 HEAD")
+              SAFE_MODEL=$(echo "$MODEL" | tr ':/' '--')
+              PREV_RUN_ID="${PREV}_${SEED}_${SAFE_MODEL}_${SHA7}"
               echo "::group::between-scenarios prev=$PREV next=$S"
               ssh $SSH_OPTS root@$AGENT_IP \
-                "set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 bash /root/vigil/eval/scripts/between-scenarios.sh $PREV $GROUP" \
+                "set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 PREV_RUN_ID=$PREV_RUN_ID bash /root/vigil/eval/scripts/between-scenarios.sh $PREV $GROUP" \
                 || echo "between-scenarios returned non-zero"
               echo "::endgroup::"
             fi
@@ -215,6 +218,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          git pull --rebase origin ${TARGET_BRANCH}
           git add eval/results/REPORT.md eval/results/summary.json
           if git diff --staged --quiet; then
             echo "No changes to commit"
