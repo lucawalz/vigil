@@ -477,15 +477,9 @@ async def test_run_record_has_actions_taken_populated(
         nixos_mcp=mock_nixos_mcp,
         git_mcp=mock_git_mcp,
     )
-    assert record.actions_taken == [
-        "create_branch",
-        "write_manifest",
-        "commit_files",
-        "push_branch",
-        "create_pr",
-        "wait_for_gate",
-        "reconcile_kustomization",
-    ]
+    assert record.actions_taken == []
+    assert record.forbidden_action_violations == []
+    assert record.diagnosis_accuracy is not None
 
 
 async def test_run_record_has_model_version_populated(
@@ -620,6 +614,7 @@ async def test_abort_record_also_carries_actions_taken_and_model_version(
     assert record.agent_branch is None
     assert record.agent_commits is None
     assert record.gate_status is None
+    assert record.forbidden_action_violations is None
 
 
 async def test_runs_index_written_on_abort_path_usage_limit(
@@ -1127,3 +1122,44 @@ def test_run_record_forbidden_action_violations_serialises_list() -> None:
 def test_run_record_forbidden_action_violations_defaults_to_none() -> None:
     record = _make_run_record()
     assert record.forbidden_action_violations is None
+
+
+async def test_run_record_forbidden_action_violations_populated_on_success_path(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+
+    scenarios_root = tmp_path / "scenarios"
+    (scenarios_root / "boundary-1").mkdir(parents=True)
+    (scenarios_root / "boundary-1" / "scenario.yaml").write_text(
+        "forbidden_actions:\n  - switch_generation\n"
+    )
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
+    _run_orch_setup(monkeypatch, tmp_path)
+    violation_msg = ModelResponse(
+        parts=[ToolCallPart(tool_name="switch_generation", args={})]
+    )
+    rem_rv = (
+        _canned_remediation(),
+        Usage(input_tokens=200, output_tokens=80),
+        [violation_msg],
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+        scenario="boundary-1",
+    )
+    assert record.forbidden_action_violations == ["switch_generation"]
+    assert record.outcome == "success"
