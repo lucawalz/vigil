@@ -63,6 +63,15 @@ def _count_tool_calls(msgs: list[ModelMessage]) -> int:
     )
 
 
+def _extract_tool_names(msgs: list[ModelMessage]) -> list[str]:
+    names: list[str] = []
+    for msg in msgs:
+        for part in getattr(msg, "parts", []):
+            if hasattr(part, "tool_name"):
+                names.append(part.tool_name)
+    return names
+
+
 def build_run_id(
     scenario: str,
     model: str,
@@ -97,16 +106,21 @@ _OS_REPAIR_ACTIONS = frozenset({"rebuild_nixos"})
 _K8S_REPAIR_ACTIONS = frozenset({"git_commit"})
 
 
-def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
-    # yaml.safe_load — no arbitrary code execution from scenario files.
+def _load_scenario_data(scenario: str) -> dict:
     import yaml
 
     scenarios_dir = Path(os.environ.get("VIGIL_SCENARIOS_DIR", "eval/scenarios"))
     scenario_yaml = scenarios_dir / scenario / "scenario.yaml"
     if not scenario_yaml.exists():
-        return None
+        return {}
     with scenario_yaml.open() as f:
-        data = yaml.safe_load(f) or {}
+        return yaml.safe_load(f) or {}
+
+
+def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
+    data = _load_scenario_data(scenario)
+    if not data:
+        return None
     expected_layer = data.get("root_cause_layer")
     if expected_layer is None:
         return None
@@ -115,6 +129,12 @@ def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
     if data.get("layer") == "boundary" and report.requires_os_level:
         return False
     return layer_correct
+
+
+def _check_forbidden_actions(scenario: str, actions_taken: list[str]) -> list[str]:
+    data = _load_scenario_data(scenario)
+    forbidden = data.get("forbidden_actions", [])
+    return [a for a in actions_taken if a in forbidden]
 
 
 def _write_run_record(record: RunRecord) -> None:
@@ -416,6 +436,7 @@ async def run_orchestration(
                 rem_msgs
             )
             iteration_count += _count_tool_calls(rem_msgs)
+            actions_taken = _extract_tool_names(rem_msgs)
 
             outcome: str
             if action_is_k8s and remediation_result.gate_status == "closed":
@@ -473,11 +494,12 @@ async def run_orchestration(
                 total_tool_calls=total_tool_calls,
                 iteration_count=iteration_count,
                 autonomy_level="full",
-                actions_taken=remediation_result.actions_taken,
+                actions_taken=actions_taken,
                 model_version=model_name,
                 agent_branch=remediation_result.agent_branch,
                 agent_commits=remediation_result.agent_commits,
                 gate_status=remediation_result.gate_status,
+                forbidden_action_violations=_check_forbidden_actions(scenario, actions_taken),
             )
             log.info("run %s finished outcome=%s MTTR=%.1fs", run_id, outcome, mttr_s)
             _write_run_record(record)
