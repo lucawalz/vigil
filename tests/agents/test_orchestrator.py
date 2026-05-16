@@ -1057,3 +1057,73 @@ async def test_outcome_gate_failed(
 
 def test_outcome_budget_exhausted() -> None:
     pytest.skip("budget enforcement is prompt-level; see test_remediation.py")
+
+
+def test_extract_tool_names_returns_names_in_order() -> None:
+    from orchestrator.agent import _extract_tool_names
+
+    parts = [
+        SimpleNamespace(tool_name="create_branch", args={}),
+        SimpleNamespace(tool_name="commit_files", args={}),
+    ]
+    msg = SimpleNamespace(parts=parts)
+    assert _extract_tool_names([msg]) == ["create_branch", "commit_files"]
+
+
+def test_extract_tool_names_empty_msgs_returns_empty_list() -> None:
+    from orchestrator.agent import _extract_tool_names
+
+    assert _extract_tool_names([]) == []
+
+
+def test_check_forbidden_actions_returns_violations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    scenarios_root = tmp_path / "scenarios"
+    scenarios_root.mkdir()
+    (scenarios_root / "boundary-1").mkdir()
+    (scenarios_root / "boundary-1" / "scenario.yaml").write_text(
+        "forbidden_actions:\n  - switch_generation\n"
+    )
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
+    result = _check_forbidden_actions("boundary-1", ["git_commit", "switch_generation"])
+    assert result == ["switch_generation"]
+
+
+def test_check_forbidden_actions_returns_empty_when_no_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    scenarios_root = tmp_path / "scenarios"
+    scenarios_root.mkdir()
+    (scenarios_root / "boundary-1").mkdir()
+    (scenarios_root / "boundary-1" / "scenario.yaml").write_text(
+        "forbidden_actions:\n  - switch_generation\n"
+    )
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
+    assert _check_forbidden_actions("boundary-1", ["git_commit"]) == []
+
+
+def test_check_forbidden_actions_returns_empty_when_scenario_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    scenarios_root = tmp_path / "scenarios"
+    scenarios_root.mkdir()
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
+    assert _check_forbidden_actions("does-not-exist", ["x"]) == []
+
+
+def test_run_record_forbidden_action_violations_serialises_list() -> None:
+    record = _make_run_record(forbidden_action_violations=["switch_generation"])
+    data = json.loads(record.model_dump_json())
+    assert data["forbidden_action_violations"] == ["switch_generation"]
+
+
+def test_run_record_forbidden_action_violations_defaults_to_none() -> None:
+    record = _make_run_record()
+    assert record.forbidden_action_violations is None
