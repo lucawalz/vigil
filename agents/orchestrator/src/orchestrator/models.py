@@ -56,6 +56,9 @@ class RunRecord(BaseModel):
     actions_taken: list[str]
     model_version: str | None = None
     setup_error: str | None = None
+    agent_branch: str | None = None
+    agent_commits: list[str] | None = None
+    gate_status: str | None = None
 
 
 class CircuitBreakerTripped(Exception):

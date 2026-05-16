@@ -159,9 +159,72 @@ def test_run_record_roundtrip() -> None:
         iteration_count=6,
         autonomy_level="full",
         actions_taken=["apply_patch"],
+        agent_branch="remediation/run-abc123",
+        agent_commits=["sha1", "sha2"],
+        gate_status="success",
     )
     j = record.model_dump_json()
     assert RunRecord.model_validate_json(j) == record
+
+
+def test_run_record_new_fields_default_none() -> None:
+    record = RunRecord(
+        run_id="k8s-1_seed-20260418T100000Z_llama-3.3-70b_abcd123",
+        scenario="k8s-1",
+        seed="seed-20260418T100000Z",
+        model="llama-3.3-70b",
+        git_sha7="abcd123",
+        started_at="2026-04-18T10:00:00Z",
+        ended_at="2026-04-18T10:02:00Z",
+        outcome="success",
+        success_rate=True,
+        diagnosis_accuracy=None,
+        MTTR_s=None,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=0,
+        total_output_tokens=0,
+        total_tool_calls=0,
+        iteration_count=0,
+        autonomy_level="full",
+        actions_taken=[],
+    )
+    assert record.agent_branch is None
+    assert record.agent_commits is None
+    assert record.gate_status is None
+
+
+def test_run_record_legacy_json_backward_compat() -> None:
+    record = RunRecord(
+        run_id="k8s-1_seed-20260418T100000Z_llama-3.3-70b_abcd123",
+        scenario="k8s-1",
+        seed="seed-20260418T100000Z",
+        model="llama-3.3-70b",
+        git_sha7="abcd123",
+        started_at="2026-04-18T10:00:00Z",
+        ended_at="2026-04-18T10:02:00Z",
+        outcome="success",
+        success_rate=True,
+        diagnosis_accuracy=None,
+        MTTR_s=None,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=0,
+        total_output_tokens=0,
+        total_tool_calls=0,
+        iteration_count=0,
+        autonomy_level="full",
+        actions_taken=[],
+    )
+    import json
+
+    data = record.model_dump()
+    for key in ("agent_branch", "agent_commits", "gate_status"):
+        data.pop(key, None)
+    legacy = RunRecord.model_validate_json(json.dumps(data))
+    assert legacy.agent_branch is None
 
 
 def test_watchdog_result_default_not_degraded() -> None:
