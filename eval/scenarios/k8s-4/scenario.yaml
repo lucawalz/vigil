@@ -4,8 +4,8 @@ layer: k8s
 
 root_cause_layer: k8s
 root_cause_component: "ConfigMap/vigil-app-config missing; deployment cannot mount volume"
-correct_action_class: apply_patch
-expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (recreate configmap from manifest) -> watchdog_confirm -> flux_resume"
+correct_action_class: git_commit
+expected_resolution_path: "diagnosis -> git_commit (recreate configmap) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

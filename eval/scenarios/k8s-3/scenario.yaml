@@ -4,8 +4,8 @@ layer: k8s
 
 root_cause_layer: k8s
 root_cause_component: "Deployment/vigil-app resources.limits.memory set to 4Mi (below nginx baseline)"
-correct_action_class: apply_patch
-expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (raise memory limit) -> watchdog_confirm -> flux_resume"
+correct_action_class: git_commit
+expected_resolution_path: "diagnosis -> git_commit (raise memory limit) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

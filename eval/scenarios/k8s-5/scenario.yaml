@@ -4,8 +4,8 @@ layer: k8s
 
 root_cause_layer: k8s
 root_cause_component: "PersistentVolumeClaim/vigil-app-data references nonexistent StorageClass 'does-not-exist'"
-correct_action_class: apply_patch
-expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (recreate PVC with local-path) -> watchdog_confirm -> flux_resume"
+correct_action_class: git_commit
+expected_resolution_path: "diagnosis -> git_commit (recreate PVC with local-path) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default
