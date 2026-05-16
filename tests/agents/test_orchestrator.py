@@ -617,7 +617,9 @@ async def test_abort_record_also_carries_actions_taken_and_model_version(
     assert record.outcome == "abort"
     assert record.actions_taken == []
     assert record.model_version == "qwen3-coder-next:cloud"
-    assert record.agent_branch is None and record.agent_commits is None and record.gate_status is None
+    assert record.agent_branch is None
+    assert record.agent_commits is None
+    assert record.gate_status is None
 
 
 async def test_runs_index_written_on_abort_path_usage_limit(
