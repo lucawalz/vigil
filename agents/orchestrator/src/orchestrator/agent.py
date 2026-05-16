@@ -475,6 +475,9 @@ async def run_orchestration(
                 autonomy_level="full",
                 actions_taken=remediation_result.actions_taken,
                 model_version=model_name,
+                agent_branch=remediation_result.agent_branch,
+                agent_commits=remediation_result.agent_commits,
+                gate_status=remediation_result.gate_status,
             )
             log.info("run %s finished outcome=%s MTTR=%.1fs", run_id, outcome, mttr_s)
             _write_run_record(record)

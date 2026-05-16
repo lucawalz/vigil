@@ -131,6 +131,9 @@ async def test_run_orchestration_happy_path(
     assert record.destructive_repair is True
     assert record.total_input_tokens == 300
     assert record.total_output_tokens == 130
+    assert record.agent_branch == "remediation/run-k8s-1"
+    assert record.agent_commits == ["deadbeef1234567"]
+    assert record.gate_status == "merged"
     written = (tmp_path / "runs" / f"{record.run_id}.json").read_text()
     assert json.loads(written)["run_id"] == record.run_id
     index_lines = (tmp_path / "runs_index.jsonl").read_text().strip().splitlines()
@@ -238,6 +241,9 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
         "total_tool_calls",
         "iteration_count",
         "autonomy_level",
+        "agent_branch",
+        "agent_commits",
+        "gate_status",
     }
     present = set(RunRecord.model_fields.keys())
     assert required.issubset(present)
@@ -611,6 +617,7 @@ async def test_abort_record_also_carries_actions_taken_and_model_version(
     assert record.outcome == "abort"
     assert record.actions_taken == []
     assert record.model_version == "qwen3-coder-next:cloud"
+    assert record.agent_branch is None and record.agent_commits is None and record.gate_status is None
 
 
 async def test_runs_index_written_on_abort_path_usage_limit(
