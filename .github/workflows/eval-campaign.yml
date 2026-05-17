@@ -15,7 +15,7 @@ on:
         description: "Max parallel matrix jobs"
         type: number
         required: false
-        default: 4
+        default: 2
       model:
         description: "LLM model identifier"
         type: string
@@ -256,18 +256,26 @@ jobs:
       - name: Publish results to step summary
         run: cat eval/results/step_summary.md >> $GITHUB_STEP_SUMMARY
 
-      - name: Commit and push results
+      - name: Publish results to docs/eval-results
         if: ${{ env.LOCAL_RUN != '1' }}
         env:
-          TARGET_BRANCH: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
+          RESULTS_BRANCH: docs/eval-results
+          RUN_ID: ${{ github.run_id }}
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git pull --rebase origin ${TARGET_BRANCH}
-          git add eval/results/REPORT.md eval/results/summary.json
+          git fetch origin "${RESULTS_BRANCH}:${RESULTS_BRANCH}" 2>/dev/null \
+            || git branch "${RESULTS_BRANCH}" "$(git rev-parse HEAD)"
+          git worktree add /tmp/eval-results "${RESULTS_BRANCH}"
+          DEST="/tmp/eval-results/results/${RUN_ID}"
+          mkdir -p "${DEST}"
+          cp eval/results/REPORT.md eval/results/summary.json "${DEST}/"
+          cp eval/runs/*.json "${DEST}/" 2>/dev/null || true
+          cd /tmp/eval-results
+          git add "results/${RUN_ID}"
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            echo "No new results to record"
           else
-            git commit -m "chore(eval): commit aggregated eval campaign results to branch"
-            git push origin HEAD:${TARGET_BRANCH}
+            git commit -m "docs(eval): record campaign ${RUN_ID}"
+            git push origin "${RESULTS_BRANCH}"
           fi
