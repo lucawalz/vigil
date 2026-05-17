@@ -73,16 +73,12 @@
         ${pkgs.uv}/bin/uv sync --locked --all-packages
         mkdir -p /usr/local/bin
         ln -sf /root/vigil/.venv/bin/vigil-eval /usr/local/bin/vigil-eval
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build \
-          -o /usr/local/bin/kubectl-mcp ./mcp-servers/kubectl-mcp/
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build \
-          -o /usr/local/bin/flux-mcp ./mcp-servers/flux-mcp/
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build \
-          -o /usr/local/bin/ssh-mcp ./mcp-servers/ssh-mcp/
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build \
-          -o /usr/local/bin/nixos-mcp ./mcp-servers/nixos-mcp/
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build \
-          -o /usr/local/bin/git-mcp ./mcp-servers/git-mcp/
+        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/kubectl-mcp ./mcp-servers/kubectl-mcp/ &
+        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/flux-mcp ./mcp-servers/flux-mcp/ &
+        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/ssh-mcp ./mcp-servers/ssh-mcp/ &
+        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/nixos-mcp ./mcp-servers/nixos-mcp/ &
+        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/git-mcp ./mcp-servers/git-mcp/ &
+        wait
       '';
     };
   };
