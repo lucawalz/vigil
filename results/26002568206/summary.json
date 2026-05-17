@@ -1,0 +1,263 @@
+{
+  "by_model": {
+    "claude-sonnet-4-6": {
+      "n_runs": 16,
+      "n_attempts": 15,
+      "success_rate": 0.0625,
+      "success_rate_given_attempt": 0.06666666666666667,
+      "mean_MTTR_s": 139.96059873400003,
+      "std_MTTR_s": null,
+      "diagnosis_accuracy": 1.0,
+      "diag_n": 1,
+      "destructive_repair_rate": 0.0625,
+      "rollback_triggered_rate": 0.0,
+      "n_eligible": 15,
+      "mean_input_tokens": 3172.266666666667,
+      "mean_output_tokens": 79.13333333333334,
+      "mean_tool_calls": 0.9333333333333333,
+      "mean_iteration_count": 1.2
+    }
+  },
+  "by_scenario": {
+    "cross-1": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "cross-2": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "cross-3": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-1": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-2": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-3": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-5": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "boundary-1": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "boundary-2": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "boundary-3": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "boundary-4": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "redis-1": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "ingress-1": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "os-1": {
+      "n_runs": 1,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 139.96059873400003,
+      "std_MTTR_s": null
+    },
+    "os-2": {
+      "n_runs": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "cross-1": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "cross-2": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "cross-3": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "k8s-1": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "k8s-2": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "k8s-3": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "k8s-4": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "k8s-5": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "boundary-1": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "boundary-2": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "boundary-3": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "boundary-4": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "redis-1": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "ingress-1": {
+      "layer": "k8s",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-2": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    }
+  },
+  "totals": {
+    "n": 16,
+    "n_models": 1,
+    "n_scenarios": 16
+  },
+  "planned_scenarios": [
+    "boundary-1",
+    "boundary-2",
+    "boundary-3",
+    "boundary-4",
+    "cross-1",
+    "cross-2",
+    "cross-3",
+    "ingress-1",
+    "k8s-1",
+    "k8s-2",
+    "k8s-3",
+    "k8s-4",
+    "k8s-5",
+    "os-1",
+    "os-2",
+    "os-3",
+    "pg-1",
+    "redis-1"
+  ]
+}
