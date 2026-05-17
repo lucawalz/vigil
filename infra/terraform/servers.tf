@@ -282,6 +282,7 @@ resource "local_sensitive_file" "vigil_env" {
   content         = <<-ENV
     VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}
     GITHUB_TOKEN=${var.github_token}
+    REPO_URL=https://github.com/lucawalz/vigil.git
     %{~if var.anthropic_api_key != ""~}
     ANTHROPIC_API_KEY=${var.anthropic_api_key}
     %{~endif~}
