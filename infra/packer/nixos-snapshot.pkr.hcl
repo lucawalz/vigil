@@ -10,7 +10,7 @@ packer {
 source "hcloud" "nixos" {
   token                = var.hcloud_token
   image                = "debian-12"
-  location             = "fsn1"
+  location             = "hel1"
   server_type          = "cpx22"
   ssh_username         = "root"
   ssh_private_key_file = var.ssh_private_key_file
