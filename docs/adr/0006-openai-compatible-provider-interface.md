@@ -1,5 +1,5 @@
 ---
-status: Accepted
+status: Superseded by [ADR-0014](0014-multi-adapter-model-factory.md)
 date: 2026-04-17
 decision-makers: [Luca Walz]
 consulted: []
@@ -7,6 +7,8 @@ informed: []
 ---
 
 # ADR-0006: OpenAI-compatible provider interface for LLM hot-swap
+
+> Superseded by [ADR-0014](0014-multi-adapter-model-factory.md) on 2026-05-17 — Claude was added to the eval panel via Pydantic AI's native Anthropic adapter rather than the OpenAI-compatible endpoint this ADR proposed.
 
 ## Context and Problem Statement
 
@@ -19,7 +21,7 @@ The evaluation campaign compares multiple LLM providers across the same 18 fault
 ## Decision Drivers
 
 - Inter-provider eval comparisons must be apples-to-apples; any code divergence per provider invalidates the comparison
-- Provider switching for Ollama-compatible providers must be achievable by changing `OLLAMA_BASE_URL`, `LLM_MODEL_NAME`, and `OLLAMA_API_KEY`; claude-* models use the native Anthropic SDK path via `ANTHROPIC_API_KEY`
+- Provider switching must be achievable by changing `OLLAMA_BASE_URL`, `LLM_MODEL_NAME`, and `OLLAMA_API_KEY`
 - No provider SDK may be imported directly into agent code
 - The OpenAI-compatible REST layer must cover the full tool-call and structured-output surface used by Pydantic AI agents
 
@@ -45,7 +47,7 @@ Chosen option: "OpenAI-compatible REST interface via Pydantic AI `OpenAIChatMode
 
 ### Confirmation
 
-The `OpenAIChatModel` configuration is verified in `agents/common/src/common/provider.py`. For Ollama-compatible providers, the env vars `OLLAMA_BASE_URL`, `LLM_MODEL_NAME`, and `OLLAMA_API_KEY` are the complete configuration surface. claude-* models use the native Anthropic SDK path instead, configured via `ANTHROPIC_API_KEY`. Eval campaign results show runs from two providers in `eval/results/summary.json` with identical `run_orchestration()` code paths.
+The `OpenAIChatModel` configuration is verified in `agents/common/src/common/provider.py`. The env vars `OLLAMA_BASE_URL`, `LLM_MODEL_NAME`, and `OLLAMA_API_KEY` are the complete configuration surface for the OpenAI-compat path. Eval campaign results show runs from two providers in `eval/results/summary.json` with identical `run_orchestration()` code paths.
 
 ### Pros and Cons of the Options
 
