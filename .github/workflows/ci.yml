@@ -33,8 +33,8 @@ jobs:
       - name: Pytest (agents)
         env:
           LLM_MODEL_NAME: test-model
-          LLM_BASE_URL: http://localhost:1/v1
-          LLM_API_KEY: sk-test
+          OLLAMA_BASE_URL: http://localhost:1/v1
+          OLLAMA_API_KEY: sk-test
           VIGIL_WEBHOOK_SECRET: test-secret
         run: uv run pytest tests/agents/ -x --tb=short -q
 
