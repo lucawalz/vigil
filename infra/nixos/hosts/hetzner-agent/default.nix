@@ -1,4 +1,34 @@
-{ config, lib, pkgs, meta, ... }:
+{ config, lib, pkgs, meta, self, ... }:
+let
+  mkMcpServer = { name, vendorHash }: pkgs.buildGoModule {
+    pname = name;
+    version = "0.0.1";
+    src = self + "/mcp-servers/${name}";
+    inherit vendorHash;
+    env.CGO_ENABLED = "0";
+  };
+
+  kubectl-mcp = mkMcpServer {
+    name = "kubectl-mcp";
+    vendorHash = "sha256-Vq6y8ztcwnO3Bth8PyHrtSjWBkB5SY++Y3tp/McIXL4=";
+  };
+  flux-mcp = mkMcpServer {
+    name = "flux-mcp";
+    vendorHash = "sha256-9yuAhtz7gA1iw9Yykn2sfo95UBVXSCqUMIY9ag373cM=";
+  };
+  ssh-mcp = mkMcpServer {
+    name = "ssh-mcp";
+    vendorHash = "sha256-iogbVzChp1tWovncVTVrD90HmFyVGYsaOii+iCVFsXE=";
+  };
+  nixos-mcp = mkMcpServer {
+    name = "nixos-mcp";
+    vendorHash = "sha256-iogbVzChp1tWovncVTVrD90HmFyVGYsaOii+iCVFsXE=";
+  };
+  git-mcp = mkMcpServer {
+    name = "git-mcp";
+    vendorHash = "sha256-6WWWH/NkdSXUjG1+fMa0dUGwU2E4VhwLvYguygvCGBM=";
+  };
+in
 {
   imports = [
     ./disko-config.nix
@@ -30,8 +60,12 @@
     kubectl
     jq
     curl
-    go
     git
+    kubectl-mcp
+    flux-mcp
+    ssh-mcp
+    nixos-mcp
+    git-mcp
   ];
 
   system.activationScripts.vigil-ssh-key = lib.stringAfter [ "users" ] ''
@@ -43,7 +77,7 @@
   '';
 
   systemd.services.vigil-setup = {
-    description = "Clone vigil repo and build MCP servers";
+    description = "Clone vigil repo and install Python environment";
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
     wantedBy = [ "multi-user.target" ];
@@ -51,8 +85,6 @@
     environment = {
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
-      GOPATH = "/root/go";
-      GOCACHE = "/root/.cache/go-build";
     };
     serviceConfig = {
       Type = "oneshot";
@@ -73,12 +105,6 @@
         ${pkgs.uv}/bin/uv sync --locked --all-packages
         mkdir -p /usr/local/bin
         ln -sf /root/vigil/.venv/bin/vigil-eval /usr/local/bin/vigil-eval
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/kubectl-mcp ./mcp-servers/kubectl-mcp/ &
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/flux-mcp ./mcp-servers/flux-mcp/ &
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/ssh-mcp ./mcp-servers/ssh-mcp/ &
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/nixos-mcp ./mcp-servers/nixos-mcp/ &
-        CGO_ENABLED=0 ${pkgs.go}/bin/go build -o /usr/local/bin/git-mcp ./mcp-servers/git-mcp/ &
-        wait
       '';
     };
   };
@@ -90,10 +116,11 @@
     wantedBy = [ "multi-user.target" ];
     unitConfig.ConditionPathExists = "/etc/vigil/env";
     environment = {
-      KUBECTL_MCP_CMD = "/usr/local/bin/kubectl-mcp";
-      FLUX_MCP_CMD = "/usr/local/bin/flux-mcp";
-      SSH_MCP_CMD = "/usr/local/bin/ssh-mcp";
-      NIXOS_MCP_CMD = "/usr/local/bin/nixos-mcp";
+      KUBECTL_MCP_CMD = "${kubectl-mcp}/bin/kubectl-mcp";
+      FLUX_MCP_CMD = "${flux-mcp}/bin/flux-mcp";
+      SSH_MCP_CMD = "${ssh-mcp}/bin/ssh-mcp";
+      NIXOS_MCP_CMD = "${nixos-mcp}/bin/nixos-mcp";
+      GIT_MCP_CMD = "${git-mcp}/bin/git-mcp";
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
       KUBECONFIG = "/etc/vigil/kubeconfig-eval-runner";

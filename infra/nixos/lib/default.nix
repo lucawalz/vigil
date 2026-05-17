@@ -34,7 +34,7 @@
       inherit system;
       specialArgs = {
         meta = { hostname = "hetzner-agent"; };
-        inherit privateIp;
+        inherit privateIp self;
       };
       modules = [
         disko.nixosModules.disko
