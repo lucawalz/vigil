@@ -81,6 +81,8 @@
           -o /usr/local/bin/ssh-mcp ./mcp-servers/ssh-mcp/
         CGO_ENABLED=0 ${pkgs.go}/bin/go build \
           -o /usr/local/bin/nixos-mcp ./mcp-servers/nixos-mcp/
+        CGO_ENABLED=0 ${pkgs.go}/bin/go build \
+          -o /usr/local/bin/git-mcp ./mcp-servers/git-mcp/
       '';
     };
   };
