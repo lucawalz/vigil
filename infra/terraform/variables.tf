@@ -31,13 +31,21 @@ variable "vigil_webhook_secret" {
   description = "Bearer token for the vigil orchestrator webhook"
 }
 
-variable "llm_api_key" {
+variable "ollama_api_key" {
   type      = string
   sensitive = true
+  default   = ""
 }
 
-variable "llm_base_url" {
-  type = string
+variable "ollama_base_url" {
+  type    = string
+  default = ""
+}
+
+variable "anthropic_api_key" {
+  type      = string
+  sensitive = true
+  default   = ""
 }
 
 variable "llm_model_name" {
