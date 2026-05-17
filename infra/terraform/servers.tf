@@ -281,6 +281,7 @@ resource "local_sensitive_file" "vigil_env" {
   file_permission = "0600"
   content         = <<-ENV
     VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}
+    GITHUB_TOKEN=${var.github_token}
     %{~if var.anthropic_api_key != ""~}
     ANTHROPIC_API_KEY=${var.anthropic_api_key}
     %{~endif~}
