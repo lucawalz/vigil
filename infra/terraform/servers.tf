@@ -281,13 +281,13 @@ resource "local_sensitive_file" "vigil_env" {
   file_permission = "0600"
   content         = <<-ENV
     VIGIL_WEBHOOK_SECRET=${var.vigil_webhook_secret}
-    %{~ if var.anthropic_api_key != "" ~}
+    %{~if var.anthropic_api_key != ""~}
     ANTHROPIC_API_KEY=${var.anthropic_api_key}
-    %{~ endif ~}
-    %{~ if var.ollama_api_key != "" ~}
+    %{~endif~}
+    %{~if var.ollama_api_key != ""~}
     OLLAMA_API_KEY=${var.ollama_api_key}
     OLLAMA_BASE_URL=${var.ollama_base_url}
-    %{~ endif ~}
+    %{~endif~}
     LLM_MODEL_NAME=${var.llm_model_name}
     VIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099
     EVAL_RUNS_DIR=/root/vigil/eval/runs
@@ -304,14 +304,14 @@ resource "null_resource" "vigil_agent_setup" {
   depends_on = [null_resource.kubeconfig_agent, null_resource.rbac_kubeconfig_eval_runner, null_resource.rbac_kubeconfig_fault_injection]
 
   triggers = {
-    agent_id           = hcloud_server.agent.id
-    branch             = var.vigil_branch
-    webhook_secret_sha = sha256(var.vigil_webhook_secret)
+    agent_id              = hcloud_server.agent.id
+    branch                = var.vigil_branch
+    webhook_secret_sha    = sha256(var.vigil_webhook_secret)
     ollama_api_key_sha    = sha256(var.ollama_api_key)
     ollama_base_url_sha   = sha256(var.ollama_base_url)
     anthropic_api_key_sha = sha256(var.anthropic_api_key)
     llm_model_name_sha    = sha256(var.llm_model_name)
-    kubeconfigs_ready  = "${null_resource.rbac_kubeconfig_eval_runner.id}-${null_resource.rbac_kubeconfig_fault_injection.id}"
+    kubeconfigs_ready     = "${null_resource.rbac_kubeconfig_eval_runner.id}-${null_resource.rbac_kubeconfig_fault_injection.id}"
   }
 
   provisioner "local-exec" {

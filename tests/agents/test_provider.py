@@ -19,12 +19,18 @@ def test_anthropic_path_returns_anthropic_model() -> None:
 
 
 def test_ollama_path_returns_openai_chat_model() -> None:
-    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "nokey"}):
+    env = {"OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "nokey"}
+    with patch.dict(os.environ, env):
         m = build_model("llama3")
     assert type(m).__name__ == "OpenAIChatModel"
 
 
 def test_default_name_uses_env_var() -> None:
-    with patch.dict(os.environ, {"LLM_MODEL_NAME": "llama3", "OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "nokey"}):
+    env = {
+        "LLM_MODEL_NAME": "llama3",
+        "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+        "OLLAMA_API_KEY": "nokey",
+    }
+    with patch.dict(os.environ, env):
         m = build_model()
     assert type(m).__name__ == "OpenAIChatModel"

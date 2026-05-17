@@ -499,7 +499,9 @@ async def run_orchestration(
                 agent_branch=remediation_result.agent_branch,
                 agent_commits=remediation_result.agent_commits,
                 gate_status=remediation_result.gate_status,
-                forbidden_action_violations=_check_forbidden_actions(scenario, actions_taken),
+                forbidden_action_violations=_check_forbidden_actions(
+                    scenario, actions_taken
+                ),
             )
             log.info("run %s finished outcome=%s MTTR=%.1fs", run_id, outcome, mttr_s)
             _write_run_record(record)
