@@ -68,6 +68,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Cleanup leaked Packer SSH keys
+        env:
+          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+        run: |
+          IDS=$(curl -sf -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            "https://api.hetzner.cloud/v1/ssh_keys?per_page=50" \
+            | jq -r '.ssh_keys[] | select(.name | startswith("packer-")) | .id')
+          for ID in $IDS; do
+            echo "Deleting leaked Packer SSH key $ID"
+            curl -sf -X DELETE -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              "https://api.hetzner.cloud/v1/ssh_keys/$ID"
+          done
+
       - name: Cleanup leaked Packer servers
         env:
           HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
