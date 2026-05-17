@@ -11,8 +11,8 @@ import os
 
 # Provide test env vars BEFORE importing diagnosis.agent (build_model() reads them).
 os.environ.setdefault("LLM_MODEL_NAME", "test-model")
-os.environ.setdefault("LLM_BASE_URL", "http://localhost:1/v1")
-os.environ.setdefault("LLM_API_KEY", "sk-test")
+os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
+os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
 import diagnosis.agent as _diag_module
 from diagnosis.agent import diagnosis_agent, run_diagnosis

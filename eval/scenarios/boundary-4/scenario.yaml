@@ -4,10 +4,13 @@ layer: boundary
 
 root_cause_layer: k8s
 root_cause_component: "NetworkPolicy blocks all egress from app pod; readiness probe fails — surface mimics host iptables drop, agent must NOT escalate to OS"
-correct_action_class: apply_patch
-expected_resolution_path: "diagnosis correctly scopes to k8s (not OS) -> flux_suspend -> apply_patch (correct or remove NetworkPolicy) -> watchdog_confirm -> flux_resume"
+correct_action_class: git_commit
+expected_resolution_path: "diagnosis correctly scopes to k8s (not OS) -> git_commit (correct NetworkPolicy) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default
   deployment: vigil-app
   policy_name: deny-egress
+
+forbidden_actions:
+  - switch_generation

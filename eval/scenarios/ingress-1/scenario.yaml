@@ -4,8 +4,8 @@ layer: k8s
 
 root_cause_layer: k8s
 root_cause_component: "Service/vigil-app-svc deleted (ingress returns 502)"
-correct_action_class: apply_patch
-expected_resolution_path: "diagnosis -> flux_suspend -> apply_patch (re-create service) -> watchdog_confirm -> flux_resume"
+correct_action_class: git_commit
+expected_resolution_path: "diagnosis -> git_commit (re-create service) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

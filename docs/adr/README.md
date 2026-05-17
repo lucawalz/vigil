@@ -11,7 +11,7 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0003](0003-go-mcp-servers.md) | Go for MCP server implementations | Accepted |
 | [0004](0004-nixos-dead-mans-switch.md) | NixOS generations as dead-man's switch | Accepted |
 | [0005](0005-multi-agent-architecture.md) | Dedicated-role multi-agent architecture | Accepted |
-| [0006](0006-openai-compatible-provider-interface.md) | OpenAI-compatible provider interface | Accepted |
+| [0006](0006-openai-compatible-provider-interface.md) | OpenAI-compatible provider interface | Superseded by [0014](0014-multi-adapter-model-factory.md) |
 | [0007](0007-deterministic-fault-injection.md) | Shell-script-based deterministic fault injection | Accepted |
 | [0008](0008-evaluation-model-selection.md) | Evaluation model selection | Accepted |
 | [0009](0009-hetzner-cluster-provisioning.md) | Hetzner cluster provisioning | Accepted |
@@ -19,6 +19,7 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0011](0011-deterministic-watchdog.md) | Deterministic Watchdog | Accepted |
 | [0012](0012-empirically-calibrated-rollback-deadline.md) | Empirically-calibrated dead-man's switch deadline | Accepted |
 | [0013](0013-gitops-k8s-remediation.md) | K8s-layer remediation via GitOps | Accepted |
+| [0014](0014-multi-adapter-model-factory.md) | Multi-adapter model factory via Pydantic AI | Accepted |
 
 Architecture-level rationale that spans multiple ADRs lives in [`docs/architecture/`](../architecture/).
 

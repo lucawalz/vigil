@@ -28,10 +28,9 @@ tail -n 20 eval/runs_index.jsonl | jq '{scenario, outcome, MTTR_s}'
 
 Set these environment variables before running:
 
-| Provider | `LLM_BASE_URL` | `LLM_MODEL_NAME` | Notes |
-|----------|---------------|-----------------|-------|
+| Provider | `OLLAMA_BASE_URL` | `LLM_MODEL_NAME` | Notes |
+|----------|-----------------|-----------------|-------|
 | Ollama Cloud | `https://api.ollama.com/v1` | `qwen3-coder-next:cloud` | Eval campaign |
-| Anthropic | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` | Eval campaign |
 | Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | Dev iteration only |
 
-Set `LLM_API_KEY` to the corresponding provider API key.
+Set `OLLAMA_API_KEY` to the corresponding provider API key. For Anthropic (claude-* models), set `ANTHROPIC_API_KEY` instead — claude-* uses the native Anthropic SDK path, not `OLLAMA_BASE_URL`.

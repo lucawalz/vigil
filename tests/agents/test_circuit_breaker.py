@@ -18,8 +18,8 @@ import pytest
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 
 os.environ.setdefault("LLM_MODEL_NAME", "test-model")
-os.environ.setdefault("LLM_BASE_URL", "http://localhost:1/v1")
-os.environ.setdefault("LLM_API_KEY", "sk-test")
+os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
+os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
 from orchestrator import agent as orch_mod
 from orchestrator.agent import _CircuitBreaker, run_orchestration

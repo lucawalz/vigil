@@ -145,3 +145,54 @@ def test_inject_params_preserved(tmp_scenarios_dir: Path) -> None:
     assert len(scenarios) == 1
     assert scenarios[0].inject_params["namespace"] == "default"
     assert scenarios[0].inject_params["deployment"] == "vigil-app"
+
+
+def test_accepts_git_commit_correct_action_class(tmp_scenarios_dir: Path) -> None:
+    scenario_dir = tmp_scenarios_dir / "k8s-test"
+    scenario_dir.mkdir()
+    scenario_yaml = {
+        "id": "k8s-test",
+        "name": "test-git-commit",
+        "layer": "k8s",
+        "root_cause_layer": "k8s",
+        "root_cause_component": "Deployment/vigil-app",
+        "correct_action_class": "git_commit",
+        "expected_resolution_path": "diagnosis -> git_commit -> gate_pass -> reconcile",
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
+    scenarios = load_scenarios(tmp_scenarios_dir)
+    assert scenarios[0].correct_action_class == "git_commit"
+
+
+def test_forbidden_actions_defaults_to_empty_list() -> None:
+    s = ScenarioDefinition(
+        id="k8s-1",
+        name="x",
+        layer="k8s",
+        root_cause_layer="k8s",
+        root_cause_component="Deployment/vigil-app",
+        correct_action_class="git_commit",
+        expected_resolution_path="diagnosis -> git_commit",
+    )
+    assert s.forbidden_actions == []
+
+
+def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> None:
+    scenario_dir = tmp_scenarios_dir / "b1"
+    scenario_dir.mkdir()
+    (scenario_dir / "scenario.yaml").write_text(
+        yaml.dump(
+            {
+                "id": "b1",
+                "name": "x",
+                "layer": "boundary",
+                "root_cause_layer": "k8s",
+                "root_cause_component": "imagePullSecret",
+                "correct_action_class": "git_commit",
+                "expected_resolution_path": "diagnosis -> git_commit",
+                "forbidden_actions": ["switch_generation"],
+            }
+        )
+    )
+    scenarios = load_scenarios(tmp_scenarios_dir)
+    assert scenarios[0].forbidden_actions == ["switch_generation"]

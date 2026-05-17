@@ -99,7 +99,7 @@
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
       KUBECONFIG = "/etc/vigil/kubeconfig-eval-runner";
-      PATH = lib.mkForce "/run/current-system/sw/bin:/usr/local/bin:/root/vigil/.venv/bin";
+      PATH = lib.mkForce "${pkgs.git}/bin:/run/current-system/sw/bin:/usr/local/bin:/root/vigil/.venv/bin";
     };
     serviceConfig = {
       WorkingDirectory = "/root/vigil";

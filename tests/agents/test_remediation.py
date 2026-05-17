@@ -10,8 +10,8 @@ import inspect
 import os
 
 os.environ.setdefault("LLM_MODEL_NAME", "test-model")
-os.environ.setdefault("LLM_BASE_URL", "http://localhost:1/v1")
-os.environ.setdefault("LLM_API_KEY", "sk-test")
+os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
+os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
 import remediation.agent as _rem_agent_mod
 from diagnosis.models import DiagnosisReport

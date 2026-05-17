@@ -50,7 +50,7 @@ The decision holds as long as:
 - `MCPServerStdio` boots exactly once per FastAPI lifespan and serves all agent runs without reconnection
 - `DiagnosisReport`, `RemediationResult`, and `WatchdogResult` are validated at the framework boundary with no manual parsing
 - `FilteredToolset` correctly excludes write tools from the Diagnosis agent's tool scope
-- Provider hot-swap between Anthropic and Ollama Cloud requires no code changes beyond `LLM_BASE_URL`
+- Hot-swap between Ollama-compatible providers requires changing `OLLAMA_BASE_URL`; claude-* models use the native Anthropic SDK path configured via `ANTHROPIC_API_KEY`
 
 ### Pros and Cons of the Options
 
