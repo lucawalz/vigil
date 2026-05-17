@@ -1,9 +1,10 @@
 { config, lib, pkgs, meta, self, ... }:
 let
+  repoRoot = builtins.dirOf (builtins.dirOf (toString self));
   mkMcpServer = { name, vendorHash }: pkgs.buildGoModule {
     pname = name;
     version = "0.0.1";
-    src = self + "/mcp-servers/${name}";
+    src = builtins.path { inherit name; path = "${repoRoot}/mcp-servers/${name}"; };
     inherit vendorHash;
     env.CGO_ENABLED = "0";
   };
