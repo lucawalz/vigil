@@ -707,19 +707,8 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
     assert record.outcome == "success"
 
 
-async def test_delete_resource_action_routes_to_kubectl_dispatch(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-
-    delete_report = DiagnosisReport(
+def _delete_report() -> DiagnosisReport:
+    return DiagnosisReport(
         root_cause="restrictive ResourceQuota blocks pod scheduling",
         root_cause_component="ResourceQuota/restrictive-quota",
         severity="high",
@@ -735,8 +724,27 @@ async def test_delete_resource_action_routes_to_kubectl_dispatch(
             patch_body="",
         ),
     )
-    diag_rv = (delete_report, Usage(input_tokens=100, output_tokens=50), [])
+
+
+async def test_delete_resource_action_routes_to_kubectl_dispatch(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_delete_report(), Usage(input_tokens=100, output_tokens=50), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
 
     delete_mock = AsyncMock(return_value={"content": "deleted ResourceQuota/restrictive-quota"})
     mock_kubectl_mcp.direct_call_tool = delete_mock
@@ -755,15 +763,59 @@ async def test_delete_resource_action_routes_to_kubectl_dispatch(
         for c in delete_mock.call_args_list
         if c.args and c.args[0] == "delete_resource"
     ]
-    assert len(delete_calls) >= 1, "kubectl-mcp delete_resource was not called"
-
+    assert len(delete_calls) >= 1
     call_args = delete_calls[0].args[1] if len(delete_calls[0].args) > 1 else delete_calls[0].kwargs.get("args", {})
     assert call_args.get("kind") == "ResourceQuota"
     assert call_args.get("namespace") == "default"
     assert call_args.get("name") == "restrictive-quota"
+    assert run_watchdog_mock.called
+    assert record.outcome == "success"
+    assert not mock_git_mcp.direct_call_tool.called
+    assert not mock_nixos_mcp.call_tool.called
 
-    assert not mock_git_mcp.direct_call_tool.called, "git-mcp must not be called for delete_resource"
-    assert not mock_nixos_mcp.call_tool.called, "nixos-mcp must not be called for delete_resource"
+
+async def test_delete_resource_watchdog_degraded_yields_rollback_failed(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_delete_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    degraded_snap = HealthSnapshot(
+        ready_pods=0, total_pods=3, endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog",
+        AsyncMock(return_value=WatchdogResult(degraded=True, snapshot=degraded_snap)),
+    )
+    mock_kubectl_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "deleted ResourceQuota/restrictive-quota"}
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "rollback_failed"
+    assert record.rollback_triggered is True
+    assert record.rollback_success is False
+    assert record.success_rate is False
 
 
 def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(

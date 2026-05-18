@@ -405,6 +405,16 @@ async def run_orchestration(
                     record = _abort_record("delete_resource_tool_error", "abort")
                     _write_run_record(record)
                     return record
+                await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
+                watchdog_result = await run_watchdog(watchdog_deps, baseline)
+                if watchdog_result.degraded:
+                    imp_outcome = "rollback_failed"
+                    imp_rollback_triggered = True
+                    imp_rollback_success: bool | None = False
+                else:
+                    imp_outcome = "success"
+                    imp_rollback_triggered = False
+                    imp_rollback_success = None
                 mttr_s = asyncio.get_event_loop().time() - t0
                 ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 record = RunRecord(
@@ -415,13 +425,13 @@ async def run_orchestration(
                     git_sha7=sha7,
                     started_at=started_at,
                     ended_at=ended_at,
-                    outcome="success",
-                    success_rate=True,
+                    outcome=imp_outcome,
+                    success_rate=(imp_outcome == "success"),
                     diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
                     MTTR_s=mttr_s,
                     destructive_repair=True,
-                    rollback_triggered=False,
-                    rollback_success=None,
+                    rollback_triggered=imp_rollback_triggered,
+                    rollback_success=imp_rollback_success,
                     total_input_tokens=total_usage.input_tokens or 0,
                     total_output_tokens=total_usage.output_tokens or 0,
                     total_tool_calls=_count_tool_calls(diag_msgs) + 1,
@@ -430,7 +440,7 @@ async def run_orchestration(
                     actions_taken=["delete_resource"],
                     model_version=model_name,
                 )
-                log.info("run %s finished outcome=success (delete_resource)", run_id)
+                log.info("run %s finished outcome=%s (delete_resource)", run_id, imp_outcome)
                 _write_run_record(record)
                 return record
 
