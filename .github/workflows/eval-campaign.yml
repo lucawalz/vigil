@@ -126,7 +126,7 @@ jobs:
 
       - name: Wait for Flux kustomizations ready
         run: |
-          KC="--kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }}"
+          KC="--kubeconfig $HOME/.kube/hetzner-vigil-${{ matrix.group }}"
           DEADLINE=$(($(date +%s) + 900))
           while [ $(date +%s) -lt $DEADLINE ]; do
             echo "--- $(date -u +%H:%M:%SZ) ---"
