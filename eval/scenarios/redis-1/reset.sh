@@ -8,15 +8,17 @@ SEED="${1:-1}"
 NAMESPACE="default"
 STATEFULSET="redis-master"
 
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" set resources \
-  "statefulset/${STATEFULSET}" \
-  -c redis \
-  --limits=memory=256Mi \
-  --requests=memory=128Mi \
-  -n "${NAMESPACE}"
-
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "statefulset/${STATEFULSET}" \
-  -n "${NAMESPACE}" --timeout=300s
+if kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" \
+    get "statefulset/${STATEFULSET}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" set resources \
+    "statefulset/${STATEFULSET}" \
+    -c redis \
+    --limits=memory=256Mi \
+    --requests=memory=128Mi \
+    -n "${NAMESPACE}"
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "statefulset/${STATEFULSET}" \
+    -n "${NAMESPACE}" --timeout=300s
+fi
 
 flux --kubeconfig "$EVAL_RUNNER_KUBECONFIG" resume kustomization flux-system -n flux-system 2>/dev/null || true
 

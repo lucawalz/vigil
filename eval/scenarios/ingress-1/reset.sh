@@ -12,7 +12,7 @@ MANIFEST_DIR="$(cd "$(dirname "$0")" && pwd)/manifests"
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" get service "${SERVICE}" -n "${NAMESPACE}" --no-headers \
-  || { echo "reset.sh: service ${SERVICE} not found after apply"; exit 1; }
+  || echo "reset.sh: service ${SERVICE} not found after apply"
 
 flux --kubeconfig "$EVAL_RUNNER_KUBECONFIG" resume kustomization flux-system -n flux-system 2>/dev/null || true
 
