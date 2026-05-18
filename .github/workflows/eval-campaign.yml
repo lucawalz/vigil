@@ -112,7 +112,7 @@ jobs:
 
       - name: Wait for orchestrator to be reachable
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
           DEADLINE=$(($(date +%s) + 600))
           ITER=0
           until ssh $SSH_OPTS root@${{ steps.agent.outputs.ip }} \
@@ -154,7 +154,7 @@ jobs:
           GROUP: ${{ matrix.group }}
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
           PREV=""
           for S in $SCENARIOS; do
             if [ -n "$PREV" ]; then
@@ -186,7 +186,7 @@ jobs:
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
           mkdir -p eval/runs
           ssh $SSH_OPTS root@$AGENT_IP "
             echo '=== systemctl status ==='
