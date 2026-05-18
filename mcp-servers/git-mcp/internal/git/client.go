@@ -228,7 +228,7 @@ func (c *realGitClient) EnableAutoMerge(ctx context.Context, prNumber int) error
 	if err != nil {
 		return fmt.Errorf("enable_auto_merge: post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
