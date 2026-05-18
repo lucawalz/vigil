@@ -19,10 +19,10 @@ spec:
       defaultReplicaCount: 2
     longhornManager:
       nodeSelector:
-        node-role.kubernetes.io/worker: "true"
+        node.kubernetes.io/role: worker
     longhornDriver:
       nodeSelector:
-        node-role.kubernetes.io/worker: "true"
+        node.kubernetes.io/role: worker
   install:
     createNamespace: false
     remediation:

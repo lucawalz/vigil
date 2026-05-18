@@ -7,7 +7,7 @@
     role = "agent";
     serverAddr = lib.mkDefault "https://10.0.0.10:6443";
     tokenFile = "/etc/k3s/token";
-    extraFlags = [ "--node-label=node-role.kubernetes.io/worker=true" ];
+    extraFlags = [ "--node-label=node.kubernetes.io/role=worker" ];
   };
 
   networking.firewall.allowedTCPPorts = [ 10250 ];
