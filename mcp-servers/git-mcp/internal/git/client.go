@@ -1,13 +1,16 @@
 package git
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -195,11 +198,48 @@ func (c *realGitClient) CreatePR(ctx context.Context, title, head, base, body st
 }
 
 func (c *realGitClient) EnableAutoMerge(ctx context.Context, prNumber int) error {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", "--auto", "--squash", strconv.Itoa(prNumber))
-	cmd.Env = append(os.Environ(), "GH_TOKEN="+c.cfg.GitHubToken, "GH_REPO="+c.owner+"/"+c.repo)
-	out, err := cmd.CombinedOutput()
+	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
 	if err != nil {
-		return fmt.Errorf("enable_auto_merge: gh pr merge --auto: %w: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("enable_auto_merge: get pr: %w", err)
+	}
+	nodeID := pr.GetNodeID()
+	if nodeID == "" {
+		return fmt.Errorf("enable_auto_merge: PR #%d has no node_id", prNumber)
+	}
+
+	const mutation = `mutation($pullRequestId: ID!) {
+		enablePullRequestAutoMerge(input: {
+			pullRequestId: $pullRequestId,
+			mergeMethod: SQUASH
+		}) { pullRequest { id } }
+	}`
+	body, _ := json.Marshal(map[string]any{
+		"query":     mutation,
+		"variables": map[string]any{"pullRequestId": nodeID},
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.github.com/graphql", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("enable_auto_merge: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.gh.Client().Do(req)
+	if err != nil {
+		return fmt.Errorf("enable_auto_merge: post: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("enable_auto_merge: status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var gqlResp struct {
+		Errors []struct{ Message string } `json:"errors"`
+	}
+	if json.Unmarshal(respBody, &gqlResp) == nil && len(gqlResp.Errors) > 0 {
+		return fmt.Errorf("enable_auto_merge: graphql: %s", gqlResp.Errors[0].Message)
 	}
 	return nil
 }
@@ -213,24 +253,27 @@ func (c *realGitClient) GetPRStatus(ctx context.Context, prNumber int) (string, 
 }
 
 func (c *realGitClient) ClosePR(ctx context.Context, prNumber int) error {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "close", "--delete-branch", strconv.Itoa(prNumber))
-	cmd.Env = append(os.Environ(), "GH_TOKEN="+c.cfg.GitHubToken, "GH_REPO="+c.owner+"/"+c.repo)
-	out, err := cmd.CombinedOutput()
+	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
 	if err != nil {
-		return fmt.Errorf("close_pr: gh pr close: %w: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("close_pr: get pr: %w", err)
+	}
+	branch := pr.GetHead().GetRef()
+
+	closed := "closed"
+	if _, _, err := c.gh.PullRequests.Edit(ctx, c.owner, c.repo, prNumber, &gogithub.PullRequest{State: &closed}); err != nil {
+		return fmt.Errorf("close_pr: edit: %w", err)
+	}
+	if branch != "" {
+		if _, err := c.gh.Git.DeleteRef(ctx, c.owner, c.repo, "refs/heads/"+branch); err != nil {
+			return fmt.Errorf("close_pr: delete branch %s: %w", branch, err)
+		}
 	}
 	return nil
 }
 
 func (c *realGitClient) DeleteBranch(ctx context.Context, branch string) error {
-	cmd := exec.CommandContext(ctx, "gh", "api",
-		"-X", "DELETE",
-		fmt.Sprintf("repos/%s/%s/git/refs/heads/%s", c.owner, c.repo, branch),
-	)
-	cmd.Env = append(os.Environ(), "GH_TOKEN="+c.cfg.GitHubToken)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("delete_branch: %w: %s", err, strings.TrimSpace(string(out)))
+	if _, err := c.gh.Git.DeleteRef(ctx, c.owner, c.repo, "refs/heads/"+branch); err != nil {
+		return fmt.Errorf("delete_branch: %w", err)
 	}
 	return nil
 }

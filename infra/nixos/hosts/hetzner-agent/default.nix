@@ -62,7 +62,6 @@ in
     jq
     curl
     git
-    gh
     kubectl-mcp
     flux-mcp
     ssh-mcp
