@@ -1,0 +1,157 @@
+{
+  "by_model": {
+    "claude-sonnet-4-6": {
+      "n_runs": 8,
+      "n_attempts": 4,
+      "success_rate": 0.25,
+      "success_rate_given_attempt": 0.5,
+      "mean_MTTR_s": 277.425950058,
+      "std_MTTR_s": 37.25831341313286,
+      "diagnosis_accuracy": 1.0,
+      "diag_n": 4,
+      "destructive_repair_rate": 0.375,
+      "rollback_triggered_rate": 0.125,
+      "n_eligible": 4,
+      "mean_input_tokens": 87105.25,
+      "mean_output_tokens": 1636.25,
+      "mean_tool_calls": 17.5,
+      "mean_iteration_count": 5.5
+    }
+  },
+  "by_scenario": {
+    "cross-1": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 303.771556128,
+      "std_MTTR_s": null
+    },
+    "cross-2": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "cross-3": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 251.0803439880001,
+      "std_MTTR_s": null
+    },
+    "k8s-1": {
+      "n_runs": 1,
+      "outcome": "gate_failed",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 285.08717426600003,
+      "std_MTTR_s": null
+    },
+    "k8s-2": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-3": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4": {
+      "n_runs": 1,
+      "outcome": "rollback_failed",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 191.35027675900005,
+      "std_MTTR_s": null
+    },
+    "k8s-5": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "cross-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "cross-2": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "cross-3": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "k8s-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 8,
+    "n_models": 1,
+    "n_scenarios": 8
+  },
+  "planned_scenarios": [
+    "boundary-1",
+    "boundary-2",
+    "boundary-3",
+    "boundary-4",
+    "cross-1",
+    "cross-2",
+    "cross-3",
+    "ingress-1",
+    "k8s-1",
+    "k8s-2",
+    "k8s-3",
+    "k8s-4",
+    "k8s-5",
+    "os-1",
+    "os-2",
+    "os-3",
+    "pg-1",
+    "redis-1"
+  ]
+}
