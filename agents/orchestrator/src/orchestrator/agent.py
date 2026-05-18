@@ -148,9 +148,7 @@ def _write_run_record(record: RunRecord) -> None:
 
 
 def _parse_kust_text(text: str) -> dict:
-    m = re.search(
-        r"^\s*Ready:\s*([A-Za-z]+)(?:\s*[—-]\s*(.*))?$", text, re.MULTILINE
-    )
+    m = re.search(r"^\s*Ready:\s*([A-Za-z]+)(?:\s*[—-]\s*(.*))?$", text, re.MULTILINE)
     if m:
         return {
             "ready": m.group(1),

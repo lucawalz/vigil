@@ -1296,17 +1296,20 @@ def test_fault_event_accepts_flux_baseline() -> None:
         },
     )
     assert event.flux_baseline["cluster_apps"]["ready"] == "True"
-    assert FaultEvent(
-        receiver="vigil-webhook",
-        status="firing",
-        alerts=[],
-        groupLabels={},
-        commonLabels={},
-        commonAnnotations={},
-        externalURL="http://alertmanager:9093",
-        version="4",
-        groupKey="{}",
-    ).flux_baseline is None
+    assert (
+        FaultEvent(
+            receiver="vigil-webhook",
+            status="firing",
+            alerts=[],
+            groupLabels={},
+            commonLabels={},
+            commonAnnotations={},
+            externalURL="http://alertmanager:9093",
+            version="4",
+            groupKey="{}",
+        ).flux_baseline
+        is None
+    )
 
 
 def test_fault_event_backward_compat_omits_flux_baseline() -> None:
