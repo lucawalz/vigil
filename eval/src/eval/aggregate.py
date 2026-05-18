@@ -19,6 +19,32 @@ _GROUP_LABELS: dict[str, str] = {
 
 _GROUP_ORDER = ["k8s", "os", "cross", "misc"]
 
+_OUTCOME_BUCKET: dict[str, str] = {
+    "success": "passed",
+    "rollback_succeeded": "passed",
+    "flux_degraded": "agent-failed",
+    "diagnosis_inconsistent": "agent-failed",
+    "diagnosis_timeout": "agent-failed",
+    "budget_exhausted": "agent-failed",
+    "rollback_failed": "agent-failed",
+    "quota_exhausted": "agent-failed",
+    "baseline_degraded": "infra-error",
+    "setup_error": "infra-error",
+    "gate_failed": "gate-uncertain",
+}
+
+
+def _bucket_outcome(literal: str) -> str:
+    return _OUTCOME_BUCKET.get(literal, "agent-failed")
+
+
+def _count_buckets(records: Any) -> dict[str, int]:
+    counts: dict[str, int] = {"passed": 0, "agent-failed": 0, "infra-error": 0, "gate-uncertain": 0}
+    for r in records:
+        bucket = _bucket_outcome(r["outcome"])
+        counts[bucket] = counts.get(bucket, 0) + 1
+    return counts
+
 
 def _scenario_group(scenario_id: str) -> str:
     for prefix in ("k8s-", "os-", "cross-"):
@@ -138,8 +164,10 @@ def aggregate_runs(
         successes = [r for r in runs if r.get("success_rate")]
         mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
         mean_mttr, std_mttr = _mean_std(mttrs)
+        first_run = min(runs, key=lambda r: r.get("seed", ""))
         scenario_summary[scenario] = {
             "n_runs": len(runs),
+            "outcome": first_run["outcome"],
             "success_rate": len(successes) / len(runs) if runs else 0.0,
             "mean_MTTR_s": mean_mttr,
             "std_MTTR_s": std_mttr,
