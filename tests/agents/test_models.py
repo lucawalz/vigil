@@ -1,5 +1,8 @@
 """Schema validation tests for agent Pydantic models."""
 
+import json
+from pathlib import Path
+
 import pytest
 from diagnosis.models import DiagnosisReport, ProposedPatch
 from orchestrator.models import FaultEvent, RunRecord
@@ -241,3 +244,11 @@ def test_health_snapshot_validates() -> None:
         captured_at="2026-04-18T10:00:00Z",
     )
     assert s.ready_pods == 3
+
+
+def test_existing_run_record_fixtures_still_deserialise() -> None:
+    runs_dir = Path(__file__).parent.parent.parent / "eval" / "runs"
+    if not runs_dir.is_dir() or not any(runs_dir.glob("*.json")):
+        pytest.skip("no fixtures present")
+    for p in runs_dir.glob("*.json"):
+        RunRecord.model_validate(json.loads(p.read_text()))
