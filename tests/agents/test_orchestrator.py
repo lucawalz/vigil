@@ -817,51 +817,6 @@ async def test_flux_degraded_precheck_kustomization(
     assert record.outcome == "flux_degraded"
 
 
-async def test_flux_degraded_precheck_gitrepository(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
-    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
-    monkeypatch.setattr(
-        orch_mod,
-        "capture_health_snapshot",
-        AsyncMock(return_value=_canned_baseline()),
-    )
-    mock_flux_mcp.direct_call_tool = AsyncMock(
-        side_effect=lambda tool, args: (
-            {
-                "content": (
-                    "GitRepository: flux-system/flux-system\n"
-                    "Conditions:\n"
-                    "  Ready: False — auth"
-                )
-            }
-            if tool == "get_gitrepository_status"
-            else {
-                "content": "Kustomization: flux-system/cluster-apps\n"
-                "Conditions:\n  Ready: True"
-            }
-        )
-    )
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        ssh_mcp=mock_ssh_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-    assert record.outcome == "flux_degraded"
-
-
 async def test_outcome_rollback_succeeded(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,

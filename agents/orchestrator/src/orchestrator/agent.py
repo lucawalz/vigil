@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -146,6 +147,39 @@ def _write_run_record(record: RunRecord) -> None:
         f.write(record.model_dump_json() + "\n")
 
 
+def _parse_kust_text(text: str) -> dict:
+    m = re.search(
+        r"^\s*Ready:\s*([A-Za-z]+)(?:\s*[—-]\s*(.*))?$", text, re.MULTILINE
+    )
+    if m:
+        return {
+            "ready": m.group(1),
+            "reason": (m.group(2) or "").strip(),
+            "message": "",
+        }
+    return {"ready": "Unknown", "reason": "parse_error", "message": text[:200]}
+
+
+def _extract_mcp_text(result: object) -> str:
+    if isinstance(result, dict) and "content" in result:
+        return str(result["content"])
+    return str(result)
+
+
+async def _fetch_flux_snapshot(flux_mcp: MCPServerStdio) -> dict:
+    kust_result = await flux_mcp.direct_call_tool(
+        "get_kustomization_status", {"namespace": "flux-system", "name": "cluster-apps"}
+    )
+    infra_result = await flux_mcp.direct_call_tool(
+        "get_kustomization_status",
+        {"namespace": "flux-system", "name": "cluster-infrastructure"},
+    )
+    return {
+        "cluster_apps": _parse_kust_text(_extract_mcp_text(kust_result)),
+        "cluster_infra": _parse_kust_text(_extract_mcp_text(infra_result)),
+    }
+
+
 async def _issue_rollback(
     git_mcp: MCPServerStdio,
     flux_mcp: MCPServerStdio,
@@ -223,6 +257,7 @@ async def run_orchestration(
             autonomy_level="full",
             actions_taken=[],
             model_version=model_name,
+            setup_error=_reason if _outcome != "abort" else None,
         )
 
     total_usage = Usage()
@@ -330,42 +365,46 @@ async def run_orchestration(
 
             if action_is_k8s:
                 try:
-                    kust_status = await flux_mcp.direct_call_tool(
-                        "get_kustomization_status",
-                        {"namespace": "flux-system", "name": "cluster-apps"},
-                    )
-                    kust_text = str(kust_status)
-                    if (
-                        "Ready: False" in kust_text
-                        or "Stalled: True" in kust_text
-                        or "Suspended: true" in kust_text
-                    ):
-                        log.error(
-                            "run %s aborted: flux_degraded"
-                            " (cluster-apps unhealthy): %s",
-                            run_id,
-                            kust_text,
+                    current = await _fetch_flux_snapshot(flux_mcp)
+                    baseline = event.flux_baseline
+                    if baseline is not None:
+                        was_ready = (
+                            baseline.get("cluster_apps", {}).get("ready") == "True"
                         )
-                        record = _abort_record(
-                            "flux_degraded_kustomization", "flux_degraded"
+                        now_ready = (
+                            current.get("cluster_apps", {}).get("ready") == "True"
                         )
-                        _write_run_record(record)
-                        return record
-
-                    repo_status = await flux_mcp.direct_call_tool(
-                        "get_gitrepository_status",
-                        {"namespace": "flux-system", "name": "flux-system"},
-                    )
-                    if "Ready: False" in str(repo_status):
-                        log.error(
-                            "run %s aborted: flux_degraded (gitrepository unhealthy)",
-                            run_id,
-                        )
-                        record = _abort_record(
-                            "flux_degraded_gitrepository", "flux_degraded"
-                        )
-                        _write_run_record(record)
-                        return record
+                        if was_ready and not now_ready:
+                            log.error(
+                                "run %s aborted: flux degraded since injection "
+                                "(cluster-apps reason=%s)",
+                                run_id,
+                                current["cluster_apps"].get("reason"),
+                            )
+                            record = _abort_record(
+                                "flux_degraded_since_injection", "flux_degraded"
+                            )
+                            _write_run_record(record)
+                            return record
+                        if not was_ready:
+                            log.info(
+                                "run %s: cluster-apps was already Not-Ready before "
+                                "injection (reason=%s) — proceeding with diagnosis",
+                                run_id,
+                                baseline["cluster_apps"].get("reason"),
+                            )
+                    else:
+                        if current.get("cluster_apps", {}).get("ready") == "False":
+                            log.error(
+                                "run %s aborted: flux_degraded "
+                                "(no baseline; snapshot-only check)",
+                                run_id,
+                            )
+                            record = _abort_record(
+                                "flux_degraded_snapshot_fallback", "flux_degraded"
+                            )
+                            _write_run_record(record)
+                            return record
                 except Exception:
                     log.exception(
                         "run %s: flux pre-check failed; emitting flux_degraded", run_id
