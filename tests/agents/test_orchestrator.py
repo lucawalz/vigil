@@ -1270,7 +1270,9 @@ async def test_precheck_falls_back_to_snapshot_when_flux_baseline_none(
 
 
 def test_run_record_accepts_baseline_degraded_outcome() -> None:
-    record = _make_run_record(outcome="baseline_degraded", setup_error="cluster_apps_not_ready")
+    record = _make_run_record(
+        outcome="baseline_degraded", setup_error="cluster_apps_not_ready"
+    )
     assert record.outcome == "baseline_degraded"
 
 

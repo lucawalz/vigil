@@ -504,7 +504,8 @@ def test_result_file_contains_all_eval_07_metric_fields() -> None:
 _KUBECONFIG_NOT_READY_JSON = """{
   "status": {
     "conditions": [
-      {"type": "Ready", "status": "False", "reason": "DependencyNotReady", "message": ""}
+      {"type": "Ready", "status": "False", "reason": "DependencyNotReady",
+       "message": ""}
     ]
   }
 }"""
@@ -512,7 +513,8 @@ _KUBECONFIG_NOT_READY_JSON = """{
 _KUBECONFIG_READY_JSON = """{
   "status": {
     "conditions": [
-      {"type": "Ready", "status": "True", "reason": "ReconciliationSucceeded", "message": ""}
+      {"type": "Ready", "status": "True", "reason": "ReconciliationSucceeded",
+       "message": ""}
     ]
   }
 }"""
@@ -625,7 +627,9 @@ async def test_baseline_degraded_record_written_when_retries_exhausted(
         timeout_s=5,
     )
 
-    assert not trigger_called, "trigger_and_wait must not be called on degraded baseline"
+    assert not trigger_called, (
+        "trigger_and_wait must not be called on degraded baseline"
+    )
     import json as _json
 
     written_files = list(runs_dir.glob("*.json"))
