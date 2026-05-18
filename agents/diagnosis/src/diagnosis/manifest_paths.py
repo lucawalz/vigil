@@ -6,6 +6,9 @@ _MANIFEST_PATHS: dict[tuple[str, str, str], str] = {
     ("Deployment", "default", "vigil-app"): (
         "infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml"
     ),
+    ("StatefulSet", "default", "redis-master"): (
+        "infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/redis/helmrelease.yaml"
+    ),
 }
 
 
