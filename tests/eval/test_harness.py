@@ -61,6 +61,13 @@ async def test_reset_runs_before_inject(
     (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
     (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     def fake_run(cmd, **kwargs):
         if "reset.sh" in cmd[0]:
             call_order.append("reset")
@@ -108,6 +115,13 @@ async def test_inject_subprocess_failure_aborts_run(
     (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
     (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     def fake_run(cmd, **kwargs):
         result = MagicMock()
         if "inject.sh" in cmd[0]:
@@ -145,6 +159,13 @@ async def test_post_includes_scenario_and_seed_query_params(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "test-secret")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     captured: dict = {}
     run_id = "k8s-3_1_test-model_abc1234"
@@ -194,6 +215,13 @@ async def test_post_includes_bearer_auth_header(
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "super-secret")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     captured_headers: dict = {}
     run_id = "k8s-3_1_test-model_abc1234"
     result_file = tmp_path / f"{run_id}.json"
@@ -240,6 +268,13 @@ async def test_uses_response_run_id_for_polling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     server_run_id = "k8s-3_1_test-model_server_computed"
     result_file = tmp_path / f"{server_run_id}.json"
@@ -292,6 +327,13 @@ async def test_timeout_when_result_file_never_appears(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     class FakeClient:
         async def __aenter__(self):
@@ -352,6 +394,13 @@ async def test_result_file_detected_when_written(
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     run_id = "k8s-3_1_test_abc1234"
     result_file = tmp_path / f"{run_id}.json"
 
@@ -395,6 +444,13 @@ async def test_healthz_precheck_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     class FakeClientConnectError:
         async def __aenter__(self):
