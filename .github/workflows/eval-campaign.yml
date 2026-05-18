@@ -101,9 +101,20 @@ jobs:
             --dry-run=client -o yaml \
             | kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} apply -f -
           rm -f /tmp/sops-age.txt
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          for ks in flux-system cluster-namespaces cluster-sources cluster-secrets cluster-infrastructure cluster-apps; do
+            kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} \
+              annotate kustomization "$ks" -n flux-system \
+              "reconcile.fluxcd.io/requestedAt=$NOW" --overwrite || true
+          done
+
+      - name: Wait for Flux kustomizations ready
+        run: |
           kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} \
-            annotate kustomization flux-system -n flux-system \
-            "reconcile.fluxcd.io/requestedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+            wait kustomization cluster-infrastructure cluster-apps \
+            -n flux-system \
+            --for=condition=Ready \
+            --timeout=900s
 
       - name: Resolve agent host IP
         id: agent
