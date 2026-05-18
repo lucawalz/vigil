@@ -145,7 +145,7 @@ def aggregate_runs(
             "std_MTTR_s": std_mttr,
         }
         layer = _layer_for_scenario(scenarios_dir, scenario)
-        if layer is not None:
+        if layer == "os":
             scored = [r for r in runs if r.get("diagnosis_accuracy") is not None]
             correct = [r for r in scored if r["diagnosis_accuracy"]]
             per_model: dict[str, dict] = {}
@@ -163,7 +163,7 @@ def aggregate_runs(
                 "per_model": per_model,
             }
         else:
-            escalation[scenario] = {"layer": None, "accuracy": None}
+            escalation[scenario] = {"layer": layer, "accuracy": None}
 
     return {
         "by_model": model_summary,

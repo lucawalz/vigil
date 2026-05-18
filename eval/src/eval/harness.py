@@ -5,14 +5,24 @@ import json
 import logging
 import os
 import subprocess
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
 import yaml
+from orchestrator.agent import _write_run_record, build_run_id
+from orchestrator.models import RunRecord
 
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
+BASELINE_RETRY_COUNT = 2
+BASELINE_RETRY_SLEEP_S = 30
+BASELINE_KUSTOMIZATIONS = ("cluster-apps", "cluster-infrastructure")
+CIRCUIT_BREAKER_THRESHOLD = 3
+CIRCUIT_BREAKER_EXIT_CODE = 10
+DEFAULT_CIRCUIT_BREAKER_STATE_PATH = "/tmp/vigil-circuit-breaker.json"
 _TRUNC = 300
 
 log = logging.getLogger(__name__)
@@ -40,6 +50,145 @@ def _run_script(path: Path, seed: int, verbose: bool = False) -> None:
         raise RuntimeError(
             f"{path} exited {result.returncode}: {result.stderr.strip()}"
         )
+
+
+def _capture_kust_condition(name: str) -> dict:
+    kubeconfig = os.environ.get("EVAL_RUNNER_KUBECONFIG", "")
+    cmd = ["kubectl"]
+    if kubeconfig:
+        cmd += ["--kubeconfig", kubeconfig]
+    cmd += ["get", "kustomization", name, "-n", "flux-system", "-o", "json"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return {
+            "ready": "Unknown",
+            "reason": "kubectl_error",
+            "message": result.stderr.strip()[:500],
+        }
+    try:
+        obj = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return {
+            "ready": "Unknown",
+            "reason": "kubectl_error",
+            "message": str(result.stdout)[:500],
+        }
+    conditions = obj.get("status", {}).get("conditions", [])
+    for cond in conditions:
+        if cond.get("type") == "Ready":
+            return {
+                "ready": cond.get("status", "Unknown"),
+                "reason": cond.get("reason", ""),
+                "message": cond.get("message", ""),
+            }
+    return {"ready": "Unknown", "reason": "no_ready_condition", "message": ""}
+
+
+async def capture_flux_baseline() -> tuple[dict, bool]:
+    baseline: dict = {}
+    for attempt in range(BASELINE_RETRY_COUNT + 1):
+        baseline["cluster_apps"] = _capture_kust_condition(BASELINE_KUSTOMIZATIONS[0])
+        baseline["cluster_infra"] = _capture_kust_condition(BASELINE_KUSTOMIZATIONS[1])
+        all_ready = (
+            baseline["cluster_apps"]["ready"] == "True"
+            and baseline["cluster_infra"]["ready"] == "True"
+        )
+        if all_ready:
+            return baseline, True
+        log.warning(
+            "cluster baseline not ready (attempt %d/%d):"
+            " cluster-apps=%s(reason=%s) cluster-infra=%s(reason=%s)",
+            attempt + 1,
+            BASELINE_RETRY_COUNT + 1,
+            baseline["cluster_apps"]["ready"],
+            baseline["cluster_apps"]["reason"],
+            baseline["cluster_infra"]["ready"],
+            baseline["cluster_infra"]["reason"],
+        )
+        if attempt < BASELINE_RETRY_COUNT:
+            await asyncio.sleep(BASELINE_RETRY_SLEEP_S)
+    return baseline, False
+
+
+def _emit_baseline_degraded_record(
+    scenario_id: str,
+    seed: int,
+    model: str,
+    baseline: dict,
+    runs_dir: Path | None = None,
+) -> Path:
+    run_id, seed_str, sha7 = build_run_id(scenario_id, model, seed=seed)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if baseline["cluster_infra"]["ready"] != "True":
+        sub_reason = "cluster_infrastructure_not_ready"
+    elif baseline["cluster_apps"]["ready"] != "True":
+        sub_reason = "cluster_apps_not_ready"
+    else:
+        sub_reason = "unknown"
+    record = RunRecord(
+        run_id=run_id,
+        scenario=scenario_id,
+        seed=seed_str,
+        model=model,
+        git_sha7=sha7,
+        started_at=now,
+        ended_at=now,
+        outcome="baseline_degraded",
+        success_rate=False,
+        diagnosis_accuracy=None,
+        MTTR_s=None,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=0,
+        total_output_tokens=0,
+        total_tool_calls=0,
+        iteration_count=0,
+        autonomy_level="full",
+        actions_taken=[],
+        setup_error=sub_reason,
+        model_version=model,
+    )
+    _write_run_record(record)
+    if runs_dir is None:
+        runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
+    return runs_dir / f"{run_id}.json"
+
+
+def _load_circuit_breaker_count() -> int:
+    state_path = os.environ.get(
+        "VIGIL_CIRCUIT_BREAKER_STATE", DEFAULT_CIRCUIT_BREAKER_STATE_PATH
+    )
+    try:
+        with open(state_path) as f:
+            loaded = json.load(f)
+        return int(loaded.get("consecutive_baseline_degraded", 0))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return 0
+
+
+def _record_circuit_breaker_baseline_degraded() -> int:
+    state_path = os.environ.get(
+        "VIGIL_CIRCUIT_BREAKER_STATE", DEFAULT_CIRCUIT_BREAKER_STATE_PATH
+    )
+    new_count = _load_circuit_breaker_count() + 1
+    try:
+        with open(state_path, "w") as f:
+            json.dump({"consecutive_baseline_degraded": new_count}, f)
+    except OSError:
+        pass
+    return new_count
+
+
+def _reset_circuit_breaker() -> None:
+    state_path = os.environ.get(
+        "VIGIL_CIRCUIT_BREAKER_STATE", DEFAULT_CIRCUIT_BREAKER_STATE_PATH
+    )
+    try:
+        with open(state_path, "w") as f:
+            json.dump({"consecutive_baseline_degraded": 0}, f)
+    except OSError:
+        pass
 
 
 def _build_fault_event(
@@ -140,11 +289,15 @@ async def trigger_and_wait(
     timeout_s: int = DEFAULT_TIMEOUT_S,
     verbose: bool = False,
     target_host: str | None = None,
+    flux_baseline: dict | None = None,
 ) -> Path:
     webhook_secret = os.environ.get("VIGIL_WEBHOOK_SECRET", "")
     if not webhook_secret:
         raise ValueError("VIGIL_WEBHOOK_SECRET is not set")
+    if flux_baseline is None:
+        flux_baseline, _ = await capture_flux_baseline()
     fault_event = _build_fault_event(scenario_id, target_host=target_host)
+    fault_event["flux_baseline"] = flux_baseline
     async with httpx.AsyncClient() as client:
         await _healthz_check(client, orchestrator_url)
         log.info("triggering orchestrator webhook for %s", scenario_id)
@@ -212,6 +365,29 @@ async def run_one(
 
     log.info("running reset.sh for %s", scenario_id)
     _run_script(reset_sh, seed, verbose=verbose)
+
+    baseline, all_ready = await capture_flux_baseline()
+    if not all_ready:
+        result_path = _emit_baseline_degraded_record(
+            scenario_id, seed, model, baseline, runs_dir
+        )
+        new_count = _record_circuit_breaker_baseline_degraded()
+        log.error(
+            "campaign baseline_degraded count=%d/%d (scenario=%s)",
+            new_count,
+            CIRCUIT_BREAKER_THRESHOLD,
+            scenario_id,
+        )
+        if new_count >= CIRCUIT_BREAKER_THRESHOLD:
+            log.error(
+                "Campaign aborted: %d consecutive baseline_degraded"
+                " — check cluster-infrastructure readiness before retrying",
+                new_count,
+            )
+            sys.exit(CIRCUIT_BREAKER_EXIT_CODE)
+        return result_path
+
+    _reset_circuit_breaker()
     log.info("running inject.sh for %s", scenario_id)
     _run_script(inject_sh, seed, verbose=verbose)
 
@@ -231,4 +407,5 @@ async def run_one(
         timeout_s=timeout_s,
         verbose=verbose,
         target_host=target_host,
+        flux_baseline=baseline,
     )

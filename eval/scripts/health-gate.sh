@@ -22,10 +22,18 @@ check_nodes_ready() {
   [ -n "$filtered" ] && ! grep -qv '^True$' <(echo "$filtered")
 }
 
+check_cluster_infrastructure_ready() {
+  local status
+  status=$(kubectl --kubeconfig "$KUBECONFIG_PATH" get kustomization \
+    -n flux-system cluster-infrastructure \
+    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+  [ "$status" = "True" ]
+}
+
 check_flux_kustomization_ready() {
   local status
   status=$(kubectl --kubeconfig "$KUBECONFIG_PATH" get kustomization \
-    -n flux-system flux-system \
+    -n flux-system cluster-apps \
     -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
   [ "$status" = "True" ]
 }
@@ -45,7 +53,7 @@ check_vigil_app_ready() {
 
 while [ "$(date +%s)" -lt "$deadline" ]; do
   iteration=$((iteration + 1))
-  if check_nodes_ready && check_flux_kustomization_ready && check_vigil_app_ready && check_orchestrator_ready; then
+  if check_nodes_ready && check_cluster_infrastructure_ready && check_flux_kustomization_ready && check_vigil_app_ready && check_orchestrator_ready; then
     echo "HEALTH_GATE: ok (iteration=$iteration)" >&2
     echo "HEALTH_GATE: ok"
     exit 0

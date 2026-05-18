@@ -20,6 +20,7 @@ class FaultEvent(BaseModel):
     version: str
     groupKey: str
     truncatedAlerts: int = 0
+    flux_baseline: dict | None = None
 
 
 class RunRecord(BaseModel):
@@ -41,6 +42,7 @@ class RunRecord(BaseModel):
         "flux_degraded",
         "abort",
         "quota_exhausted",
+        "baseline_degraded",
     ]
     success_rate: bool
     diagnosis_accuracy: bool | None
