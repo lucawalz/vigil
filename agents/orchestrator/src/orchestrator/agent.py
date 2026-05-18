@@ -323,9 +323,10 @@ async def run_orchestration(
             breaker.success()
             iteration_count += 1
 
-            action_is_os = report.recommended_action in _OS_REPAIR_ACTIONS
             action_is_k8s = report.recommended_action in _K8S_REPAIR_ACTIONS
-            action_is_imperative = report.recommended_action in _IMPERATIVE_REPAIR_ACTIONS
+            action_is_imperative = (
+                report.recommended_action in _IMPERATIVE_REPAIR_ACTIONS
+            )
 
             if action_is_k8s:
                 try:
@@ -440,7 +441,9 @@ async def run_orchestration(
                     actions_taken=["delete_resource"],
                     model_version=model_name,
                 )
-                log.info("run %s finished outcome=%s (delete_resource)", run_id, imp_outcome)
+                log.info(
+                    "run %s finished outcome=%s (delete_resource)", run_id, imp_outcome
+                )
                 _write_run_record(record)
                 return record
 

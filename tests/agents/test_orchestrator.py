@@ -746,7 +746,9 @@ async def test_delete_resource_action_routes_to_kubectl_dispatch(
     run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
     monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
 
-    delete_mock = AsyncMock(return_value={"content": "deleted ResourceQuota/restrictive-quota"})
+    delete_mock = AsyncMock(
+        return_value={"content": "deleted ResourceQuota/restrictive-quota"}
+    )
     mock_kubectl_mcp.direct_call_tool = delete_mock
 
     record = await run_orchestration(
@@ -764,7 +766,11 @@ async def test_delete_resource_action_routes_to_kubectl_dispatch(
         if c.args and c.args[0] == "delete_resource"
     ]
     assert len(delete_calls) >= 1
-    call_args = delete_calls[0].args[1] if len(delete_calls[0].args) > 1 else delete_calls[0].kwargs.get("args", {})
+    call_args = (
+        delete_calls[0].args[1]
+        if len(delete_calls[0].args) > 1
+        else delete_calls[0].kwargs.get("args", {})
+    )
     assert call_args.get("kind") == "ResourceQuota"
     assert call_args.get("namespace") == "default"
     assert call_args.get("name") == "restrictive-quota"

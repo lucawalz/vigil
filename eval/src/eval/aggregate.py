@@ -39,7 +39,9 @@ def _bucket_outcome(literal: str) -> str:
 
 
 def _count_buckets(records: Any) -> dict[str, int]:
-    counts: dict[str, int] = {"passed": 0, "agent-failed": 0, "infra-error": 0, "gate-uncertain": 0}
+    counts: dict[str, int] = {
+        "passed": 0, "agent-failed": 0, "infra-error": 0, "gate-uncertain": 0
+    }
     for r in records:
         bucket = _bucket_outcome(r.get("outcome", ""))
         counts[bucket] = counts.get(bucket, 0) + 1
@@ -254,7 +256,9 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
         f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain"
     )
     lines.append("")
-    lines.append("| Scenario | N | Outcome | Success Rate | Mean MTTR (s) | Std MTTR (s) |")
+    lines.append(
+        "| Scenario | N | Outcome | Success Rate | Mean MTTR (s) | Std MTTR (s) |"
+    )
     lines.append("|---|---:|---|---:|---:|---:|")
     planned: list[str] = summary.get("planned_scenarios") or []
     scenario_keys = planned if planned else sorted(by_scenario)
@@ -272,7 +276,8 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
             lines.append(f"| {s} | no data | — | — | — | — |")
         else:
             lines.append(
-                f"| {s} | {row['n_runs']} | {row.get('outcome', '—')} | {row['success_rate']:.2f} | "
+                f"| {s} | {row['n_runs']} | {row.get('outcome', '-')}"
+                f" | {row['success_rate']:.2f} | "
                 f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} |"
             )
     lines.append("")

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import statistics
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 
@@ -310,9 +312,6 @@ def test_aggregate_handles_missing_per_run_json_gracefully(tmp_path: Path) -> No
     assert summary["totals"]["n"] == 0
 
 
-import pytest
-
-
 @pytest.mark.parametrize(
     "literal,expected_bucket",
     [
@@ -434,8 +433,10 @@ def test_write_report_includes_per_row_outcome_literal_and_rollup(
     assert "infra-error" in report
     assert "gate-uncertain" in report
 
-    import re
-    rollup_pattern = r"\d+/\d+ passed,\s*\d+/\d+ agent-failed,\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
+    rollup_pattern = (
+        r"\d+/\d+ passed,\s*\d+/\d+ agent-failed,"
+        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
+    )
     assert re.search(rollup_pattern, report), (
         f"expected 4-bucket rollup line in REPORT.md; got:\n{report}"
     )
@@ -484,8 +485,10 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
     assert "rollback_failed" in summary_text
     assert "setup_error" in summary_text
 
-    import re
-    rollup_pattern = r"\d+/\d+ passed,\s*\d+/\d+ agent-failed,\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
+    rollup_pattern = (
+        r"\d+/\d+ passed,\s*\d+/\d+ agent-failed,"
+        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
+    )
     assert re.search(rollup_pattern, summary_text), (
         f"expected 4-bucket rollup line in step_summary.md; got:\n{summary_text}"
     )

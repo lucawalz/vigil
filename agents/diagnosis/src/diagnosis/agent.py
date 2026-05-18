@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from orchestrator.models import FaultEvent
 
 
-_SYSTEM_PROMPT = """Kubernetes SRE diagnosis agent operating on a K3s cluster. Emit only tool \
-calls from the list below; do not invent tool names.
+_SYSTEM_PROMPT = """Kubernetes SRE diagnosis agent operating on a K3s cluster.
+Emit only tool calls from the list below; do not invent tool names.
 
 Available tools:
   kubectl-mcp: get_nodes, get_pods, describe_pod, get_logs, rollout_status,

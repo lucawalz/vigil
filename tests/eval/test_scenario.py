@@ -197,7 +197,9 @@ def test_accepts_rebuild_nixos_correct_action_class(tmp_scenarios_dir: Path) -> 
     assert scenarios[0].correct_action_class == "rebuild_nixos"
 
 
-def test_rejects_switch_generation_correct_action_class(tmp_scenarios_dir: Path) -> None:
+def test_rejects_switch_generation_correct_action_class(
+    tmp_scenarios_dir: Path,
+) -> None:
     scenario_dir = tmp_scenarios_dir / "bad-switch"
     scenario_dir.mkdir()
     bad_yaml = {
