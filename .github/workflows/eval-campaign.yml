@@ -133,7 +133,7 @@ jobs:
             kubectl $KC get kustomization cluster-infrastructure cluster-apps \
               -n flux-system \
               --request-timeout=15s \
-              -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason' \
+              -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason,MESSAGE:.status.conditions[?(@.type=="Ready")].message' \
               --no-headers 2>&1 || echo "(kubectl error — cluster not reachable yet)"
             READY=$(kubectl $KC get kustomization cluster-infrastructure cluster-apps \
               -n flux-system \
