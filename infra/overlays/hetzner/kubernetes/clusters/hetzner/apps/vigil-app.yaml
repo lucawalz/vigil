@@ -3,8 +3,6 @@ kind: Deployment
 metadata:
   name: vigil-app
   namespace: default
-  labels:
-    app: vigil-app
 spec:
   replicas: 1
   selector:
@@ -18,8 +16,3 @@ spec:
       containers:
         - name: vigil-app
           image: nginx:stable
-          resources:
-            requests:
-              memory: "64Mi"
-            limits:
-              memory: "128Mi"
