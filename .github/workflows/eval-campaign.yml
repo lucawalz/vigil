@@ -168,10 +168,16 @@ jobs:
               echo "::endgroup::"
             fi
             echo "::group::scenario $S"
+            VIGIL_EVAL_STATUS=0
             ssh $SSH_OPTS root@$AGENT_IP \
               "set -a; . /etc/vigil/env; set +a; cd /root/vigil && vigil-eval run --scenario $S --seed $SEED --model $MODEL" \
-              || echo "scenario $S exited non-zero — recorded in runs_index.jsonl"
+              || VIGIL_EVAL_STATUS=$?
             echo "::endgroup::"
+            if [ "$VIGIL_EVAL_STATUS" -eq 10 ]; then
+              echo "Campaign circuit breaker tripped (3 consecutive baseline_degraded) — aborting group $GROUP"
+              break
+            fi
+            if [ "$VIGIL_EVAL_STATUS" -ne 0 ] && [ "$VIGIL_EVAL_STATUS" -ne 10 ]; then echo "scenario $S exited non-zero — recorded in runs_index.jsonl"; fi
             PREV=$S
           done
 
