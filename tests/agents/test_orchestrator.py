@@ -798,11 +798,14 @@ async def test_delete_resource_watchdog_degraded_yields_rollback_failed(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
     )
     degraded_snap = HealthSnapshot(
-        ready_pods=0, total_pods=3, endpoints_healthy=False,
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
         captured_at="2026-04-18T10:00:05Z",
     )
     monkeypatch.setattr(
-        orch_mod, "run_watchdog",
+        orch_mod,
+        "run_watchdog",
         AsyncMock(return_value=WatchdogResult(degraded=True, snapshot=degraded_snap)),
     )
     mock_kubectl_mcp.direct_call_tool = AsyncMock(

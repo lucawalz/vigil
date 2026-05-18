@@ -40,7 +40,10 @@ def _bucket_outcome(literal: str) -> str:
 
 def _count_buckets(records: Any) -> dict[str, int]:
     counts: dict[str, int] = {
-        "passed": 0, "agent-failed": 0, "infra-error": 0, "gate-uncertain": 0
+        "passed": 0,
+        "agent-failed": 0,
+        "infra-error": 0,
+        "gate-uncertain": 0,
     }
     for r in records:
         bucket = _bucket_outcome(r.get("outcome", ""))

@@ -391,26 +391,30 @@ def test_write_report_includes_per_row_outcome_literal_and_rollup(
     _make_scenarios_dir(scenarios_dir, "ingress-1", "k8s")
 
     _write_run_with_outcome(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="k8s-1_1_test-model_abc",
         scenario="k8s-1",
         outcome="success",
         success_rate=True,
     )
     _write_run_with_outcome(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="k8s-2_1_test-model_abc",
         scenario="k8s-2",
         outcome="gate_failed",
     )
     _write_run_with_outcome(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="os-1_1_test-model_abc",
         scenario="os-1",
         outcome="baseline_degraded",
     )
     _write_run_with_outcome(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="ingress-1_1_test-model_abc",
         scenario="ingress-1",
         outcome="flux_degraded",
@@ -458,20 +462,23 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
     _make_scenarios_dir(scenarios_dir, "os-1", "os")
 
     _write_run_with_outcome(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="k8s-1_1_test-model_abc",
         scenario="k8s-1",
         outcome="success",
         success_rate=True,
     )
     _write_run_with_outcome(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="k8s-2_1_test-model_abc",
         scenario="k8s-2",
         outcome="rollback_failed",
     )
     _write_run_with_outcome(
-        runs_dir, index_path,
+        runs_dir,
+        index_path,
         run_id="os-1_1_test-model_abc",
         scenario="os-1",
         outcome="setup_error",
