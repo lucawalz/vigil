@@ -113,10 +113,11 @@ jobs:
           KC="--kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }}"
           DEADLINE=$(($(date +%s) + 900))
           while [ $(date +%s) -lt $DEADLINE ]; do
+            echo "--- $(date -u +%H:%M:%SZ) ---"
             kubectl $KC get kustomization cluster-infrastructure cluster-apps \
               -n flux-system \
               -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason' \
-              --no-headers 2>/dev/null || true
+              --no-headers 2>&1 || echo "(kubectl error — cluster not reachable yet)"
             READY=$(kubectl $KC get kustomization cluster-infrastructure cluster-apps \
               -n flux-system \
               -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
