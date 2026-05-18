@@ -19,6 +19,8 @@ spec:
     auth:
       enabled: false
     master:
+      nodeSelector:
+        node.kubernetes.io/role: worker
       persistence:
         storageClass: longhorn
         size: 1Gi

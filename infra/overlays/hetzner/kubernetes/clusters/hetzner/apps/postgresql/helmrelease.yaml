@@ -18,6 +18,8 @@ spec:
     auth:
       postgresPassword: "vigil-eval"
     primary:
+      nodeSelector:
+        node.kubernetes.io/role: worker
       persistence:
         storageClass: longhorn
         size: 1Gi
