@@ -145,3 +145,22 @@ def test_k8s2_inject_uses_app_crash_mode(scenarios_dir: Path) -> None:
     content = inject_sh.read_text()
     assert "APP_CRASH_MODE" in content
     assert "VIGIL_CRASH" not in content
+
+
+def test_health_gate_targets_cluster_apps_kustomization() -> None:
+    script = Path("eval/scripts/health-gate.sh").read_text()
+    non_comment_lines = [l for l in script.splitlines() if not l.lstrip().startswith("#")]
+    body = "\n".join(non_comment_lines)
+    assert "-n flux-system cluster-apps" in body
+    assert "-n flux-system flux-system" not in body
+
+
+def test_health_gate_checks_cluster_infrastructure_precondition() -> None:
+    script = Path("eval/scripts/health-gate.sh").read_text()
+    assert "check_cluster_infrastructure_ready()" in script
+    loop_guard = next(
+        (l for l in script.splitlines() if "check_nodes_ready" in l and "check_flux_kustomization_ready" in l),
+        None,
+    )
+    assert loop_guard is not None, "while-loop guard line not found"
+    assert loop_guard.index("check_cluster_infrastructure_ready") < loop_guard.index("check_flux_kustomization_ready")
