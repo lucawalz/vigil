@@ -90,8 +90,24 @@ jobs:
           TF_VAR_vigil_branch: ${{ env.VIGIL_BRANCH }}
         run: terraform apply -auto-approve -input=false
 
+      - name: Wait for kubeconfig
+        run: |
+          KUBECONFIG=~/.kube/hetzner-vigil-${{ matrix.group }}
+          DEADLINE=$(($(date +%s) + 300))
+          until [ -s "$KUBECONFIG" ]; do
+            if [ $(date +%s) -gt $DEADLINE ]; then
+              echo "kubeconfig not written after 5 minutes — terraform apply may have failed"
+              ls -la ~/.kube/ || true
+              exit 1
+            fi
+            echo "$(date -u +%H:%M:%SZ) waiting for $KUBECONFIG ..."
+            sleep 5
+          done
+          echo "kubeconfig ready ($(wc -c < "$KUBECONFIG") bytes)"
+
       - name: Inject SOPS age key into Flux
         run: |
+          set -o pipefail
           echo "${{ secrets.SOPS_AGE_KEY }}" > /tmp/sops-age.txt
           chmod 600 /tmp/sops-age.txt
           kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} \
@@ -116,10 +132,12 @@ jobs:
             echo "--- $(date -u +%H:%M:%SZ) ---"
             kubectl $KC get kustomization cluster-infrastructure cluster-apps \
               -n flux-system \
+              --request-timeout=15s \
               -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason' \
               --no-headers 2>&1 || echo "(kubectl error — cluster not reachable yet)"
             READY=$(kubectl $KC get kustomization cluster-infrastructure cluster-apps \
               -n flux-system \
+              --request-timeout=15s \
               -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
             READY_COUNT=$(echo "$READY" | tr ' ' '\n' | grep -c '^True$' || true)
             if [ "$READY_COUNT" -eq 2 ]; then
