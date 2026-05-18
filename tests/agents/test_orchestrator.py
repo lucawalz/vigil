@@ -707,7 +707,7 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
     assert record.outcome == "success"
 
 
-async def test_diagnosis_inconsistency_aborts_run(
+async def test_delete_resource_action_routes_to_kubectl_dispatch(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
@@ -718,18 +718,28 @@ async def test_diagnosis_inconsistency_aborts_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    inconsistent_report = DiagnosisReport(
-        root_cause="kernel panic on node",
-        root_cause_component="node/worker-1",
-        severity="critical",
-        affected_resources=["node/worker-1"],
-        evidence="kernel oops in dmesg",
-        recommended_action="git_commit",
-        confidence=0.80,
-        requires_os_level=True,
+
+    delete_report = DiagnosisReport(
+        root_cause="restrictive ResourceQuota blocks pod scheduling",
+        root_cause_component="ResourceQuota/restrictive-quota",
+        severity="high",
+        affected_resources=["default/restrictive-quota"],
+        evidence="exceeded quota: pods",
+        recommended_action="delete_resource",
+        confidence=0.90,
+        requires_os_level=False,
+        proposed_patch=ProposedPatch(
+            resource_kind="ResourceQuota",
+            resource_namespace="default",
+            resource_name="restrictive-quota",
+            patch_body="",
+        ),
     )
-    diag_rv = (inconsistent_report, Usage(input_tokens=100, output_tokens=50), [])
+    diag_rv = (delete_report, Usage(input_tokens=100, output_tokens=50), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+
+    delete_mock = AsyncMock(return_value={"content": "deleted ResourceQuota/restrictive-quota"})
+    mock_kubectl_mcp.direct_call_tool = delete_mock
 
     record = await run_orchestration(
         sample_fault_event,
@@ -739,8 +749,21 @@ async def test_diagnosis_inconsistency_aborts_run(
         nixos_mcp=mock_nixos_mcp,
         git_mcp=mock_git_mcp,
     )
-    assert record.outcome == "abort"
-    assert record.setup_error == "diagnosis_inconsistent"
+
+    delete_calls = [
+        c
+        for c in delete_mock.call_args_list
+        if c.args and c.args[0] == "delete_resource"
+    ]
+    assert len(delete_calls) >= 1, "kubectl-mcp delete_resource was not called"
+
+    call_args = delete_calls[0].args[1] if len(delete_calls[0].args) > 1 else delete_calls[0].kwargs.get("args", {})
+    assert call_args.get("kind") == "ResourceQuota"
+    assert call_args.get("namespace") == "default"
+    assert call_args.get("name") == "restrictive-quota"
+
+    assert not mock_git_mcp.direct_call_tool.called, "git-mcp must not be called for delete_resource"
+    assert not mock_nixos_mcp.call_tool.called, "nixos-mcp must not be called for delete_resource"
 
 
 def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(

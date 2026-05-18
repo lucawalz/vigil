@@ -34,3 +34,17 @@ def test_known_path_exists_on_disk() -> None:
 
 def test_manifest_paths_table_is_non_empty_dict() -> None:
     assert isinstance(_MANIFEST_PATHS, dict) and len(_MANIFEST_PATHS) >= 1
+
+
+def test_lookup_redis_master_returns_helmrelease_path() -> None:
+    result = lookup_manifest_path("StatefulSet", "default", "redis-master")
+    assert result.endswith("redis/helmrelease.yaml"), (
+        f"expected path ending in 'redis/helmrelease.yaml', got {result!r}"
+    )
+
+
+def test_lookup_postgresql_returns_unknown_resource() -> None:
+    result = lookup_manifest_path("StatefulSet", "default", "postgresql")
+    assert result.startswith("unknown resource"), (
+        f"expected 'unknown resource' prefix, got {result!r}"
+    )
