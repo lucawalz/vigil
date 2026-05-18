@@ -110,11 +110,25 @@ jobs:
 
       - name: Wait for Flux kustomizations ready
         run: |
-          kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} \
-            wait kustomization cluster-infrastructure cluster-apps \
-            -n flux-system \
-            --for=condition=Ready \
-            --timeout=900s
+          KC="--kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }}"
+          DEADLINE=$(($(date +%s) + 900))
+          while [ $(date +%s) -lt $DEADLINE ]; do
+            kubectl $KC get kustomization cluster-infrastructure cluster-apps \
+              -n flux-system \
+              -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason' \
+              --no-headers 2>/dev/null || true
+            READY=$(kubectl $KC get kustomization cluster-infrastructure cluster-apps \
+              -n flux-system \
+              -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+            READY_COUNT=$(echo "$READY" | tr ' ' '\n' | grep -c '^True$' || true)
+            if [ "$READY_COUNT" -eq 2 ]; then
+              echo "all flux kustomizations ready"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "timeout: flux kustomizations not ready after 900s"
+          exit 1
 
       - name: Resolve agent host IP
         id: agent
