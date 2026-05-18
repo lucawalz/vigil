@@ -105,6 +105,7 @@ def build_run_id(
 _OS_LAYERS = frozenset({"os", "cross"})
 _OS_REPAIR_ACTIONS = frozenset({"rebuild_nixos"})
 _K8S_REPAIR_ACTIONS = frozenset({"git_commit"})
+_IMPERATIVE_REPAIR_ACTIONS = frozenset({"delete_resource"})
 
 
 def _load_scenario_data(scenario: str) -> dict:
@@ -322,44 +323,10 @@ async def run_orchestration(
             breaker.success()
             iteration_count += 1
 
-            action_is_os = report.recommended_action in _OS_REPAIR_ACTIONS
             action_is_k8s = report.recommended_action in _K8S_REPAIR_ACTIONS
-            layer_os = report.requires_os_level
-            if (layer_os and action_is_k8s) or (not layer_os and action_is_os):
-                log.error(
-                    "run %s aborted: diagnosis_inconsistent "
-                    "(requires_os_level=%s recommended_action=%s)",
-                    run_id,
-                    report.requires_os_level,
-                    report.recommended_action,
-                )
-                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record = RunRecord(
-                    run_id=run_id,
-                    scenario=scenario,
-                    seed=seed_str,
-                    model=model_name,
-                    git_sha7=sha7,
-                    started_at=started_at,
-                    ended_at=ended_at,
-                    outcome="abort",
-                    success_rate=False,
-                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
-                    MTTR_s=None,
-                    destructive_repair=False,
-                    rollback_triggered=False,
-                    rollback_success=None,
-                    total_input_tokens=total_usage.input_tokens or 0,
-                    total_output_tokens=total_usage.output_tokens or 0,
-                    total_tool_calls=total_tool_calls,
-                    iteration_count=iteration_count,
-                    autonomy_level="full",
-                    actions_taken=[],
-                    model_version=model_name,
-                    setup_error="diagnosis_inconsistent",
-                )
-                _write_run_record(record)
-                return record
+            action_is_imperative = (
+                report.recommended_action in _IMPERATIVE_REPAIR_ACTIONS
+            )
 
             if action_is_k8s:
                 try:
@@ -412,6 +379,73 @@ async def run_orchestration(
                     return record
 
             baseline = await capture_health_snapshot(watchdog_deps)
+
+            if action_is_imperative:
+                if report.proposed_patch is None:
+                    record = _abort_record(
+                        "delete_resource missing proposed_patch", "abort"
+                    )
+                    _write_run_record(record)
+                    return record
+                kind = report.proposed_patch.resource_kind
+                namespace = report.proposed_patch.resource_namespace
+                name = report.proposed_patch.resource_name
+                try:
+                    await kubectl_mcp.direct_call_tool(
+                        "delete_resource",
+                        {"kind": kind, "namespace": namespace, "name": name},
+                    )
+                except Exception:
+                    log.exception(
+                        "run %s aborted: delete_resource failed (%s/%s/%s)",
+                        run_id,
+                        kind,
+                        namespace,
+                        name,
+                    )
+                    record = _abort_record("delete_resource_tool_error", "abort")
+                    _write_run_record(record)
+                    return record
+                await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
+                watchdog_result = await run_watchdog(watchdog_deps, baseline)
+                if watchdog_result.degraded:
+                    imp_outcome = "rollback_failed"
+                    imp_rollback_triggered = True
+                    imp_rollback_success: bool | None = False
+                else:
+                    imp_outcome = "success"
+                    imp_rollback_triggered = False
+                    imp_rollback_success = None
+                mttr_s = asyncio.get_event_loop().time() - t0
+                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record = RunRecord(
+                    run_id=run_id,
+                    scenario=scenario,
+                    seed=seed_str,
+                    model=model_name,
+                    git_sha7=sha7,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    outcome=imp_outcome,
+                    success_rate=(imp_outcome == "success"),
+                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                    MTTR_s=mttr_s,
+                    destructive_repair=True,
+                    rollback_triggered=imp_rollback_triggered,
+                    rollback_success=imp_rollback_success,
+                    total_input_tokens=total_usage.input_tokens or 0,
+                    total_output_tokens=total_usage.output_tokens or 0,
+                    total_tool_calls=_count_tool_calls(diag_msgs) + 1,
+                    iteration_count=iteration_count,
+                    autonomy_level="full",
+                    actions_taken=["delete_resource"],
+                    model_version=model_name,
+                )
+                log.info(
+                    "run %s finished outcome=%s (delete_resource)", run_id, imp_outcome
+                )
+                _write_run_record(record)
+                return record
 
             if action_is_k8s:
                 try:

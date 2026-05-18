@@ -83,5 +83,60 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 		k8s.HandleRolloutStatus(client, cfg.MaxOutputBytesDescribe),
 	)
 
+	s.AddTool(
+		mcp.NewTool("get_events",
+			mcp.WithDescription("List events filtered by field selector"),
+			mcp.WithString("namespace",
+				mcp.Required(),
+				mcp.Description("Kubernetes namespace"),
+			),
+			mcp.WithString("field_selector",
+				mcp.Description("Field selector e.g. reason=FailedScheduling"),
+			),
+		),
+		k8s.HandleGetEvents(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
+		mcp.NewTool("describe_node",
+			mcp.WithDescription("Get detailed description of a node"),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("Node name"),
+			),
+		),
+		k8s.HandleDescribeNode(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
+		mcp.NewTool("get_taints",
+			mcp.WithDescription("Get taints on a node"),
+			mcp.WithString("node",
+				mcp.Required(),
+				mcp.Description("Node name"),
+			),
+		),
+		k8s.HandleGetTaints(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
+		mcp.NewTool("delete_resource",
+			mcp.WithDescription("Delete a Kubernetes resource by kind, namespace, and name"),
+			mcp.WithString("kind",
+				mcp.Required(),
+				mcp.Description("Resource kind e.g. Deployment, Pod, StatefulSet"),
+			),
+			mcp.WithString("namespace",
+				mcp.Required(),
+				mcp.Description("Kubernetes namespace"),
+			),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("Resource name"),
+			),
+		),
+		k8s.HandleDeleteResource(client, cfg.MaxOutputBytesDescribe),
+	)
+
 	return s
 }

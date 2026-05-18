@@ -10,15 +10,22 @@ PVC="vigil-app-data"
 DEPLOYMENT="vigil-app"
 MANIFEST_DIR="$(cd "$(dirname "$0")" && pwd)/manifests"
 
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" scale deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --replicas=0
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" wait --for=delete pod -n "${NAMESPACE}" -l app=vigil-app --timeout=60s 2>/dev/null || true
+if kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" \
+    get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" scale deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --replicas=0
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" wait --for=delete pod -n "${NAMESPACE}" -l app=vigil-app --timeout=60s 2>/dev/null || true
+fi
 
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" delete pvc "${PVC}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s
 
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" scale deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --replicas=1
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "deployment/${DEPLOYMENT}" \
-  -n "${NAMESPACE}" --timeout=180s
+
+if kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" \
+    get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" scale deployment "${DEPLOYMENT}" -n "${NAMESPACE}" --replicas=1
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "deployment/${DEPLOYMENT}" \
+    -n "${NAMESPACE}" --timeout=180s
+fi
 
 flux --kubeconfig "$EVAL_RUNNER_KUBECONFIG" resume kustomization flux-system -n flux-system 2>/dev/null || true
 

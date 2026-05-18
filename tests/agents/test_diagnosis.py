@@ -135,3 +135,49 @@ def test_lookup_manifest_path_registered_as_tool() -> None:
 def test_kubectl_write_tools_is_empty_frozenset() -> None:
     source = inspect.getsource(_diag_module)
     assert "_kubectl_write_tools = frozenset()" in source
+
+
+def test_system_prompt_has_three_axis_labels() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    assert "Scheduling" in _SYSTEM_PROMPT
+    assert "Runtime" in _SYSTEM_PROMPT
+    assert "Node" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_contains_new_kubectl_tools() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    for tool in ("get_events", "describe_node", "get_taints", "delete_resource"):
+        assert tool in _SYSTEM_PROMPT, f"expected {tool!r} in _SYSTEM_PROMPT"
+
+
+def test_system_prompt_contains_helmrelease_patch_rule() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    assert "helmrelease.yaml" in _SYSTEM_PROMPT
+    assert "spec.values" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_documents_delete_resource_contract() -> None:
+    from diagnosis.agent import _SYSTEM_PROMPT
+
+    assert "delete_resource" in _SYSTEM_PROMPT
+    assert "proposed_patch" in _SYSTEM_PROMPT
+
+
+def test_diagnosis_deps_docstring_rationale() -> None:
+    assert DiagnosisDeps.__doc__ is not None
+    assert "prevent tool confusion" not in DiagnosisDeps.__doc__
+    assert "nixos-mcp" in DiagnosisDeps.__doc__
+
+
+def test_proposed_patch_allows_none_patch_body() -> None:
+    from diagnosis.models import ProposedPatch
+
+    patch = ProposedPatch(
+        resource_kind="Pod",
+        resource_namespace="default",
+        resource_name="foo",
+    )
+    assert patch.patch_body is None
