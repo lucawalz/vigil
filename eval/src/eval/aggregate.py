@@ -19,6 +19,37 @@ _GROUP_LABELS: dict[str, str] = {
 
 _GROUP_ORDER = ["k8s", "os", "cross", "misc"]
 
+_OUTCOME_BUCKET: dict[str, str] = {
+    "success": "passed",
+    "rollback_succeeded": "passed",
+    "flux_degraded": "agent-failed",
+    "diagnosis_inconsistent": "agent-failed",
+    "diagnosis_timeout": "agent-failed",
+    "budget_exhausted": "agent-failed",
+    "rollback_failed": "agent-failed",
+    "quota_exhausted": "agent-failed",
+    "baseline_degraded": "infra-error",
+    "setup_error": "infra-error",
+    "gate_failed": "gate-uncertain",
+}
+
+
+def _bucket_outcome(literal: str) -> str:
+    return _OUTCOME_BUCKET.get(literal, "agent-failed")
+
+
+def _count_buckets(records: Any) -> dict[str, int]:
+    counts: dict[str, int] = {
+        "passed": 0,
+        "agent-failed": 0,
+        "infra-error": 0,
+        "gate-uncertain": 0,
+    }
+    for r in records:
+        bucket = _bucket_outcome(r.get("outcome", ""))
+        counts[bucket] = counts.get(bucket, 0) + 1
+    return counts
+
 
 def _scenario_group(scenario_id: str) -> str:
     for prefix in ("k8s-", "os-", "cross-"):
@@ -138,14 +169,16 @@ def aggregate_runs(
         successes = [r for r in runs if r.get("success_rate")]
         mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
         mean_mttr, std_mttr = _mean_std(mttrs)
+        first_run = min(runs, key=lambda r: r.get("seed", ""))
         scenario_summary[scenario] = {
             "n_runs": len(runs),
+            "outcome": first_run["outcome"],
             "success_rate": len(successes) / len(runs) if runs else 0.0,
             "mean_MTTR_s": mean_mttr,
             "std_MTTR_s": std_mttr,
         }
         layer = _layer_for_scenario(scenarios_dir, scenario)
-        if layer is not None:
+        if layer == "os":
             scored = [r for r in runs if r.get("diagnosis_accuracy") is not None]
             correct = [r for r in scored if r["diagnosis_accuracy"]]
             per_model: dict[str, dict] = {}
@@ -163,7 +196,7 @@ def aggregate_runs(
                 "per_model": per_model,
             }
         else:
-            escalation[scenario] = {"layer": None, "accuracy": None}
+            escalation[scenario] = {"layer": layer, "accuracy": None}
 
     return {
         "by_model": model_summary,
@@ -216,9 +249,20 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
 
     lines.append("## Per-Scenario Summary")
     lines.append("")
-    lines.append("| Scenario | N | Success Rate | Mean MTTR (s) | Std MTTR (s) |")
-    lines.append("|---|---:|---:|---:|---:|")
     by_scenario = summary["by_scenario"]
+    bucket_counts = _count_buckets(by_scenario.values())
+    n_total = len(by_scenario)
+    lines.append(
+        f"{bucket_counts['passed']}/{n_total} passed, "
+        f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
+        f"{bucket_counts['infra-error']}/{n_total} infra-error, "
+        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain"
+    )
+    lines.append("")
+    lines.append(
+        "| Scenario | N | Outcome | Success Rate | Mean MTTR (s) | Std MTTR (s) |"
+    )
+    lines.append("|---|---:|---|---:|---:|---:|")
     planned: list[str] = summary.get("planned_scenarios") or []
     scenario_keys = planned if planned else sorted(by_scenario)
     ordered_scenarios: list[str] = []
@@ -232,10 +276,11 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     for s in ordered_scenarios:
         row = by_scenario.get(s)
         if row is None:
-            lines.append(f"| {s} | no data | — | — | — |")
+            lines.append(f"| {s} | no data | — | — | — | — |")
         else:
             lines.append(
-                f"| {s} | {row['n_runs']} | {row['success_rate']:.2f} | "
+                f"| {s} | {row['n_runs']} | {row.get('outcome', '-')}"
+                f" | {row['success_rate']:.2f} | "
                 f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} |"
             )
     lines.append("")
@@ -292,9 +337,8 @@ def write_step_summary(
             g = _scenario_group(sid)
             by_group.setdefault(g, {}).setdefault(sid, None)
 
-    n_remediated = sum(1 for r in records if r.get("success_rate"))
-    n_aborted = sum(1 for r in records if r["outcome"] == "abort")
     n_total = sum(len(scs) for scs in by_group.values())
+    bucket_counts = _count_buckets(records)
 
     model = records[0]["model"]
     git_sha = records[0].get("git_sha7", "")
@@ -309,7 +353,10 @@ def write_step_summary(
     lines: list[str] = [
         f"### {' '.join(header_parts)}",
         "",
-        f"{n_remediated} of {n_total} scenarios remediated; {n_aborted} aborted.",
+        f"{bucket_counts['passed']}/{n_total} passed, "
+        f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
+        f"{bucket_counts['infra-error']}/{n_total} infra-error, "
+        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain",
         "",
     ]
 
@@ -329,12 +376,8 @@ def write_step_summary(
             if r is None:
                 lines.append(f"| {sid} | no data | — | — | — | — | — |")
                 continue
-            if r["outcome"] == "abort":
-                outcome_cell = "abort"
-                remediated_cell = "—"
-            else:
-                outcome_cell = "pass"
-                remediated_cell = "yes" if r.get("success_rate") else "no"
+            outcome_cell = r["outcome"]
+            remediated_cell = "yes" if r.get("success_rate") else "no"
             diag = r.get("diagnosis_accuracy")
             if diag is True:
                 diag_cell = "correct"

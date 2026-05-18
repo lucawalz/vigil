@@ -707,7 +707,26 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
     assert record.outcome == "success"
 
 
-async def test_diagnosis_inconsistency_aborts_run(
+def _delete_report() -> DiagnosisReport:
+    return DiagnosisReport(
+        root_cause="restrictive ResourceQuota blocks pod scheduling",
+        root_cause_component="ResourceQuota/restrictive-quota",
+        severity="high",
+        affected_resources=["default/restrictive-quota"],
+        evidence="exceeded quota: pods",
+        recommended_action="delete_resource",
+        confidence=0.90,
+        requires_os_level=False,
+        proposed_patch=ProposedPatch(
+            resource_kind="ResourceQuota",
+            resource_namespace="default",
+            resource_name="restrictive-quota",
+            patch_body="",
+        ),
+    )
+
+
+async def test_delete_resource_action_routes_to_kubectl_dispatch(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
@@ -718,18 +737,19 @@ async def test_diagnosis_inconsistency_aborts_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    inconsistent_report = DiagnosisReport(
-        root_cause="kernel panic on node",
-        root_cause_component="node/worker-1",
-        severity="critical",
-        affected_resources=["node/worker-1"],
-        evidence="kernel oops in dmesg",
-        recommended_action="git_commit",
-        confidence=0.80,
-        requires_os_level=True,
-    )
-    diag_rv = (inconsistent_report, Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_delete_report(), Usage(input_tokens=100, output_tokens=50), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+
+    delete_mock = AsyncMock(
+        return_value={"content": "deleted ResourceQuota/restrictive-quota"}
+    )
+    mock_kubectl_mcp.direct_call_tool = delete_mock
 
     record = await run_orchestration(
         sample_fault_event,
@@ -739,8 +759,72 @@ async def test_diagnosis_inconsistency_aborts_run(
         nixos_mcp=mock_nixos_mcp,
         git_mcp=mock_git_mcp,
     )
-    assert record.outcome == "abort"
-    assert record.setup_error == "diagnosis_inconsistent"
+
+    delete_calls = [
+        c
+        for c in delete_mock.call_args_list
+        if c.args and c.args[0] == "delete_resource"
+    ]
+    assert len(delete_calls) >= 1
+    call_args = (
+        delete_calls[0].args[1]
+        if len(delete_calls[0].args) > 1
+        else delete_calls[0].kwargs.get("args", {})
+    )
+    assert call_args.get("kind") == "ResourceQuota"
+    assert call_args.get("namespace") == "default"
+    assert call_args.get("name") == "restrictive-quota"
+    assert run_watchdog_mock.called
+    assert record.outcome == "success"
+    assert not mock_git_mcp.direct_call_tool.called
+    assert not mock_nixos_mcp.call_tool.called
+
+
+async def test_delete_resource_watchdog_degraded_yields_rollback_failed(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_delete_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_watchdog",
+        AsyncMock(return_value=WatchdogResult(degraded=True, snapshot=degraded_snap)),
+    )
+    mock_kubectl_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "deleted ResourceQuota/restrictive-quota"}
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "rollback_failed"
+    assert record.rollback_triggered is True
+    assert record.rollback_success is False
+    assert record.success_rate is False
 
 
 def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
@@ -804,51 +888,6 @@ async def test_flux_degraded_precheck_kustomization(
             }
             if tool == "get_kustomization_status"
             else {"content": "ok"}
-        )
-    )
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        ssh_mcp=mock_ssh_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-    assert record.outcome == "flux_degraded"
-
-
-async def test_flux_degraded_precheck_gitrepository(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
-    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
-    monkeypatch.setattr(
-        orch_mod,
-        "capture_health_snapshot",
-        AsyncMock(return_value=_canned_baseline()),
-    )
-    mock_flux_mcp.direct_call_tool = AsyncMock(
-        side_effect=lambda tool, args: (
-            {
-                "content": (
-                    "GitRepository: flux-system/flux-system\n"
-                    "Conditions:\n"
-                    "  Ready: False — auth"
-                )
-            }
-            if tool == "get_gitrepository_status"
-            else {
-                "content": "Kustomization: flux-system/cluster-apps\n"
-                "Conditions:\n  Ready: True"
-            }
         )
     )
     record = await run_orchestration(
@@ -1163,3 +1202,210 @@ async def test_run_record_forbidden_action_violations_populated_on_success_path(
     )
     assert record.forbidden_action_violations == ["switch_generation"]
     assert record.outcome == "success"
+
+
+_FLUX_BASELINE_NOT_READY = {
+    "cluster_apps": {
+        "ready": "False",
+        "reason": "DependencyNotReady",
+        "message": "",
+    },
+    "cluster_infra": {
+        "ready": "False",
+        "reason": "DependencyNotReady",
+        "message": "",
+    },
+}
+
+_FLUX_BASELINE_READY = {
+    "cluster_apps": {
+        "ready": "True",
+        "reason": "ReconciliationSucceeded",
+        "message": "",
+    },
+    "cluster_infra": {
+        "ready": "True",
+        "reason": "ReconciliationSucceeded",
+        "message": "",
+    },
+}
+
+
+async def test_precheck_passes_when_cluster_apps_already_not_ready(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    event = sample_fault_event.model_copy(
+        update={"flux_baseline": _FLUX_BASELINE_NOT_READY}
+    )
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {"content": "Ready: False"}
+            if tool == "get_kustomization_status"
+            else {"content": "ok"}
+        )
+    )
+    record = await run_orchestration(
+        event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome != "flux_degraded"
+
+
+async def test_precheck_aborts_when_cluster_apps_transitions_ready_to_not_ready(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    event = sample_fault_event.model_copy(
+        update={"flux_baseline": _FLUX_BASELINE_READY}
+    )
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {"content": "Ready: False"}
+            if tool == "get_kustomization_status"
+            else {"content": "ok"}
+        )
+    )
+    record = await run_orchestration(
+        event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "flux_degraded"
+    assert record.setup_error == "flux_degraded_since_injection"
+
+
+async def test_precheck_falls_back_to_snapshot_when_flux_baseline_none(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {"content": "Ready: False"}
+            if tool == "get_kustomization_status"
+            else {"content": "ok"}
+        )
+    )
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "flux_degraded"
+    assert record.setup_error == "flux_degraded_snapshot_fallback"
+
+
+def test_run_record_accepts_baseline_degraded_outcome() -> None:
+    record = _make_run_record(
+        outcome="baseline_degraded", setup_error="cluster_apps_not_ready"
+    )
+    assert record.outcome == "baseline_degraded"
+
+
+def test_fault_event_accepts_flux_baseline() -> None:
+    event = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[],
+        groupLabels={},
+        commonLabels={},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey="{}",
+        flux_baseline={
+            "cluster_apps": {
+                "ready": "True",
+                "reason": "ReconciliationSucceeded",
+                "message": "",
+            }
+        },
+    )
+    assert event.flux_baseline["cluster_apps"]["ready"] == "True"
+    assert (
+        FaultEvent(
+            receiver="vigil-webhook",
+            status="firing",
+            alerts=[],
+            groupLabels={},
+            commonLabels={},
+            commonAnnotations={},
+            externalURL="http://alertmanager:9093",
+            version="4",
+            groupKey="{}",
+        ).flux_baseline
+        is None
+    )
+
+
+def test_fault_event_backward_compat_omits_flux_baseline() -> None:
+    event = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[],
+        groupLabels={},
+        commonLabels={},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey="{}",
+    )
+    assert event.flux_baseline is None

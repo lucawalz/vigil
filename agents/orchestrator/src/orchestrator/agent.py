@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,6 +105,7 @@ def build_run_id(
 _OS_LAYERS = frozenset({"os", "cross"})
 _OS_REPAIR_ACTIONS = frozenset({"rebuild_nixos"})
 _K8S_REPAIR_ACTIONS = frozenset({"git_commit"})
+_IMPERATIVE_REPAIR_ACTIONS = frozenset({"delete_resource"})
 
 
 def _load_scenario_data(scenario: str) -> dict:
@@ -144,6 +146,37 @@ def _write_run_record(record: RunRecord) -> None:
     index_path = runs_dir.parent / "runs_index.jsonl"
     with index_path.open("a") as f:
         f.write(record.model_dump_json() + "\n")
+
+
+def _parse_kust_text(text: str) -> dict:
+    m = re.search(r"^\s*Ready:\s*([A-Za-z]+)(?:\s*[—-]\s*(.*))?$", text, re.MULTILINE)
+    if m:
+        return {
+            "ready": m.group(1),
+            "reason": (m.group(2) or "").strip(),
+            "message": "",
+        }
+    return {"ready": "Unknown", "reason": "parse_error", "message": text[:200]}
+
+
+def _extract_mcp_text(result: object) -> str:
+    if isinstance(result, dict) and "content" in result:
+        return str(result["content"])
+    return str(result)
+
+
+async def _fetch_flux_snapshot(flux_mcp: MCPServerStdio) -> dict:
+    kust_result = await flux_mcp.direct_call_tool(
+        "get_kustomization_status", {"namespace": "flux-system", "name": "cluster-apps"}
+    )
+    infra_result = await flux_mcp.direct_call_tool(
+        "get_kustomization_status",
+        {"namespace": "flux-system", "name": "cluster-infrastructure"},
+    )
+    return {
+        "cluster_apps": _parse_kust_text(_extract_mcp_text(kust_result)),
+        "cluster_infra": _parse_kust_text(_extract_mcp_text(infra_result)),
+    }
 
 
 async def _issue_rollback(
@@ -223,6 +256,7 @@ async def run_orchestration(
             autonomy_level="full",
             actions_taken=[],
             model_version=model_name,
+            setup_error=_reason if _outcome != "abort" else None,
         )
 
     total_usage = Usage()
@@ -289,83 +323,53 @@ async def run_orchestration(
             breaker.success()
             iteration_count += 1
 
-            action_is_os = report.recommended_action in _OS_REPAIR_ACTIONS
             action_is_k8s = report.recommended_action in _K8S_REPAIR_ACTIONS
-            layer_os = report.requires_os_level
-            if (layer_os and action_is_k8s) or (not layer_os and action_is_os):
-                log.error(
-                    "run %s aborted: diagnosis_inconsistent "
-                    "(requires_os_level=%s recommended_action=%s)",
-                    run_id,
-                    report.requires_os_level,
-                    report.recommended_action,
-                )
-                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record = RunRecord(
-                    run_id=run_id,
-                    scenario=scenario,
-                    seed=seed_str,
-                    model=model_name,
-                    git_sha7=sha7,
-                    started_at=started_at,
-                    ended_at=ended_at,
-                    outcome="abort",
-                    success_rate=False,
-                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
-                    MTTR_s=None,
-                    destructive_repair=False,
-                    rollback_triggered=False,
-                    rollback_success=None,
-                    total_input_tokens=total_usage.input_tokens or 0,
-                    total_output_tokens=total_usage.output_tokens or 0,
-                    total_tool_calls=total_tool_calls,
-                    iteration_count=iteration_count,
-                    autonomy_level="full",
-                    actions_taken=[],
-                    model_version=model_name,
-                    setup_error="diagnosis_inconsistent",
-                )
-                _write_run_record(record)
-                return record
+            action_is_imperative = (
+                report.recommended_action in _IMPERATIVE_REPAIR_ACTIONS
+            )
 
             if action_is_k8s:
                 try:
-                    kust_status = await flux_mcp.direct_call_tool(
-                        "get_kustomization_status",
-                        {"namespace": "flux-system", "name": "cluster-apps"},
-                    )
-                    kust_text = str(kust_status)
-                    if (
-                        "Ready: False" in kust_text
-                        or "Stalled: True" in kust_text
-                        or "Suspended: true" in kust_text
-                    ):
-                        log.error(
-                            "run %s aborted: flux_degraded"
-                            " (cluster-apps unhealthy): %s",
-                            run_id,
-                            kust_text,
+                    current = await _fetch_flux_snapshot(flux_mcp)
+                    baseline = event.flux_baseline
+                    if baseline is not None:
+                        was_ready = (
+                            baseline.get("cluster_apps", {}).get("ready") == "True"
                         )
-                        record = _abort_record(
-                            "flux_degraded_kustomization", "flux_degraded"
+                        now_ready = (
+                            current.get("cluster_apps", {}).get("ready") == "True"
                         )
-                        _write_run_record(record)
-                        return record
-
-                    repo_status = await flux_mcp.direct_call_tool(
-                        "get_gitrepository_status",
-                        {"namespace": "flux-system", "name": "flux-system"},
-                    )
-                    if "Ready: False" in str(repo_status):
-                        log.error(
-                            "run %s aborted: flux_degraded (gitrepository unhealthy)",
-                            run_id,
-                        )
-                        record = _abort_record(
-                            "flux_degraded_gitrepository", "flux_degraded"
-                        )
-                        _write_run_record(record)
-                        return record
+                        if was_ready and not now_ready:
+                            log.error(
+                                "run %s aborted: flux degraded since injection "
+                                "(cluster-apps reason=%s)",
+                                run_id,
+                                current["cluster_apps"].get("reason"),
+                            )
+                            record = _abort_record(
+                                "flux_degraded_since_injection", "flux_degraded"
+                            )
+                            _write_run_record(record)
+                            return record
+                        if not was_ready:
+                            log.info(
+                                "run %s: cluster-apps was already Not-Ready before "
+                                "injection (reason=%s) — proceeding with diagnosis",
+                                run_id,
+                                baseline["cluster_apps"].get("reason"),
+                            )
+                    else:
+                        if current.get("cluster_apps", {}).get("ready") == "False":
+                            log.error(
+                                "run %s aborted: flux_degraded "
+                                "(no baseline; snapshot-only check)",
+                                run_id,
+                            )
+                            record = _abort_record(
+                                "flux_degraded_snapshot_fallback", "flux_degraded"
+                            )
+                            _write_run_record(record)
+                            return record
                 except Exception:
                     log.exception(
                         "run %s: flux pre-check failed; emitting flux_degraded", run_id
@@ -375,6 +379,73 @@ async def run_orchestration(
                     return record
 
             baseline = await capture_health_snapshot(watchdog_deps)
+
+            if action_is_imperative:
+                if report.proposed_patch is None:
+                    record = _abort_record(
+                        "delete_resource missing proposed_patch", "abort"
+                    )
+                    _write_run_record(record)
+                    return record
+                kind = report.proposed_patch.resource_kind
+                namespace = report.proposed_patch.resource_namespace
+                name = report.proposed_patch.resource_name
+                try:
+                    await kubectl_mcp.direct_call_tool(
+                        "delete_resource",
+                        {"kind": kind, "namespace": namespace, "name": name},
+                    )
+                except Exception:
+                    log.exception(
+                        "run %s aborted: delete_resource failed (%s/%s/%s)",
+                        run_id,
+                        kind,
+                        namespace,
+                        name,
+                    )
+                    record = _abort_record("delete_resource_tool_error", "abort")
+                    _write_run_record(record)
+                    return record
+                await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
+                watchdog_result = await run_watchdog(watchdog_deps, baseline)
+                if watchdog_result.degraded:
+                    imp_outcome = "rollback_failed"
+                    imp_rollback_triggered = True
+                    imp_rollback_success: bool | None = False
+                else:
+                    imp_outcome = "success"
+                    imp_rollback_triggered = False
+                    imp_rollback_success = None
+                mttr_s = asyncio.get_event_loop().time() - t0
+                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record = RunRecord(
+                    run_id=run_id,
+                    scenario=scenario,
+                    seed=seed_str,
+                    model=model_name,
+                    git_sha7=sha7,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    outcome=imp_outcome,
+                    success_rate=(imp_outcome == "success"),
+                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                    MTTR_s=mttr_s,
+                    destructive_repair=True,
+                    rollback_triggered=imp_rollback_triggered,
+                    rollback_success=imp_rollback_success,
+                    total_input_tokens=total_usage.input_tokens or 0,
+                    total_output_tokens=total_usage.output_tokens or 0,
+                    total_tool_calls=_count_tool_calls(diag_msgs) + 1,
+                    iteration_count=iteration_count,
+                    autonomy_level="full",
+                    actions_taken=["delete_resource"],
+                    model_version=model_name,
+                )
+                log.info(
+                    "run %s finished outcome=%s (delete_resource)", run_id, imp_outcome
+                )
+                _write_run_record(record)
+                return record
 
             if action_is_k8s:
                 try:

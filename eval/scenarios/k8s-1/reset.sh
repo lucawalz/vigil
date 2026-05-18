@@ -14,13 +14,15 @@ if ! kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" get deployment "${DEPLOY
   kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" apply -f "${MANIFEST_DIR}/" -n "${NAMESPACE}"
 fi
 
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" set image \
-  "deployment/${DEPLOYMENT}" \
-  "${DEPLOYMENT}=${GOOD_IMAGE}" \
-  -n "${NAMESPACE}"
-
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "deployment/${DEPLOYMENT}" \
-  -n "${NAMESPACE}" --timeout=120s
+if kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" \
+    get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" set image \
+    "deployment/${DEPLOYMENT}" \
+    "${DEPLOYMENT}=${GOOD_IMAGE}" \
+    -n "${NAMESPACE}"
+  kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" rollout status "deployment/${DEPLOYMENT}" \
+    -n "${NAMESPACE}" --timeout=120s
+fi
 
 flux --kubeconfig "$EVAL_RUNNER_KUBECONFIG" resume kustomization flux-system -n flux-system 2>/dev/null || true
 

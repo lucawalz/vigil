@@ -16,7 +16,7 @@ class ScenarioDefinition(BaseModel):
     root_cause_layer: Literal["k8s", "os", "cross", "boundary"]
     root_cause_component: str
     correct_action_class: str = Field(
-        pattern="^(apply_patch|rollout_undo|rebuild_nixos|escalate|switch_generation|git_commit)$"
+        pattern="^(apply_patch|rollout_undo|rebuild_nixos|escalate|git_commit)$"
     )
     expected_resolution_path: str
     inject_params: dict[str, Any] = Field(default_factory=dict)

@@ -1,5 +1,8 @@
 """Schema validation tests for agent Pydantic models."""
 
+import json
+from pathlib import Path
+
 import pytest
 from diagnosis.models import DiagnosisReport, ProposedPatch
 from orchestrator.models import FaultEvent, RunRecord
@@ -110,17 +113,25 @@ def test_diagnosis_report_with_proposed_patch_roundtrip() -> None:
     assert DiagnosisReport.model_validate_json(j) == r
 
 
-def test_proposed_patch_requires_all_four_fields() -> None:
+def test_proposed_patch_requires_identity_fields() -> None:
     base = dict(
         resource_kind="Deployment",
         resource_name="vigil-app",
         resource_namespace="default",
-        patch_body="apiVersion: apps/v1\nkind: Deployment\n",
     )
-    for field in ("resource_kind", "resource_name", "resource_namespace", "patch_body"):
+    for field in ("resource_kind", "resource_name", "resource_namespace"):
         kwargs = {k: v for k, v in base.items() if k != field}
         with pytest.raises(ValidationError):
             ProposedPatch(**kwargs)
+
+
+def test_proposed_patch_body_is_optional() -> None:
+    patch = ProposedPatch(
+        resource_kind="ResourceQuota",
+        resource_name="restrictive-quota",
+        resource_namespace="default",
+    )
+    assert patch.patch_body is None
 
 
 def test_diagnosis_report_rejects_delete_cluster_still_invalid() -> None:
@@ -241,3 +252,11 @@ def test_health_snapshot_validates() -> None:
         captured_at="2026-04-18T10:00:00Z",
     )
     assert s.ready_pods == 3
+
+
+def test_existing_run_record_fixtures_still_deserialise() -> None:
+    runs_dir = Path(__file__).parent.parent.parent / "eval" / "runs"
+    if not runs_dir.is_dir() or not any(runs_dir.glob("*.json")):
+        pytest.skip("no fixtures present")
+    for p in runs_dir.glob("*.json"):
+        RunRecord.model_validate(json.loads(p.read_text()))

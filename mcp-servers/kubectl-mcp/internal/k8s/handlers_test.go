@@ -16,11 +16,15 @@ import (
 )
 
 type fakeK8sClient struct {
-	pods          string
-	describePod   string
-	logs          string
-	rolloutStatus string
-	err           error
+	pods           string
+	describePod    string
+	logs           string
+	rolloutStatus  string
+	events         string
+	describeNode   string
+	taints         string
+	deleteResource string
+	err            error
 }
 
 var _ k8s.K8sClient = &fakeK8sClient{}
@@ -43,6 +47,22 @@ func (f *fakeK8sClient) GetNodes(_ context.Context) (string, error) {
 
 func (f *fakeK8sClient) RolloutStatus(_ context.Context, _, _ string) (string, error) {
 	return f.rolloutStatus, f.err
+}
+
+func (f *fakeK8sClient) GetEvents(_ context.Context, _, _ string) (string, error) {
+	return f.events, f.err
+}
+
+func (f *fakeK8sClient) DescribeNode(_ context.Context, _ string) (string, error) {
+	return f.describeNode, f.err
+}
+
+func (f *fakeK8sClient) GetTaints(_ context.Context, _ string) (string, error) {
+	return f.taints, f.err
+}
+
+func (f *fakeK8sClient) DeleteResource(_ context.Context, _, _, _ string) (string, error) {
+	return f.deleteResource, f.err
 }
 
 func callGetPods(t *testing.T, fake *fakeK8sClient, maxBytes int, args map[string]any) (*mcp.CallToolResult, error) {
@@ -227,7 +247,10 @@ func TestKubectlToolInventory(t *testing.T) {
 		names[tool.Tool.Name] = true
 	}
 
-	required := []string{"get_nodes", "get_pods", "describe_pod", "get_logs", "rollout_status"}
+	required := []string{
+		"get_nodes", "get_pods", "describe_pod", "get_logs", "rollout_status",
+		"get_events", "describe_node", "get_taints", "delete_resource",
+	}
 	for _, name := range required {
 		if !names[name] {
 			t.Errorf("expected tool %q to be registered", name)
@@ -239,7 +262,67 @@ func TestKubectlToolInventory(t *testing.T) {
 	if names["apply_patch"] {
 		t.Error("apply_patch must not be registered")
 	}
-	if len(tools) != 5 {
-		t.Errorf("expected exactly 5 tools, got %d", len(tools))
+	if len(tools) != 9 {
+		t.Errorf("expected exactly 9 tools, got %d", len(tools))
+	}
+}
+
+func TestDescribePodEventsPreserved(t *testing.T) {
+	const maxBytes = 200
+
+	prefixBody := strings.Repeat("Name: my-pod\nStatus: Running\nContainers: app\n", 10)
+	eventsSection := "\nEvents:\n" +
+		"  2m   Normal   Scheduled   Pod   Successfully assigned default/my-pod to worker-1\n" +
+		"  90s  Warning  BackOff     Pod   Back-off restarting failed container\n" +
+		"  30s  Warning  Failed      Pod   Error: ImagePullBackOff\n"
+	describeFull := prefixBody + eventsSection
+
+	if len(prefixBody) <= maxBytes {
+		t.Fatalf("test setup error: prefixBody (%d bytes) must exceed maxBytes (%d)", len(prefixBody), maxBytes)
+	}
+
+	fake := &fakeK8sClient{describePod: describeFull}
+	srv, err := mcptest.NewServer(t, server.ServerTool{
+		Tool: mcp.NewTool("describe_pod",
+			mcp.WithString("namespace", mcp.Required()),
+			mcp.WithString("name", mcp.Required()),
+		),
+		Handler: k8s.HandleDescribePod(fake, maxBytes),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	var req mcp.CallToolRequest
+	req.Params.Name = "describe_pod"
+	req.Params.Arguments = map[string]any{"namespace": "default", "name": "my-pod"}
+	result, err := srv.Client().CallTool(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected error result: %v", result.Content)
+	}
+
+	text := result.Content[0].(mcp.TextContent).Text
+
+	eventLines := []string{
+		"Successfully assigned default/my-pod to worker-1",
+		"Back-off restarting failed container",
+		"Error: ImagePullBackOff",
+	}
+	for _, line := range eventLines {
+		if !strings.Contains(text, line) {
+			t.Errorf("expected event line %q to appear verbatim in result; got:\n%s", line, text)
+		}
+	}
+
+	if !strings.Contains(text, "[TRUNCATED:") {
+		t.Errorf("expected truncation marker in prefix portion; got:\n%s", text)
+	}
+
+	if len(text) <= maxBytes {
+		t.Errorf("expected total result length > maxBytes (%d), got %d", maxBytes, len(text))
 	}
 }

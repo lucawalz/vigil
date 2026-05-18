@@ -20,7 +20,7 @@ ALL_SCENARIO_IDS = (
     + BOUNDARY_SCENARIO_IDS
     + PROD_SIM_SCENARIO_IDS
 )
-NIXOS_REBUILD_RESET_IDS = OS_SCENARIO_IDS + ("cross-1", "cross-3")
+NIXOS_REBUILD_RESET_IDS = ("os-1",)
 
 
 def _scripts_for(
@@ -70,7 +70,7 @@ def test_all_scripts_executable(scenarios_dir: Path) -> None:
 def test_all_reset_scripts_apply_manifests(scenarios_dir: Path) -> None:
     for sid in K8S_SCENARIO_IDS:
         reset_sh = scenarios_dir / sid / "reset.sh"
-        assert "kubectl apply -f" in reset_sh.read_text(), (
+        assert "apply -f" in reset_sh.read_text(), (
             f"{reset_sh}: missing kubectl apply -f"
         )
 
@@ -79,7 +79,7 @@ def test_all_reset_scripts_resume_flux(scenarios_dir: Path) -> None:
     for sid in K8S_SCENARIO_IDS:
         reset_sh = scenarios_dir / sid / "reset.sh"
         body = reset_sh.read_text()
-        assert "flux resume kustomization flux-system" in body, (
+        assert "resume kustomization flux-system" in body, (
             f"{reset_sh}: missing flux resume recovery step"
         )
 
@@ -145,3 +145,30 @@ def test_k8s2_inject_uses_app_crash_mode(scenarios_dir: Path) -> None:
     content = inject_sh.read_text()
     assert "APP_CRASH_MODE" in content
     assert "VIGIL_CRASH" not in content
+
+
+def test_health_gate_targets_cluster_apps_kustomization() -> None:
+    script = Path("eval/scripts/health-gate.sh").read_text()
+    non_comment_lines = [
+        line for line in script.splitlines() if not line.lstrip().startswith("#")
+    ]
+    body = "\n".join(non_comment_lines)
+    assert "-n flux-system cluster-apps" in body
+    assert "-n flux-system flux-system" not in body
+
+
+def test_health_gate_checks_cluster_infrastructure_precondition() -> None:
+    script = Path("eval/scripts/health-gate.sh").read_text()
+    assert "check_cluster_infrastructure_ready()" in script
+    loop_guard = next(
+        (
+            line
+            for line in script.splitlines()
+            if "check_nodes_ready" in line and "check_flux_kustomization_ready" in line
+        ),
+        None,
+    )
+    assert loop_guard is not None, "while-loop guard line not found"
+    infra_idx = loop_guard.index("check_cluster_infrastructure_ready")
+    flux_idx = loop_guard.index("check_flux_kustomization_ready")
+    assert infra_idx < flux_idx

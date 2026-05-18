@@ -14,17 +14,20 @@ from pydantic import ValidationError
 def real_scenarios(scenarios_dir: Path) -> list[ScenarioDefinition]:
     if (
         not scenarios_dir.exists()
-        or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 15
+        or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 18
     ):
         pytest.skip("scenarios directory not fully populated yet")
     return load_scenarios(scenarios_dir)
 
 
 def test_load_all_scenarios(real_scenarios: list[ScenarioDefinition]) -> None:
-    assert len(real_scenarios) == 15
+    assert len(real_scenarios) == 18
     ids = [s.id for s in real_scenarios]
     assert sorted(ids) == [
         "boundary-1",
+        "boundary-2",
+        "boundary-3",
+        "boundary-4",
         "cross-1",
         "cross-2",
         "cross-3",
@@ -175,6 +178,42 @@ def test_forbidden_actions_defaults_to_empty_list() -> None:
         expected_resolution_path="diagnosis -> git_commit",
     )
     assert s.forbidden_actions == []
+
+
+def test_accepts_rebuild_nixos_correct_action_class(tmp_scenarios_dir: Path) -> None:
+    scenario_dir = tmp_scenarios_dir / "os-test"
+    scenario_dir.mkdir()
+    scenario_yaml = {
+        "id": "os-test",
+        "name": "rebuild-nixos-test",
+        "layer": "os",
+        "root_cause_layer": "os",
+        "root_cause_component": "NixOS service",
+        "correct_action_class": "rebuild_nixos",
+        "expected_resolution_path": "diagnosis -> rebuild_nixos",
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
+    scenarios = load_scenarios(tmp_scenarios_dir)
+    assert scenarios[0].correct_action_class == "rebuild_nixos"
+
+
+def test_rejects_switch_generation_correct_action_class(
+    tmp_scenarios_dir: Path,
+) -> None:
+    scenario_dir = tmp_scenarios_dir / "bad-switch"
+    scenario_dir.mkdir()
+    bad_yaml = {
+        "id": "bad-switch",
+        "name": "retired-action",
+        "layer": "os",
+        "root_cause_layer": "os",
+        "root_cause_component": "NixOS service",
+        "correct_action_class": "switch_generation",
+        "expected_resolution_path": "diagnosis -> switch_generation",
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(bad_yaml))
+    with pytest.raises(ValidationError):
+        load_scenarios(tmp_scenarios_dir)
 
 
 def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> None:

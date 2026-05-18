@@ -61,6 +61,13 @@ async def test_reset_runs_before_inject(
     (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
     (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     def fake_run(cmd, **kwargs):
         if "reset.sh" in cmd[0]:
             call_order.append("reset")
@@ -108,6 +115,13 @@ async def test_inject_subprocess_failure_aborts_run(
     (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
     (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     def fake_run(cmd, **kwargs):
         result = MagicMock()
         if "inject.sh" in cmd[0]:
@@ -145,6 +159,13 @@ async def test_post_includes_scenario_and_seed_query_params(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "test-secret")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     captured: dict = {}
     run_id = "k8s-3_1_test-model_abc1234"
@@ -194,6 +215,13 @@ async def test_post_includes_bearer_auth_header(
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "super-secret")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     captured_headers: dict = {}
     run_id = "k8s-3_1_test-model_abc1234"
     result_file = tmp_path / f"{run_id}.json"
@@ -240,6 +268,13 @@ async def test_uses_response_run_id_for_polling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     server_run_id = "k8s-3_1_test-model_server_computed"
     result_file = tmp_path / f"{server_run_id}.json"
@@ -292,6 +327,13 @@ async def test_timeout_when_result_file_never_appears(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     class FakeClient:
         async def __aenter__(self):
@@ -352,6 +394,13 @@ async def test_result_file_detected_when_written(
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
 
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
+
     run_id = "k8s-3_1_test_abc1234"
     result_file = tmp_path / f"{run_id}.json"
 
@@ -395,6 +444,13 @@ async def test_healthz_precheck_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
+
+    _ready_cond = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_capture_baseline():
+        return {"cluster_apps": _ready_cond, "cluster_infra": _ready_cond}, True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_capture_baseline)
 
     class FakeClientConnectError:
         async def __aenter__(self):
@@ -443,3 +499,268 @@ def test_result_file_contains_all_eval_07_metric_fields() -> None:
     }
     present = set(RunRecord.model_fields.keys())
     assert required.issubset(present), f"Missing fields: {required - present}"
+
+
+_KUBECONFIG_NOT_READY_JSON = """{
+  "status": {
+    "conditions": [
+      {"type": "Ready", "status": "False", "reason": "DependencyNotReady",
+       "message": ""}
+    ]
+  }
+}"""
+
+_KUBECONFIG_READY_JSON = """{
+  "status": {
+    "conditions": [
+      {"type": "Ready", "status": "True", "reason": "ReconciliationSucceeded",
+       "message": ""}
+    ]
+  }
+}"""
+
+CIRCUIT_BREAKER_THRESHOLD = 3
+
+
+async def test_baseline_capture_runs_between_reset_and_inject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    call_order: list[str] = []
+    scenarios_dir = tmp_path / "scenarios"
+    scenario_dir = scenarios_dir / "k8s-3"
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
+    (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
+
+    monkeypatch.setenv("EVAL_RUNNER_KUBECONFIG", "/fake/kubeconfig")
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = ""
+        if "reset.sh" in cmd[0]:
+            call_order.append("reset")
+            result.stdout = ""
+        elif "inject.sh" in cmd[0]:
+            call_order.append("inject")
+            result.stdout = ""
+        elif "kubectl" in cmd[0] and "get" in cmd and "kustomization" in cmd:
+            call_order.append("baseline")
+            result.stdout = _KUBECONFIG_READY_JSON
+        return result
+
+    monkeypatch.setattr(harness_mod.subprocess, "run", fake_run)
+
+    run_id = "k8s-3_1_test-model_abc1234"
+
+    async def fake_trigger(*args, **kwargs) -> Path:
+        result_file = tmp_path / "runs" / f"{run_id}.json"
+        result_file.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+
+        result_file.write_text(_json.dumps(_make_run_record(run_id)))
+        return result_file
+
+    monkeypatch.setattr(harness_mod, "trigger_and_wait", fake_trigger)
+
+    await run_one(
+        scenario_id="k8s-3",
+        seed=1,
+        scenarios_dir=scenarios_dir,
+        model="test-model",
+        runs_dir=tmp_path / "runs",
+        timeout_s=5,
+    )
+
+    assert call_order == ["reset", "baseline", "baseline", "inject"], (
+        f"Expected baseline capture between reset and inject, got: {call_order}"
+    )
+
+
+async def test_baseline_degraded_record_written_when_retries_exhausted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scenarios_dir = tmp_path / "scenarios"
+    scenario_dir = scenarios_dir / "k8s-3"
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
+    (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+
+    monkeypatch.setenv("EVAL_RUNNER_KUBECONFIG", "/fake/kubeconfig")
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(runs_dir))
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = ""
+        result.stdout = ""
+        if "reset.sh" in cmd[0]:
+            pass
+        elif "kubectl" in cmd[0]:
+            result.stdout = _KUBECONFIG_NOT_READY_JSON
+        return result
+
+    monkeypatch.setattr(harness_mod.subprocess, "run", fake_run)
+
+    async def fake_sleep(_t):
+        pass
+
+    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
+
+    trigger_called = False
+
+    async def fake_trigger(*args, **kwargs) -> Path:
+        nonlocal trigger_called
+        trigger_called = True
+        return tmp_path / "dummy.json"
+
+    monkeypatch.setattr(harness_mod, "trigger_and_wait", fake_trigger)
+
+    await run_one(
+        scenario_id="k8s-3",
+        seed=1,
+        scenarios_dir=scenarios_dir,
+        model="test-model",
+        runs_dir=runs_dir,
+        timeout_s=5,
+    )
+
+    assert not trigger_called, (
+        "trigger_and_wait must not be called on degraded baseline"
+    )
+    import json as _json
+
+    written_files = list(runs_dir.glob("*.json"))
+    assert len(written_files) == 1, (
+        f"Expected one run record written; found: {written_files}"
+    )
+    record_data = _json.loads(written_files[0].read_text())
+    assert record_data["outcome"] == "baseline_degraded"
+    assert record_data.get("setup_error"), "setup_error must be a non-empty string"
+
+
+async def test_circuit_breaker_exits_with_code_10_after_three_consecutive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scenarios_dir = tmp_path / "scenarios"
+    scenario_dir = scenarios_dir / "k8s-3"
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
+    (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+
+    cb_state_file = tmp_path / "cb_state.json"
+    monkeypatch.setenv("VIGIL_CIRCUIT_BREAKER_STATE", str(cb_state_file))
+    monkeypatch.setenv("EVAL_RUNNER_KUBECONFIG", "/fake/kubeconfig")
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(runs_dir))
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = ""
+        result.stdout = ""
+        if "kubectl" in cmd[0]:
+            result.stdout = _KUBECONFIG_NOT_READY_JSON
+        return result
+
+    monkeypatch.setattr(harness_mod.subprocess, "run", fake_run)
+
+    async def fake_sleep(_t):
+        pass
+
+    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
+
+    run_id = "k8s-3_1_test-model_abc1234"
+
+    async def fake_trigger(*args, **kwargs) -> Path:
+        result_file = runs_dir / f"{run_id}.json"
+        import json as _json
+
+        result_file.write_text(_json.dumps(_make_run_record(run_id)))
+        return result_file
+
+    monkeypatch.setattr(harness_mod, "trigger_and_wait", fake_trigger)
+
+    for _ in range(CIRCUIT_BREAKER_THRESHOLD - 1):
+        await run_one(
+            scenario_id="k8s-3",
+            seed=1,
+            scenarios_dir=scenarios_dir,
+            model="test-model",
+            runs_dir=runs_dir,
+            timeout_s=5,
+        )
+
+    with pytest.raises(SystemExit) as exc_info:
+        await run_one(
+            scenario_id="k8s-3",
+            seed=1,
+            scenarios_dir=scenarios_dir,
+            model="test-model",
+            runs_dir=runs_dir,
+            timeout_s=5,
+        )
+
+    assert exc_info.value.code == 10
+
+
+async def test_flux_baseline_included_in_webhook_post_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "test-secret")
+
+    captured: dict = {}
+    run_id = "k8s-3_1_test-model_abc1234"
+    result_file = tmp_path / f"{run_id}.json"
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url, **kwargs):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            return resp
+
+        async def post(self, url, **kwargs):
+            captured.update(kwargs)
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json = MagicMock(return_value={"run_id": run_id, "outcome": "success"})
+            return resp
+
+    monkeypatch.setattr(harness_mod.httpx, "AsyncClient", FakeClient)
+
+    async def fake_sleep(t):
+        result_file.write_text("{}")
+
+    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
+
+    monkeypatch.setattr(
+        harness_mod,
+        "_capture_kust_condition",
+        lambda name, kubeconfig=None: {
+            "ready": "True",
+            "reason": "ReconciliationSucceeded",
+            "message": "",
+        },
+    )
+
+    await trigger_and_wait(
+        scenario_id="k8s-3",
+        seed=1,
+        orchestrator_url="http://localhost:9099",
+        runs_dir=tmp_path,
+        model="test-model",
+        timeout_s=5,
+    )
+
+    flux_baseline = captured.get("json", {}).get("flux_baseline")
+    assert flux_baseline is not None, "flux_baseline must be present in POST body"
+    assert flux_baseline["cluster_apps"]["ready"] == "True"
