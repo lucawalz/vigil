@@ -60,6 +60,7 @@ resource "null_resource" "k3s_token_master" {
       "systemctl stop k3s || true",
       "rm -f /var/lib/rancher/k3s/server/tls/dynamic-cert.json",
       "systemctl start k3s",
+      var.operator_ssh_pubkey != "" ? "grep -qxF '${var.operator_ssh_pubkey}' /root/.ssh/authorized_keys 2>/dev/null || echo '${var.operator_ssh_pubkey}' >> /root/.ssh/authorized_keys" : "true",
     ]
   }
 }
@@ -101,7 +102,8 @@ resource "null_resource" "k3s_token_worker_1" {
     inline = [
       "mkdir -p /etc/k3s",
       "echo '${random_password.k3s_token.result}' > /etc/k3s/token",
-      "chmod 400 /etc/k3s/token"
+      "chmod 400 /etc/k3s/token",
+      var.operator_ssh_pubkey != "" ? "grep -qxF '${var.operator_ssh_pubkey}' /root/.ssh/authorized_keys 2>/dev/null || echo '${var.operator_ssh_pubkey}' >> /root/.ssh/authorized_keys" : "true",
     ]
   }
 }
@@ -143,7 +145,8 @@ resource "null_resource" "k3s_token_worker_2" {
     inline = [
       "mkdir -p /etc/k3s",
       "echo '${random_password.k3s_token.result}' > /etc/k3s/token",
-      "chmod 400 /etc/k3s/token"
+      "chmod 400 /etc/k3s/token",
+      var.operator_ssh_pubkey != "" ? "grep -qxF '${var.operator_ssh_pubkey}' /root/.ssh/authorized_keys 2>/dev/null || echo '${var.operator_ssh_pubkey}' >> /root/.ssh/authorized_keys" : "true",
     ]
   }
 }
@@ -327,6 +330,11 @@ resource "null_resource" "vigil_agent_setup" {
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.agent.ipv4_address} \
         "chmod 600 /etc/vigil/env && systemctl start --no-block vigil-orchestrator.service"
+      %{if var.operator_ssh_pubkey != ""}
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        root@${hcloud_server.agent.ipv4_address} \
+        "grep -qxF '${var.operator_ssh_pubkey}' /root/.ssh/authorized_keys 2>/dev/null || echo '${var.operator_ssh_pubkey}' >> /root/.ssh/authorized_keys"
+      %{endif}
     EOF
   }
 }

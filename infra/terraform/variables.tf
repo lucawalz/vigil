@@ -67,3 +67,10 @@ variable "run_id" {
   description = "CI run identifier — appended to the SSH key name so parallel runs never collide on fingerprint"
   default     = "local"
 }
+
+variable "operator_ssh_pubkey" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Operator's personal public SSH key injected into all servers for debugging access"
+}

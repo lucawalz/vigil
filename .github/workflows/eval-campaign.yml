@@ -45,6 +45,7 @@ jobs:
       TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
       TF_VAR_group_name: ${{ matrix.group }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}
+      TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
       VIGIL_BRANCH: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
     steps:
       - uses: actions/checkout@v6
