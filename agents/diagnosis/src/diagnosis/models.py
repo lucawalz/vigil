@@ -14,8 +14,8 @@ class ProposedPatch(BaseModel):
     patch_body: str | None = Field(
         default=None,
         description=(
-            "Full replacement manifest YAML for git_commit; None for delete_resource"
-            " — resource identity in resource_kind/namespace/name is sufficient."
+            "Full replacement manifest YAML for git_commit_k8s and git_commit_nix;"
+            " None for flux_reconcile / nixos_rebuild / escalate."
         ),
     )
 
@@ -32,12 +32,16 @@ class DiagnosisReport(BaseModel):
         description="Exact resource names from kubectl output, including namespace"
     )
     evidence: str = Field(description="Verbatim log line or event proving root cause")
-    recommended_action: Literal["git_commit", "rebuild_nixos", "delete_resource"]
+    recommended_action: Literal[
+        "flux_reconcile", "git_commit_k8s", "nixos_rebuild", "git_commit_nix", "escalate"
+    ]
     confidence: float = Field(ge=0.0, le=1.0)
-    requires_os_level: bool
     target_host: str | None = Field(
         default=None,
-        description="NixOS hostname for OS tools. Set when requires_os_level=True.",
+        description=(
+            "NixOS hostname for OS tools."
+            " Required when recommended_action is 'nixos_rebuild' or 'git_commit_nix'."
+        ),
     )
     manifest_path: str | None = Field(
         default=None,
@@ -56,12 +60,13 @@ class DiagnosisReport(BaseModel):
 
 @dataclass(frozen=True)
 class DiagnosisDeps:
-    """Exposes kubectl-mcp and nixos-mcp to the diagnosis agent.
+    """Exposes kubectl-mcp, nixos-mcp, and git-mcp to the diagnosis agent.
 
-    nixos-mcp is the typed NixOS interface for OS-layer remediation. ssh-mcp is
-    intentionally excluded — it is a lower-level escape hatch that duplicates
-    nixos-mcp's SSH-backed tools.
+    git-mcp provides declared-state reads via read_file for Kustomization YAML
+    lookup. nixos-mcp is the typed NixOS interface for OS-layer remediation.
+    ssh-mcp is intentionally excluded — it duplicates nixos-mcp's SSH-backed tools.
     """
 
     kubectl_mcp: MCPServerStdio
     nixos_mcp: MCPServerStdio
+    git_mcp: MCPServerStdio

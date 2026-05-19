@@ -43,6 +43,7 @@ class RunRecord(BaseModel):
         "abort",
         "quota_exhausted",
         "baseline_degraded",
+        "escalated",
     ]
     success_rate: bool
     diagnosis_accuracy: bool | None

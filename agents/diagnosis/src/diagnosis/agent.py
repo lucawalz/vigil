@@ -10,7 +10,6 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
-from .manifest_paths import lookup_manifest_path as _lookup_manifest_path
 from .models import DiagnosisDeps, DiagnosisReport
 
 if TYPE_CHECKING:
@@ -113,12 +112,8 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 
 @diagnosis_agent.tool_plain
 def lookup_manifest_path(kind: str, namespace: str, name: str) -> str:
-    """Resolve a Kubernetes resource to its repo-relative manifest path.
-
-    Returns the path on success; returns 'unknown resource: ...' on miss so
-    the agent can surface a None proposed_patch.
-    """
-    return _lookup_manifest_path(kind, namespace, name)
+    """Resolve a Kubernetes resource to its repo-relative manifest path."""
+    return f"unknown resource: {kind}/{namespace}/{name}"
 
 
 async def run_diagnosis(
