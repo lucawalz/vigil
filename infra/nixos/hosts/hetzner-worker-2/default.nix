@@ -8,6 +8,7 @@
     ../../modules/services/monitoring.nix
     ../../modules/services/storage.nix
     ../../modules/services/rollback-gate.nix
+    ../../modules/services/auto-reconciler.nix
   ];
 
   boot.initrd.availableKernelModules = [
@@ -33,5 +34,10 @@
       PermitRootLogin = "prohibit-password";
       PasswordAuthentication = false;
     };
+  };
+
+  services.vigilAutoReconciler = {
+    enable = true;
+    branch = "eval-baseline";
   };
 }
