@@ -161,3 +161,33 @@ func (c *realNixOSClient) EtcdSnapshotSave(_ context.Context, host, destPath str
 	}
 	return c.runSSH(host, fmt.Sprintf("sudo etcdctl snapshot save %s", destPath))
 }
+
+var knownNixOSHosts = map[string]bool{
+	"hetzner-master":   true,
+	"hetzner-worker-1": true,
+	"hetzner-worker-2": true,
+	"hetzner-agent":    true,
+}
+
+func (c *realNixOSClient) GetNixPath(_ context.Context, hostname string) (string, error) {
+	if err := validateArg("hostname", hostname); err != nil {
+		return "", err
+	}
+	if !knownNixOSHosts[hostname] {
+		return "", fmt.Errorf("unknown hostname: %q", hostname)
+	}
+	return fmt.Sprintf("infra/nixos/hosts/%s/default.nix", hostname), nil
+}
+
+func (c *realNixOSClient) DryBuild(_ context.Context, host string) (string, error) {
+	return c.runSSH(host, "sudo nixos-rebuild dry-activate")
+}
+
+func (c *realNixOSClient) TriggerReconcile(_ context.Context, host string) (string, error) {
+	cmd := "systemctl start --no-block vigil-auto-reconcile.service"
+	out, err := c.runSSH(host, cmd)
+	if err != nil {
+		return "", fmt.Errorf("trigger_reconcile: %w", err)
+	}
+	return fmt.Sprintf("issued: %s\nresponse: %s", cmd, out), nil
+}
