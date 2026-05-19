@@ -1,11 +1,10 @@
 id: os-1
 name: nixos-k3s-disabled-via-switch
 layer: os
+expected_action: nixos_rebuild
 
-root_cause_layer: os
 root_cause_component: "k3s disabled by bad NixOS generation on hetzner-worker-1"
-correct_action_class: rebuild_nixos
-expected_resolution_path: "diagnosis -> escalate (requires_os_level=true) -> get_generations -> switch_generation(prev_gen) -> watchdog_confirm"
+expected_resolution_path: "diagnosis -> escalate (requires_os_level=true) -> get_generations -> nixos_rebuild(prev_gen) -> watchdog_confirm"
 
 inject_params:
   target_host: hetzner-worker-1

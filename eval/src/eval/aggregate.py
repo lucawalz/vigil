@@ -90,7 +90,7 @@ def _layer_for_scenario(scenarios_dir: Path, scenario_id: str) -> str | None:
         return None
     with p.open() as fh:
         data = yaml.safe_load(fh) or {}
-    return data.get("root_cause_layer")
+    return data.get("layer")
 
 
 def aggregate_runs(

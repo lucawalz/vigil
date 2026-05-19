@@ -1,11 +1,10 @@
 id: boundary-3
 name: resourcequota-exhausted
 layer: boundary
+expected_action: flux_reconcile
 
-root_cause_layer: k8s
 root_cause_component: "ResourceQuota exhausted; pods Pending with no schedule — surface mimics node memory/CPU pressure, agent must NOT escalate to OS"
-correct_action_class: git_commit
-expected_resolution_path: "diagnosis correctly scopes to k8s (not OS) -> git_commit (raise quota) -> gate_pass -> reconcile -> watchdog_confirm"
+expected_resolution_path: "diagnosis correctly scopes to k8s (not OS) -> flux_reconcile (raise quota) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

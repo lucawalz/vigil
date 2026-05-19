@@ -1,11 +1,10 @@
 id: k8s-1
 name: wrong-image-tag
 layer: k8s
+expected_action: flux_reconcile
 
-root_cause_layer: k8s
 root_cause_component: "Deployment/vigil-app image nginx:bad-tag-v9 (ImagePullBackOff)"
-correct_action_class: git_commit
-expected_resolution_path: "diagnosis -> git_commit (restore image) -> gate_pass -> reconcile -> watchdog_confirm"
+expected_resolution_path: "diagnosis -> flux_reconcile (restore image) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

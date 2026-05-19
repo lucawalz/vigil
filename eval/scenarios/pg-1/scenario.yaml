@@ -1,11 +1,10 @@
 id: pg-1
 name: postgresql-crashloop
 layer: k8s
+expected_action: flux_reconcile
 
-root_cause_layer: k8s
 root_cause_component: "StatefulSet/postgresql primary pod ImagePullBackOff (bad image tag)"
-correct_action_class: git_commit
-expected_resolution_path: "diagnosis -> git_commit (restore image; StatefulSet support pending in lookup_manifest_path) -> gate_pass -> reconcile -> watchdog_confirm"
+expected_resolution_path: "diagnosis -> flux_reconcile (restore image; StatefulSet support pending in lookup_manifest_path) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

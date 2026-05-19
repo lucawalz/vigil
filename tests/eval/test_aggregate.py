@@ -55,8 +55,8 @@ def _make_scenarios_dir(base: Path, scenario_id: str, layer: str = "k8s") -> Pat
     d = base / scenario_id
     d.mkdir(parents=True, exist_ok=True)
     (d / "scenario.yaml").write_text(
-        f"id: {scenario_id}\nname: test\nlayer: {layer}\nroot_cause_layer: {layer}\n"
-        "root_cause_component: x\ncorrect_action_class: rollout_undo\n"
+        f"id: {scenario_id}\nname: test\nlayer: {layer}\n"
+        "root_cause_component: x\nexpected_action: flux_reconcile\n"
         "expected_resolution_path: x\ninject_params: {}\n"
     )
     return base

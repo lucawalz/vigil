@@ -15,6 +15,13 @@ SSH_USER="${SSH_USER:-root}"
 
 echo "between-scenarios: prev=$PREV_SCENARIO group=$GROUP" >&2
 
+echo "between-scenarios: step 0/6 — reset eval-baseline to origin/main" >&2
+git -C "$REPO_ROOT" fetch origin
+git push --force origin "origin/main:eval-baseline"
+echo "between-scenarios: step 0/6 — trigger flux source sync" >&2
+flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
+  || echo "between-scenarios: flux source reconcile failed, continuing" >&2
+
 RUN_JSON="$REPO_ROOT/eval/runs/${PREV_RUN_ID}.json"
 MERGE_SHA=""
 if [ -f "$RUN_JSON" ]; then
