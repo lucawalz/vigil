@@ -35,10 +35,8 @@ def test_run_diagnosis_is_coroutine() -> None:
 
 
 def test_run_diagnosis_uses_only_diagnosis_scoped_toolsets() -> None:
-    """Diagnosis uses kubectl+nixos MCP clients; ssh is excluded."""
     source = inspect.getsource(run_diagnosis)
-    assert "toolsets=[kubectl_readonly, nixos_readonly]" in source
-    assert "flux_mcp" not in source
+    assert "git_readonly" in source
     assert "ssh_mcp" not in source
 
 
@@ -80,27 +78,24 @@ def test_diagnosis_system_prompt_contains_action_selection_rule() -> None:
     assert "recommended_action selection" in source
 
 
-def test_diagnosis_report_escalate_is_invalid() -> None:
-    import pytest
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        DiagnosisReport(
-            root_cause="test",
-            root_cause_component="vigil-app",
-            severity="high",
-            affected_resources=["default/vigil-app"],
-            evidence="test evidence",
-            recommended_action="escalate",
-            confidence=0.9,
-            requires_os_level=False,
-        )
+def test_diagnosis_report_escalate_is_valid() -> None:
+    report = DiagnosisReport(
+        root_cause="non-flux-managed resource",
+        root_cause_component="vigil-app",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="ManifestPathError: not a Kustomization",
+        recommended_action="escalate",
+        confidence=0.9,
+    )
+    assert report.recommended_action == "escalate"
 
 
 def test_system_prompt_uses_git_commit_for_k8s_faults() -> None:
     from diagnosis.agent import _SYSTEM_PROMPT
 
-    assert "git_commit" in _SYSTEM_PROMPT
+    assert "git_commit_k8s" in _SYSTEM_PROMPT
+    assert "delete_resource" not in _SYSTEM_PROMPT
     assert "apply_patch" not in _SYSTEM_PROMPT
     assert "rollout_undo" not in _SYSTEM_PROMPT
 
@@ -126,10 +121,11 @@ def test_system_prompt_covers_rollout_regression_reconstruction() -> None:
     )
 
 
-def test_lookup_manifest_path_registered_as_tool() -> None:
+def test_lookup_manifest_path_helpers_registered_as_tools() -> None:
     source = inspect.getsource(_diag_module)
     assert "@diagnosis_agent.tool_plain" in source
-    assert "def lookup_manifest_path" in source
+    assert "def lookup_k8s_manifest_path" in source
+    assert "def lookup_os_manifest_path" in source
 
 
 def test_kubectl_write_tools_is_empty_frozenset() -> None:
@@ -148,7 +144,7 @@ def test_system_prompt_has_three_axis_labels() -> None:
 def test_system_prompt_contains_new_kubectl_tools() -> None:
     from diagnosis.agent import _SYSTEM_PROMPT
 
-    for tool in ("get_events", "describe_node", "get_taints", "delete_resource"):
+    for tool in ("get_events", "describe_node", "get_taints"):
         assert tool in _SYSTEM_PROMPT, f"expected {tool!r} in _SYSTEM_PROMPT"
 
 
@@ -157,13 +153,6 @@ def test_system_prompt_contains_helmrelease_patch_rule() -> None:
 
     assert "helmrelease.yaml" in _SYSTEM_PROMPT
     assert "spec.values" in _SYSTEM_PROMPT
-
-
-def test_system_prompt_documents_delete_resource_contract() -> None:
-    from diagnosis.agent import _SYSTEM_PROMPT
-
-    assert "delete_resource" in _SYSTEM_PROMPT
-    assert "proposed_patch" in _SYSTEM_PROMPT
 
 
 def test_diagnosis_deps_docstring_rationale() -> None:

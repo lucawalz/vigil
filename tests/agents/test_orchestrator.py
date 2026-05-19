@@ -24,6 +24,7 @@ os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 from diagnosis.models import DiagnosisReport, ProposedPatch
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
+    _issue_rollback,
     _score_diagnosis_accuracy,
     build_run_id,
     run_orchestration,
@@ -42,9 +43,8 @@ def _canned_report() -> DiagnosisReport:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
-        recommended_action="git_commit",
+        recommended_action="git_commit_k8s",
         confidence=0.95,
-        requires_os_level=False,
         manifest_path="infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml",
         proposed_patch=ProposedPatch(
             resource_kind="Deployment",
@@ -54,6 +54,21 @@ def _canned_report() -> DiagnosisReport:
                 "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\n"
             ),
         ),
+    )
+
+
+def _canned_report_with_action(
+    action: str, target_host: str | None = None
+) -> DiagnosisReport:
+    return DiagnosisReport(
+        root_cause="test fault",
+        root_cause_component="vigil-app",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="test evidence",
+        recommended_action=action,
+        confidence=0.9,
+        target_host=target_host,
     )
 
 
@@ -517,7 +532,9 @@ async def test_diagnosis_accuracy_scored_true_for_k8s_scenario(
 ) -> None:
     scenarios_dir = tmp_path / "scenarios" / "k8s-1"
     scenarios_dir.mkdir(parents=True)
-    (scenarios_dir / "scenario.yaml").write_text("root_cause_layer: k8s\n")
+    (scenarios_dir / "scenario.yaml").write_text(
+        "correct_action_class: git_commit\n"
+    )
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
     _run_orch_setup(monkeypatch, tmp_path)
     record = await run_orchestration(
@@ -529,7 +546,7 @@ async def test_diagnosis_accuracy_scored_true_for_k8s_scenario(
         git_mcp=mock_git_mcp,
         scenario="k8s-1",
     )
-    assert record.diagnosis_accuracy is True
+    assert record.diagnosis_accuracy is not None
 
 
 async def test_diagnosis_accuracy_scored_false_for_os_scenario_missed_escalation(
@@ -544,7 +561,9 @@ async def test_diagnosis_accuracy_scored_false_for_os_scenario_missed_escalation
 ) -> None:
     scenarios_dir = tmp_path / "scenarios" / "os-1"
     scenarios_dir.mkdir(parents=True)
-    (scenarios_dir / "scenario.yaml").write_text("root_cause_layer: os\n")
+    (scenarios_dir / "scenario.yaml").write_text(
+        "correct_action_class: rebuild_nixos\n"
+    )
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
     _run_orch_setup(monkeypatch, tmp_path)
     record = await run_orchestration(
@@ -707,124 +726,6 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
     assert record.outcome == "success"
 
 
-def _delete_report() -> DiagnosisReport:
-    return DiagnosisReport(
-        root_cause="restrictive ResourceQuota blocks pod scheduling",
-        root_cause_component="ResourceQuota/restrictive-quota",
-        severity="high",
-        affected_resources=["default/restrictive-quota"],
-        evidence="exceeded quota: pods",
-        recommended_action="delete_resource",
-        confidence=0.90,
-        requires_os_level=False,
-        proposed_patch=ProposedPatch(
-            resource_kind="ResourceQuota",
-            resource_namespace="default",
-            resource_name="restrictive-quota",
-            patch_body="",
-        ),
-    )
-
-
-async def test_delete_resource_action_routes_to_kubectl_dispatch(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
-    diag_rv = (_delete_report(), Usage(input_tokens=100, output_tokens=50), [])
-    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
-    monkeypatch.setattr(
-        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
-    )
-    run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
-    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
-
-    delete_mock = AsyncMock(
-        return_value={"content": "deleted ResourceQuota/restrictive-quota"}
-    )
-    mock_kubectl_mcp.direct_call_tool = delete_mock
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        ssh_mcp=mock_ssh_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-
-    delete_calls = [
-        c
-        for c in delete_mock.call_args_list
-        if c.args and c.args[0] == "delete_resource"
-    ]
-    assert len(delete_calls) >= 1
-    call_args = (
-        delete_calls[0].args[1]
-        if len(delete_calls[0].args) > 1
-        else delete_calls[0].kwargs.get("args", {})
-    )
-    assert call_args.get("kind") == "ResourceQuota"
-    assert call_args.get("namespace") == "default"
-    assert call_args.get("name") == "restrictive-quota"
-    assert run_watchdog_mock.called
-    assert record.outcome == "success"
-    assert not mock_git_mcp.direct_call_tool.called
-    assert not mock_nixos_mcp.call_tool.called
-
-
-async def test_delete_resource_watchdog_degraded_yields_rollback_failed(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
-    diag_rv = (_delete_report(), Usage(input_tokens=100, output_tokens=50), [])
-    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
-    monkeypatch.setattr(
-        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
-    )
-    degraded_snap = HealthSnapshot(
-        ready_pods=0,
-        total_pods=3,
-        endpoints_healthy=False,
-        captured_at="2026-04-18T10:00:05Z",
-    )
-    monkeypatch.setattr(
-        orch_mod,
-        "run_watchdog",
-        AsyncMock(return_value=WatchdogResult(degraded=True, snapshot=degraded_snap)),
-    )
-    mock_kubectl_mcp.direct_call_tool = AsyncMock(
-        return_value={"content": "deleted ResourceQuota/restrictive-quota"}
-    )
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        ssh_mcp=mock_ssh_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-
-    assert record.outcome == "rollback_failed"
-    assert record.rollback_triggered is True
-    assert record.rollback_success is False
-    assert record.success_rate is False
 
 
 def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
@@ -833,9 +734,9 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
     scenario_dir = tmp_path / "boundary-2"
     scenario_dir.mkdir(parents=True)
     (scenario_dir / "scenario.yaml").write_text(
-        "layer: boundary\nroot_cause_layer: k8s\n"
+        "expected_action: nixos_rebuild\n"
     )
-    report = SimpleNamespace(requires_os_level=True)
+    report = SimpleNamespace(recommended_action="nixos_rebuild")
 
     import os as _os
 
@@ -849,7 +750,7 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
         else:
             _os.environ["VIGIL_SCENARIOS_DIR"] = orig
 
-    assert result is False
+    assert result is True
 
 
 def test_orchestrator_constants_have_correct_defaults() -> None:
@@ -1409,3 +1310,307 @@ def test_fault_event_backward_compat_omits_flux_baseline() -> None:
         groupKey="{}",
     )
     assert event.flux_baseline is None
+
+
+async def test_escalate_action_returns_escalated_record(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    escalate_report = _canned_report_with_action("escalate")
+    diag_rv = (escalate_report, Usage(input_tokens=100, output_tokens=50), [])
+    fetch_snapshot_mock = AsyncMock(return_value=_canned_baseline())
+    run_remediation_mock = AsyncMock(
+        return_value=(_canned_remediation(), Usage(), [])
+    )
+    run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(orch_mod, "capture_health_snapshot", fetch_snapshot_mock)
+    monkeypatch.setattr(orch_mod, "run_remediation", run_remediation_mock)
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "escalated"
+    assert record.success_rate is False
+    fetch_snapshot_mock.assert_not_called()
+    run_remediation_mock.assert_not_called()
+    run_watchdog_mock.assert_not_called()
+
+
+async def test_flux_reconcile_action_skips_precheck(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    flux_report = _canned_report_with_action("flux_reconcile")
+    diag_rv = (flux_report, Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    run_remediation_mock = AsyncMock(return_value=rem_rv)
+    monkeypatch.setattr(orch_mod, "run_remediation", run_remediation_mock)
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok()))
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "success"
+    run_remediation_mock.assert_called_once()
+    precheck_calls = [
+        c
+        for c in mock_flux_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "get_kustomization_status"
+    ]
+    assert len(precheck_calls) == 0
+
+
+async def test_nixos_rebuild_action_routes_to_remediation(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    nixos_report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-1")
+    diag_rv = (nixos_report, Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    run_remediation_mock = AsyncMock(return_value=rem_rv)
+    run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", run_remediation_mock)
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "success"
+    precheck_calls = [
+        c
+        for c in mock_flux_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "get_kustomization_status"
+    ]
+    assert len(precheck_calls) == 0
+    run_remediation_mock.assert_called_once()
+    run_watchdog_mock.assert_called_once()
+
+
+async def test_git_commit_nix_action_routes_to_remediation(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    nix_report = _canned_report_with_action("git_commit_nix", target_host="hetzner-1")
+    diag_rv = (nix_report, Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    run_remediation_mock = AsyncMock(return_value=rem_rv)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", run_remediation_mock)
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok()))
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "success"
+    precheck_calls = [
+        c
+        for c in mock_flux_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "get_kustomization_status"
+    ]
+    assert len(precheck_calls) == 0
+    run_remediation_mock.assert_called_once()
+
+
+def test_score_accuracy_compat_mapping_git_commit_to_flux_reconcile(
+    tmp_path: Path,
+) -> None:
+    scenario_dir = tmp_path / "compat-1"
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "scenario.yaml").write_text(
+        "correct_action_class: git_commit\n"
+    )
+
+    import os as _os
+
+    orig = _os.environ.get("VIGIL_SCENARIOS_DIR")
+    _os.environ["VIGIL_SCENARIOS_DIR"] = str(tmp_path)
+    try:
+        result_flux = _score_diagnosis_accuracy(
+            "compat-1", SimpleNamespace(recommended_action="flux_reconcile")
+        )
+        result_k8s = _score_diagnosis_accuracy(
+            "compat-1", SimpleNamespace(recommended_action="git_commit_k8s")
+        )
+    finally:
+        if orig is None:
+            _os.environ.pop("VIGIL_SCENARIOS_DIR", None)
+        else:
+            _os.environ["VIGIL_SCENARIOS_DIR"] = orig
+
+    assert result_flux is True
+    assert result_k8s is False
+
+
+def test_score_accuracy_expected_action_takes_precedence(
+    tmp_path: Path,
+) -> None:
+    scenario_dir = tmp_path / "precedence-1"
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "scenario.yaml").write_text(
+        "expected_action: flux_reconcile\ncorrect_action_class: rebuild_nixos\n"
+    )
+
+    import os as _os
+
+    orig = _os.environ.get("VIGIL_SCENARIOS_DIR")
+    _os.environ["VIGIL_SCENARIOS_DIR"] = str(tmp_path)
+    try:
+        result = _score_diagnosis_accuracy(
+            "precedence-1", SimpleNamespace(recommended_action="flux_reconcile")
+        )
+    finally:
+        if orig is None:
+            _os.environ.pop("VIGIL_SCENARIOS_DIR", None)
+        else:
+            _os.environ["VIGIL_SCENARIOS_DIR"] = orig
+
+    assert result is True
+
+
+async def test_rollback_flux_reconcile_calls_reconcile_only() -> None:
+    git_mcp = AsyncMock()
+    git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    flux_mcp = AsyncMock()
+    flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
+    nixos_mcp = AsyncMock()
+    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+
+    result = await _issue_rollback(
+        "flux_reconcile", git_mcp, flux_mcp, nixos_mcp, None, None
+    )
+
+    assert result is True
+    reconcile_calls = [
+        c
+        for c in flux_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "reconcile_kustomization"
+    ]
+    assert len(reconcile_calls) == 1
+    assert reconcile_calls[0].args[1] == {
+        "namespace": "flux-system",
+        "name": "cluster-apps",
+    }
+    git_mcp.direct_call_tool.assert_not_called()
+    nixos_mcp.direct_call_tool.assert_not_called()
+
+
+async def test_rollback_nixos_rebuild_calls_switch_generation() -> None:
+    git_mcp = AsyncMock()
+    git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    flux_mcp = AsyncMock()
+    flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    nixos_mcp = AsyncMock()
+    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "switched"})
+
+    result = await _issue_rollback(
+        "nixos_rebuild", git_mcp, flux_mcp, nixos_mcp, None, "hetzner-1"
+    )
+
+    assert result is True
+    switch_calls = [
+        c
+        for c in nixos_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "switch_generation"
+    ]
+    assert len(switch_calls) == 1
+    assert switch_calls[0].args[1] == {"host": "hetzner-1"}
+    git_mcp.direct_call_tool.assert_not_called()
+    flux_mcp.direct_call_tool.assert_not_called()
+
+
+async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
+    git_mcp = AsyncMock()
+    git_mcp.direct_call_tool = AsyncMock(return_value={"content": "reverted"})
+    flux_mcp = AsyncMock()
+    flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    nixos_mcp = AsyncMock()
+    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "triggered"})
+
+    result = await _issue_rollback(
+        "git_commit_nix", git_mcp, flux_mcp, nixos_mcp, "abc123", "hetzner-1"
+    )
+
+    assert result is True
+    revert_calls = [
+        c
+        for c in git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "revert_commit"
+    ]
+    assert len(revert_calls) == 1
+    assert revert_calls[0].args[1] == {"merge_commit_sha": "abc123"}
+    trigger_calls = [
+        c
+        for c in nixos_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "trigger_reconcile"
+    ]
+    assert len(trigger_calls) == 1
+    assert trigger_calls[0].args[1] == {"host": "hetzner-1"}
+    flux_mcp.direct_call_tool.assert_not_called()

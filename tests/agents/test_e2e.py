@@ -34,9 +34,8 @@ def _canned_report() -> DiagnosisReport:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
-        recommended_action="git_commit",
+        recommended_action="git_commit_k8s",
         confidence=0.95,
-        requires_os_level=False,
     )
 
 

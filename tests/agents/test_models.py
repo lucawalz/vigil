@@ -26,9 +26,8 @@ def test_diagnosis_report_rejects_bad_severity() -> None:
             severity="catastrophic",
             affected_resources=["default/vigil-app"],
             evidence="Failed to pull image",
-            recommended_action="git_commit",
+            recommended_action="git_commit_k8s",
             confidence=0.9,
-            requires_os_level=False,
         )
 
 
@@ -42,7 +41,6 @@ def test_diagnosis_report_rejects_bad_action() -> None:
             evidence="Failed to pull image",
             recommended_action="delete_cluster",
             confidence=0.9,
-            requires_os_level=False,
         )
 
 
@@ -54,22 +52,20 @@ def test_diagnosis_report_confidence_bounds() -> None:
             severity="low",
             affected_resources=[],
             evidence="z",
-            recommended_action="git_commit",
-            confidence=1.5,  # out of range
-            requires_os_level=False,
+            recommended_action="git_commit_k8s",
+            confidence=1.5,
         )
 
 
-def test_diagnosis_report_accepts_git_commit_action() -> None:
+def test_diagnosis_report_accepts_git_commit_k8s_action() -> None:
     r = DiagnosisReport(
         root_cause="image tag wrong",
         root_cause_component="vigil-app:bad-tag-v9",
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image",
-        recommended_action="git_commit",
+        recommended_action="git_commit_k8s",
         confidence=0.9,
-        requires_os_level=False,
     )
     assert r.manifest_path is None
     assert r.proposed_patch is None
@@ -82,9 +78,8 @@ def test_diagnosis_report_backward_compat_no_new_fields() -> None:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image",
-        recommended_action="git_commit",
+        recommended_action="git_commit_k8s",
         confidence=0.9,
-        requires_os_level=False,
     )
     assert r.manifest_path is None
     assert r.proposed_patch is None
@@ -103,9 +98,8 @@ def test_diagnosis_report_with_proposed_patch_roundtrip() -> None:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image",
-        recommended_action="git_commit",
+        recommended_action="git_commit_k8s",
         confidence=0.9,
-        requires_os_level=False,
         manifest_path="apps/vigil/deployment.yaml",
         proposed_patch=patch,
     )
@@ -144,7 +138,6 @@ def test_diagnosis_report_rejects_delete_cluster_still_invalid() -> None:
             evidence="Failed to pull image",
             recommended_action="delete_cluster",
             confidence=0.9,
-            requires_os_level=False,
         )
 
 
@@ -176,6 +169,33 @@ def test_run_record_roundtrip() -> None:
     )
     j = record.model_dump_json()
     assert RunRecord.model_validate_json(j) == record
+
+
+def test_run_record_outcome_accepts_escalated() -> None:
+    record = RunRecord(
+        run_id="k8s-1_seed-20260418T100000Z_llama-3.3-70b_abcd123",
+        scenario="k8s-1",
+        seed="seed-20260418T100000Z",
+        model="llama-3.3-70b",
+        git_sha7="abcd123",
+        started_at="2026-04-18T10:00:00Z",
+        ended_at="2026-04-18T10:02:00Z",
+        outcome="escalated",
+        success_rate=False,
+        diagnosis_accuracy=None,
+        MTTR_s=5.0,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=200,
+        total_output_tokens=80,
+        total_tool_calls=3,
+        iteration_count=2,
+        autonomy_level="full",
+        actions_taken=[],
+    )
+    assert record.outcome == "escalated"
+    assert record.success_rate is False
 
 
 def test_run_record_new_fields_default_none() -> None:
