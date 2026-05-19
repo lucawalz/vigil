@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -38,6 +39,8 @@ type fakeGitClient struct {
 	closePRCalls      int
 	deleteBranchErr   error
 	deleteBranchCalls int
+	readFileOut       string
+	readFileErr       error
 }
 
 var _ git.GitClient = &fakeGitClient{}
@@ -88,6 +91,10 @@ func (f *fakeGitClient) ClosePR(_ context.Context, _ int) error {
 func (f *fakeGitClient) DeleteBranch(_ context.Context, _ string) error {
 	f.deleteBranchCalls++
 	return f.deleteBranchErr
+}
+
+func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, error) {
+	return f.readFileOut, f.readFileErr
 }
 
 type fakeSessionState struct {
@@ -863,6 +870,159 @@ func TestDeleteBranchHandler_MissingArgument(t *testing.T) {
 	text := result.Content[0].(mcp.TextContent).Text
 	if !strings.Contains(text, "branch") {
 		t.Errorf("expected 'branch' in error message, got: %s", text)
+	}
+}
+
+func TestReadFileHandler_Success(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{readFileOut: "apiVersion: v1\nkind: ConfigMap\n"}
+	state := preloadedState(cloneDir, "eval-baseline")
+	tool := mcp.NewTool("read_file",
+		mcp.WithString("branch", mcp.Required()),
+		mcp.WithString("path", mcp.Required()),
+	)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
+		"branch": "eval-baseline",
+		"path":   "infra/k8s/cm.yaml",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "apiVersion: v1") {
+		t.Errorf("expected YAML in response, got: %s", text)
+	}
+}
+
+func TestReadFileHandler_BranchNotFound(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{readFileErr: errors.New("branch not found: missing-branch")}
+	state := preloadedState(cloneDir, "eval-baseline")
+	tool := mcp.NewTool("read_file",
+		mcp.WithString("branch", mcp.Required()),
+		mcp.WithString("path", mcp.Required()),
+	)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
+		"branch": "missing-branch",
+		"path":   "infra/k8s/cm.yaml",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for branch not found")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "branch not found") {
+		t.Errorf("expected 'branch not found' in error, got: %s", text)
+	}
+}
+
+func TestReadFileHandler_PathNotFound(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{readFileErr: errors.New("path not found: nope.yaml")}
+	state := preloadedState(cloneDir, "eval-baseline")
+	tool := mcp.NewTool("read_file",
+		mcp.WithString("branch", mcp.Required()),
+		mcp.WithString("path", mcp.Required()),
+	)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
+		"branch": "eval-baseline",
+		"path":   "nope.yaml",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for path not found")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "path not found") {
+		t.Errorf("expected 'path not found' in error, got: %s", text)
+	}
+}
+
+func TestReadFileHandler_MissingBranch(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "eval-baseline")
+	tool := mcp.NewTool("read_file",
+		mcp.WithString("branch", mcp.Required()),
+		mcp.WithString("path", mcp.Required()),
+	)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
+		"path": "infra/k8s/cm.yaml",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing branch")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "branch") {
+		t.Errorf("expected 'branch' in error, got: %s", text)
+	}
+}
+
+func TestReadFileHandler_MissingPath(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "eval-baseline")
+	tool := mcp.NewTool("read_file",
+		mcp.WithString("branch", mcp.Required()),
+		mcp.WithString("path", mcp.Required()),
+	)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
+		"branch": "eval-baseline",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing path")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "path") {
+		t.Errorf("expected 'path' in error, got: %s", text)
+	}
+}
+
+func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
+	fake := &fakeGitClient{}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("read_file",
+		mcp.WithString("branch", mcp.Required()),
+		mcp.WithString("path", mcp.Required()),
+	)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
+		"branch": "eval-baseline",
+		"path":   "infra/k8s/cm.yaml",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true when session not initialised")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "session not initialised") {
+		t.Errorf("expected 'session not initialised' in error, got: %s", text)
 	}
 }
 
