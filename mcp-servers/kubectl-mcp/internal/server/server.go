@@ -138,5 +138,24 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 		k8s.HandleDeleteResource(client, cfg.MaxOutputBytesDescribe),
 	)
 
+	s.AddTool(
+		mcp.NewTool("get_resource_yaml",
+			mcp.WithDescription("Get live YAML for any Kubernetes resource (system fields stripped)"),
+			mcp.WithString("kind",
+				mcp.Required(),
+				mcp.Description("Resource kind e.g. Deployment, ConfigMap, HorizontalPodAutoscaler"),
+			),
+			mcp.WithString("namespace",
+				mcp.Required(),
+				mcp.Description("Kubernetes namespace (empty string for cluster-scoped resources)"),
+			),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("Resource name"),
+			),
+		),
+		k8s.HandleGetResourceYaml(client, cfg.MaxOutputBytesDescribe),
+	)
+
 	return s
 }

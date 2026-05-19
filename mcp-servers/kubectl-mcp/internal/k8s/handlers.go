@@ -177,3 +177,26 @@ func HandleDeleteResource(client K8sClient, maxBytes int) server.ToolHandlerFunc
 		return mcp.NewToolResultText(output), nil
 	}
 }
+
+func HandleGetResourceYaml(client K8sClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		kind, ok := args["kind"].(string)
+		if !ok || kind == "" {
+			return mcp.NewToolResultError("kind: missing or wrong type"), nil
+		}
+		ns, ok := args["namespace"].(string)
+		if !ok || ns == "" {
+			return mcp.NewToolResultError("namespace: missing or wrong type"), nil
+		}
+		name, ok := args["name"].(string)
+		if !ok || name == "" {
+			return mcp.NewToolResultError("name: missing or wrong type"), nil
+		}
+		output, err := client.GetResourceYAML(ctx, kind, ns, name)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("GetResourceYAML: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
+	}
+}
