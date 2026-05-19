@@ -360,8 +360,13 @@ async def run_one(
     if runs_dir is None:
         runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
 
+    reset_baseline_sh = scenarios_dir.parent / "scripts" / "reset-eval-baseline.sh"
     reset_sh = _script_path(scenarios_dir, scenario_id, "reset.sh")
     inject_sh = _script_path(scenarios_dir, scenario_id, "inject.sh")
+
+    if reset_baseline_sh.is_file():
+        log.info("resetting eval-baseline before %s", scenario_id)
+        _run_script(reset_baseline_sh, seed, verbose=verbose)
 
     log.info("running reset.sh for %s", scenario_id)
     _run_script(reset_sh, seed, verbose=verbose)
