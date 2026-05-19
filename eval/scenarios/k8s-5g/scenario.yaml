@@ -1,0 +1,12 @@
+id: k8s-5g
+name: selector-mismatch-committed
+layer: k8s
+expected_action: git_commit_k8s
+
+root_cause_component: "vigil-app.yaml committed spec.selector.matchLabels.app: vigil-app-typo on eval-baseline; observable symptom is a Flux Kustomization apply failure (selector is immutable on an existing Deployment) rather than a pod crash; agent must fix the manifest via PR"
+expected_resolution_path: "diagnosis -> git_commit_k8s (revert selector to vigil-app in manifest) -> gate_pass -> reconcile -> watchdog_confirm"
+
+inject_params:
+  manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
+  bad_selector_label: "vigil-app-typo"
+  good_selector_label: "vigil-app"

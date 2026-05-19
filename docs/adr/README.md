@@ -20,6 +20,7 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0012](0012-empirically-calibrated-rollback-deadline.md) | Empirically-calibrated dead-man's switch deadline | Accepted |
 | [0013](0013-gitops-k8s-remediation.md) | K8s-layer remediation via GitOps | Accepted |
 | [0014](0014-multi-adapter-model-factory.md) | Multi-adapter model factory via Pydantic AI | Accepted |
+| [0015](0015-drift-direction-classification.md) | Drift-direction classification across K8s and NixOS layers | Accepted |
 
 Architecture-level rationale that spans multiple ADRs lives in [`docs/architecture/`](../architecture/).
 

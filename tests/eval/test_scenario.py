@@ -14,14 +14,14 @@ from pydantic import ValidationError
 def real_scenarios(scenarios_dir: Path) -> list[ScenarioDefinition]:
     if (
         not scenarios_dir.exists()
-        or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 18
+        or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 26
     ):
         pytest.skip("scenarios directory not fully populated yet")
     return load_scenarios(scenarios_dir)
 
 
 def test_load_all_scenarios(real_scenarios: list[ScenarioDefinition]) -> None:
-    assert len(real_scenarios) == 18
+    assert len(real_scenarios) == 26
     ids = [s.id for s in real_scenarios]
     assert sorted(ids) == [
         "boundary-1",
@@ -33,13 +33,21 @@ def test_load_all_scenarios(real_scenarios: list[ScenarioDefinition]) -> None:
         "cross-3",
         "ingress-1",
         "k8s-1",
+        "k8s-1g",
         "k8s-2",
+        "k8s-2g",
         "k8s-3",
+        "k8s-3g",
         "k8s-4",
+        "k8s-4g",
         "k8s-5",
+        "k8s-5g",
         "os-1",
+        "os-1g",
         "os-2",
+        "os-2g",
         "os-3",
+        "os-3g",
         "pg-1",
         "redis-1",
     ]
