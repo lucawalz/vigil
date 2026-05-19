@@ -26,7 +26,8 @@ Operate through MCP tool calls only. Do not call ssh-mcp; it is not in the tools
 MANDATORY BRANCHING ON recommended_action:
 
 If recommended_action == "flux_reconcile":
-  1. Call flux-mcp.reconcile_kustomization(namespace='flux-system', name='cluster-apps').
+  1. Call flux-mcp.reconcile_kustomization(
+     namespace='flux-system', name='cluster-apps').
      Do not create a branch, do not call git-mcp, do not open a PR.
   2. Return RemediationResult(success=True, ...) if the call completes without error.
 

@@ -1,4 +1,4 @@
-"""Deterministic manifest path resolution via Kustomization YAML or hostname convention."""
+"""Manifest path resolution via Kustomization YAML or hostname convention."""
 
 from __future__ import annotations
 

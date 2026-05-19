@@ -246,7 +246,9 @@ async def run_orchestration(
     breaker = _CircuitBreaker()
     model = build_model(model_name)
 
-    diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp, git_mcp=git_mcp)
+    diagnosis_deps = DiagnosisDeps(
+        kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp, git_mcp=git_mcp
+    )
     remediation_deps = RemediationDeps(
         git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
     )

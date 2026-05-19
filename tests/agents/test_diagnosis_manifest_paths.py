@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from diagnosis.manifest_paths import (
     ManifestPathError,
     lookup_k8s_manifest_path,

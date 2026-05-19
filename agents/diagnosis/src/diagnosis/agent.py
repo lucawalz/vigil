@@ -11,8 +11,9 @@ from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .manifest_paths import (
-    ManifestPathError,
     lookup_k8s_manifest_path as _lookup_k8s_manifest_path,
+)
+from .manifest_paths import (
     lookup_os_manifest_path as _lookup_os_manifest_path,
 )
 from .models import DiagnosisDeps, DiagnosisReport
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
     from orchestrator.models import FaultEvent
 
 
-_SYSTEM_PROMPT = """Diagnosis agent for the GitOps four-quadrant fault classification system.
+_SYSTEM_PROMPT = """GitOps four-quadrant fault classification agent.
 Classify each fault into exactly one of five action classes and emit a DiagnosisReport.
 Emit only tool calls from the list below; do not invent tool names.
 
@@ -82,7 +83,8 @@ Workflow for K8s faults:
 2. Read the Flux annotations kustomize.toolkit.fluxcd.io/name and
    kustomize.toolkit.fluxcd.io/namespace from the live YAML to identify which
    Kustomization manages the resource.
-3. Fetch the Kustomization YAML via get_resource_yaml("Kustomization", flux_ns, flux_name).
+3. Fetch the Kustomization YAML via get_resource_yaml(
+   "Kustomization", flux_ns, flux_name).
 4. Call lookup_k8s_manifest_path(kustomization_yaml, resource_name) to derive the
    repo-relative manifest path. If this call raises ManifestPathError (the tool
    returns an error result), emit recommended_action="escalate" immediately.
@@ -152,7 +154,7 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 
 @diagnosis_agent.tool_plain
 def lookup_k8s_manifest_path(kustomization_yaml: str, resource_name: str) -> str:
-    """Resolve a Kustomization YAML to the repo-relative manifest path for the named resource."""
+    """Resolve a Kustomization YAML to the repo-relative manifest path."""
     return _lookup_k8s_manifest_path(kustomization_yaml, resource_name)
 
 

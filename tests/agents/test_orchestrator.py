@@ -1372,7 +1372,9 @@ async def test_flux_reconcile_action_skips_precheck(
     )
     run_remediation_mock = AsyncMock(return_value=rem_rv)
     monkeypatch.setattr(orch_mod, "run_remediation", run_remediation_mock)
-    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok()))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
 
     record = await run_orchestration(
         sample_fault_event,
@@ -1458,7 +1460,9 @@ async def test_git_commit_nix_action_routes_to_remediation(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
     )
     monkeypatch.setattr(orch_mod, "run_remediation", run_remediation_mock)
-    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok()))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
 
     record = await run_orchestration(
         sample_fault_event,
