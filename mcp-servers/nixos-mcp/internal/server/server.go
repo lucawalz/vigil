@@ -66,5 +66,29 @@ func NewServer(client nixos.NixOSClient, cfg *config.Config) *server.MCPServer {
 		nixos.HandleEtcdSnapshotSave(client, cfg.MaxOutputBytesDescribe),
 	)
 
+	s.AddTool(
+		mcp.NewTool("get_nix_path",
+			mcp.WithDescription("Return repo-relative NixOS config path for a known hostname"),
+			mcp.WithString("hostname", mcp.Required(), mcp.Description("NixOS host name e.g. hetzner-master")),
+		),
+		nixos.HandleGetNixPath(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
+		mcp.NewTool("dry_build",
+			mcp.WithDescription("Run nixos-rebuild dry-activate on a host and return the pending activation diff"),
+			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),
+		),
+		nixos.HandleDryBuild(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
+		mcp.NewTool("trigger_reconcile",
+			mcp.WithDescription("Start vigil-auto-reconcile.service on a host (fire-and-forget)"),
+			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),
+		),
+		nixos.HandleTriggerReconcile(client, cfg.MaxOutputBytesDescribe),
+	)
+
 	return s
 }

@@ -115,3 +115,48 @@ func HandleEtcdSnapshotSave(client NixOSClient, maxBytes int) server.ToolHandler
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
 }
+
+func HandleGetNixPath(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		hostname, ok := args["hostname"].(string)
+		if !ok || hostname == "" {
+			return mcp.NewToolResultError("hostname: missing or wrong type"), nil
+		}
+		out, err := client.GetNixPath(ctx, hostname)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("GetNixPath: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
+	}
+}
+
+func HandleDryBuild(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		host, ok := args["host"].(string)
+		if !ok || host == "" {
+			return mcp.NewToolResultError("host: missing or wrong type"), nil
+		}
+		out, err := client.DryBuild(ctx, host)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("DryBuild: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
+	}
+}
+
+func HandleTriggerReconcile(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		host, ok := args["host"].(string)
+		if !ok || host == "" {
+			return mcp.NewToolResultError("host: missing or wrong type"), nil
+		}
+		out, err := client.TriggerReconcile(ctx, host)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("TriggerReconcile: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
+	}
+}
