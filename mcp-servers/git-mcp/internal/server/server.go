@@ -185,5 +185,14 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 		git.HandleDeleteBranch(client, s, cfg.MaxOutputBytes),
 	)
 
+	mcpServer.AddTool(
+		mcp.NewTool("read_file",
+			mcp.WithDescription("Read a file from the repository at a given branch tip"),
+			mcp.WithString("branch", mcp.Required(), mcp.Description("Branch name to read from")),
+			mcp.WithString("path", mcp.Required(), mcp.Description("Repo-relative file path")),
+		),
+		git.HandleReadFile(client, s, cfg.MaxOutputBytes),
+	)
+
 	return mcpServer
 }

@@ -259,6 +259,29 @@ func HandleDeleteBranch(client GitClient, state SessionState, maxBytes int) serv
 	}
 }
 
+func HandleReadFile(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		branch, ok := args["branch"].(string)
+		if !ok || branch == "" {
+			return mcp.NewToolResultError("branch: missing or wrong type"), nil
+		}
+		path, ok := args["path"].(string)
+		if !ok || path == "" {
+			return mcp.NewToolResultError("path: missing or wrong type"), nil
+		}
+		cloneDir := state.CloneDir()
+		if cloneDir == "" {
+			return mcp.NewToolResultError("HandleReadFile: session not initialised; call create_branch first"), nil
+		}
+		contents, err := client.ReadFile(ctx, cloneDir, branch, path)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("HandleReadFile: %v", err)), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(contents, maxBytes)), nil
+	}
+}
+
 func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
