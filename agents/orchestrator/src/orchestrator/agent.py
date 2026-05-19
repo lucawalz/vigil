@@ -101,12 +101,6 @@ def build_run_id(
     return run_id, seed_str, sha7
 
 
-_COMPAT_ACTION_MAP: dict[str, str] = {
-    "git_commit": "flux_reconcile",
-    "rebuild_nixos": "nixos_rebuild",
-}
-
-
 def _load_scenario_data(scenario: str) -> dict:
     import yaml
 
@@ -123,15 +117,9 @@ def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
     if not data:
         return None
     expected = data.get("expected_action")
-    if expected is not None:
-        return report.recommended_action == expected
-    correct = data.get("correct_action_class")
-    if correct is None:
+    if expected is None:
         return None
-    mapped = _COMPAT_ACTION_MAP.get(correct)
-    if mapped is None:
-        return None
-    return report.recommended_action == mapped
+    return report.recommended_action == expected
 
 
 def _check_forbidden_actions(scenario: str, actions_taken: list[str]) -> list[str]:

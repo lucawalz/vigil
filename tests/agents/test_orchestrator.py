@@ -532,7 +532,7 @@ async def test_diagnosis_accuracy_scored_true_for_k8s_scenario(
 ) -> None:
     scenarios_dir = tmp_path / "scenarios" / "k8s-1"
     scenarios_dir.mkdir(parents=True)
-    (scenarios_dir / "scenario.yaml").write_text("correct_action_class: git_commit\n")
+    (scenarios_dir / "scenario.yaml").write_text("expected_action: flux_reconcile\n")
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
     _run_orch_setup(monkeypatch, tmp_path)
     record = await run_orchestration(
@@ -559,9 +559,7 @@ async def test_diagnosis_accuracy_scored_false_for_os_scenario_missed_escalation
 ) -> None:
     scenarios_dir = tmp_path / "scenarios" / "os-1"
     scenarios_dir.mkdir(parents=True)
-    (scenarios_dir / "scenario.yaml").write_text(
-        "correct_action_class: rebuild_nixos\n"
-    )
+    (scenarios_dir / "scenario.yaml").write_text("expected_action: nixos_rebuild\n")
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
     _run_orch_setup(monkeypatch, tmp_path)
     record = await run_orchestration(
@@ -1475,23 +1473,23 @@ async def test_git_commit_nix_action_routes_to_remediation(
     run_remediation_mock.assert_called_once()
 
 
-def test_score_accuracy_compat_mapping_git_commit_to_flux_reconcile(
+def test_score_accuracy_flux_reconcile_matches_expected_action(
     tmp_path: Path,
 ) -> None:
-    scenario_dir = tmp_path / "compat-1"
+    scenario_dir = tmp_path / "k8s-score"
     scenario_dir.mkdir(parents=True)
-    (scenario_dir / "scenario.yaml").write_text("correct_action_class: git_commit\n")
+    (scenario_dir / "scenario.yaml").write_text("expected_action: flux_reconcile\n")
 
     import os as _os
 
     orig = _os.environ.get("VIGIL_SCENARIOS_DIR")
     _os.environ["VIGIL_SCENARIOS_DIR"] = str(tmp_path)
     try:
-        result_flux = _score_diagnosis_accuracy(
-            "compat-1", SimpleNamespace(recommended_action="flux_reconcile")
+        result_match = _score_diagnosis_accuracy(
+            "k8s-score", SimpleNamespace(recommended_action="flux_reconcile")
         )
-        result_k8s = _score_diagnosis_accuracy(
-            "compat-1", SimpleNamespace(recommended_action="git_commit_k8s")
+        result_miss = _score_diagnosis_accuracy(
+            "k8s-score", SimpleNamespace(recommended_action="nixos_rebuild")
         )
     finally:
         if orig is None:
@@ -1499,18 +1497,16 @@ def test_score_accuracy_compat_mapping_git_commit_to_flux_reconcile(
         else:
             _os.environ["VIGIL_SCENARIOS_DIR"] = orig
 
-    assert result_flux is True
-    assert result_k8s is False
+    assert result_match is True
+    assert result_miss is False
 
 
-def test_score_accuracy_expected_action_takes_precedence(
+def test_score_accuracy_none_when_expected_action_absent(
     tmp_path: Path,
 ) -> None:
-    scenario_dir = tmp_path / "precedence-1"
+    scenario_dir = tmp_path / "no-action"
     scenario_dir.mkdir(parents=True)
-    (scenario_dir / "scenario.yaml").write_text(
-        "expected_action: flux_reconcile\ncorrect_action_class: rebuild_nixos\n"
-    )
+    (scenario_dir / "scenario.yaml").write_text("id: no-action\nname: x\n")
 
     import os as _os
 
@@ -1518,7 +1514,7 @@ def test_score_accuracy_expected_action_takes_precedence(
     _os.environ["VIGIL_SCENARIOS_DIR"] = str(tmp_path)
     try:
         result = _score_diagnosis_accuracy(
-            "precedence-1", SimpleNamespace(recommended_action="flux_reconcile")
+            "no-action", SimpleNamespace(recommended_action="flux_reconcile")
         )
     finally:
         if orig is None:
@@ -1526,7 +1522,7 @@ def test_score_accuracy_expected_action_takes_precedence(
         else:
             _os.environ["VIGIL_SCENARIOS_DIR"] = orig
 
-    assert result is True
+    assert result is None
 
 
 async def test_rollback_flux_reconcile_calls_reconcile_only() -> None:

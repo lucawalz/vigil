@@ -182,8 +182,8 @@ def _make_scenario_yaml(scenarios_dir: Path, sid: str) -> None:
     d = scenarios_dir / sid
     d.mkdir(parents=True, exist_ok=True)
     (d / "scenario.yaml").write_text(
-        f"id: {sid}\nname: test\nlayer: k8s\nroot_cause_layer: k8s\n"
-        "root_cause_component: x\ncorrect_action_class: rollout_undo\n"
+        f"id: {sid}\nname: test\nlayer: k8s\n"
+        "root_cause_component: x\nexpected_action: flux_reconcile\n"
         "expected_resolution_path: x\ninject_params: {}\n"
     )
 
