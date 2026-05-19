@@ -27,7 +27,7 @@ let
   };
   git-mcp = mkMcpServer {
     name = "git-mcp";
-    vendorHash = "sha256-6WWWH/NkdSXUjG1+fMa0dUGwU2E4VhwLvYguygvCGBM=";
+    vendorHash = "sha256-tq7OmbnjzeqL8xu3tbY5gi4IPEenYTR4fegGYvutpCE=";
   };
 in
 {
