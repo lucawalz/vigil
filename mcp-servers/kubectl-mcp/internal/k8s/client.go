@@ -10,9 +10,16 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery/cached/memory"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
+	sigsyaml "sigs.k8s.io/yaml"
 )
 
 const eventsDelimiter = "\nEvents:"
@@ -32,6 +39,8 @@ type K8sClient interface {
 
 type realK8sClient struct {
 	cs *kubernetes.Clientset
+	dc dynamic.Interface
+	rm meta.RESTMapper
 }
 
 // NewRealK8sClient creates one singleton Clientset at server startup.
@@ -41,7 +50,13 @@ func NewRealK8sClient(cfg *rest.Config) K8sClient {
 	if err != nil {
 		log.Fatalf("kubernetes.NewForConfig: %v", err)
 	}
-	return &realK8sClient{cs: cs}
+	dc, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		log.Fatalf("dynamic.NewForConfig: %v", err)
+	}
+	cached := memory.NewMemCacheClient(cs.Discovery())
+	rm := restmapper.NewDeferredDiscoveryRESTMapper(cached)
+	return &realK8sClient{cs: cs, dc: dc, rm: rm}
 }
 
 func (c *realK8sClient) GetNodes(ctx context.Context) (string, error) {
@@ -245,6 +260,33 @@ func (c *realK8sClient) DeleteResource(ctx context.Context, kind, namespace, nam
 		return "", fmt.Errorf("delete %s/%s/%s: %w", kind, namespace, name, err)
 	}
 	return fmt.Sprintf("%s/%s/%s deleted", kind, namespace, name), nil
+}
+
+func (c *realK8sClient) GetResourceYAML(ctx context.Context, kind, namespace, name string) (string, error) {
+	mapping, err := c.rm.RESTMapping(schema.ParseGroupKind(kind))
+	if err != nil {
+		return "", fmt.Errorf("map kind %s: %w", kind, err)
+	}
+	var obj *unstructured.Unstructured
+	if mapping.Scope.Name() == meta.RESTScopeNameRoot {
+		obj, err = c.dc.Resource(mapping.Resource).Get(ctx, name, metav1.GetOptions{})
+	} else {
+		obj, err = c.dc.Resource(mapping.Resource).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+	if err != nil {
+		return "", fmt.Errorf("get %s/%s/%s: %w", kind, namespace, name, err)
+	}
+	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+	unstructured.RemoveNestedField(obj.Object, "metadata", "resourceVersion")
+	unstructured.RemoveNestedField(obj.Object, "metadata", "uid")
+	unstructured.RemoveNestedField(obj.Object, "metadata", "generation")
+	unstructured.RemoveNestedField(obj.Object, "metadata", "creationTimestamp")
+	unstructured.RemoveNestedField(obj.Object, "status")
+	out, err := sigsyaml.Marshal(obj.Object)
+	if err != nil {
+		return "", fmt.Errorf("marshal yaml: %w", err)
+	}
+	return string(out), nil
 }
 
 func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deploymentName string) (string, error) {
