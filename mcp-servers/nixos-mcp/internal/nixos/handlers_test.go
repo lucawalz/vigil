@@ -2,6 +2,7 @@ package nixos_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -25,6 +26,12 @@ type fakeNixOSClient struct {
 	systemdErr       error
 	etcdOut          string
 	etcdErr          error
+	nixPathOut       string
+	nixPathErr       error
+	dryBuildOut      string
+	dryBuildErr      error
+	reconcileOut     string
+	reconcileErr     error
 	lastSwitchGen    int
 	lastJournalLines int
 }
@@ -53,6 +60,18 @@ func (f *fakeNixOSClient) GetSystemdStatus(_ context.Context, _, _ string) (stri
 
 func (f *fakeNixOSClient) EtcdSnapshotSave(_ context.Context, _, _ string) (string, error) {
 	return f.etcdOut, f.etcdErr
+}
+
+func (f *fakeNixOSClient) GetNixPath(_ context.Context, _ string) (string, error) {
+	return f.nixPathOut, f.nixPathErr
+}
+
+func (f *fakeNixOSClient) DryBuild(_ context.Context, _ string) (string, error) {
+	return f.dryBuildOut, f.dryBuildErr
+}
+
+func (f *fakeNixOSClient) TriggerReconcile(_ context.Context, _ string) (string, error) {
+	return f.reconcileOut, f.reconcileErr
 }
 
 func newTestServer(t *testing.T, client nixos.NixOSClient) *mcptest.Server {
@@ -94,6 +113,18 @@ func newTestServer(t *testing.T, client nixos.NixOSClient) *mcptest.Server {
 				mcp.WithString("dest_path", mcp.Required()),
 			),
 			Handler: nixos.HandleEtcdSnapshotSave(client, 4096),
+		},
+		server.ServerTool{
+			Tool:    mcp.NewTool("get_nix_path", mcp.WithString("hostname", mcp.Required())),
+			Handler: nixos.HandleGetNixPath(client, 4096),
+		},
+		server.ServerTool{
+			Tool:    mcp.NewTool("dry_build", mcp.WithString("host", mcp.Required())),
+			Handler: nixos.HandleDryBuild(client, 4096),
+		},
+		server.ServerTool{
+			Tool:    mcp.NewTool("trigger_reconcile", mcp.WithString("host", mcp.Required())),
+			Handler: nixos.HandleTriggerReconcile(client, 4096),
 		},
 	)
 	if err != nil {
@@ -285,5 +316,125 @@ func TestEtcdSnapshotSaveHandler_Success(t *testing.T) {
 	}
 	if !strings.Contains(resultText(result), "Snapshot") {
 		t.Errorf("expected snapshot output, got: %s", resultText(result))
+	}
+}
+
+func TestGetNixPathHandler_Success(t *testing.T) {
+	fake := &fakeNixOSClient{nixPathOut: "infra/nixos/hosts/hetzner-worker-1/default.nix"}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_nix_path", map[string]any{"hostname": "hetzner-worker-1"})
+
+	if result.IsError {
+		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
+	}
+	if !strings.Contains(resultText(result), "infra/nixos/hosts/hetzner-worker-1/default.nix") {
+		t.Errorf("expected path in response, got: %s", resultText(result))
+	}
+}
+
+func TestGetNixPathHandler_UnknownHost(t *testing.T) {
+	fake := &fakeNixOSClient{nixPathErr: errors.New(`unknown hostname: "bogus"`)}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_nix_path", map[string]any{"hostname": "bogus"})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for unknown hostname")
+	}
+	if !strings.Contains(resultText(result), "unknown hostname") {
+		t.Errorf("expected 'unknown hostname' in response, got: %s", resultText(result))
+	}
+}
+
+func TestGetNixPathHandler_MissingHostname(t *testing.T) {
+	fake := &fakeNixOSClient{}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_nix_path", map[string]any{})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for missing hostname")
+	}
+	if !strings.Contains(resultText(result), "hostname") {
+		t.Errorf("expected 'hostname' in response, got: %s", resultText(result))
+	}
+}
+
+func TestDryBuildHandler(t *testing.T) {
+	fake := &fakeNixOSClient{dryBuildOut: "nothing to activate"}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "dry_build", map[string]any{"host": "hetzner-worker-1"})
+
+	if result.IsError {
+		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
+	}
+	if !strings.Contains(resultText(result), "nothing to activate") {
+		t.Errorf("expected output in response, got: %s", resultText(result))
+	}
+}
+
+func TestDryBuildHandler_WithDiff(t *testing.T) {
+	fake := &fakeNixOSClient{dryBuildOut: "would restart the following units: vigil-orchestrator.service"}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "dry_build", map[string]any{"host": "hetzner-worker-1"})
+
+	if result.IsError {
+		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
+	}
+	if !strings.Contains(resultText(result), "vigil-orchestrator.service") {
+		t.Errorf("expected unit name in response, got: %s", resultText(result))
+	}
+}
+
+func TestDryBuildHandler_DomainError(t *testing.T) {
+	fake := &fakeNixOSClient{dryBuildErr: errors.New("ssh dial failed")}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "dry_build", map[string]any{"host": "hetzner-worker-1"})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for domain error")
+	}
+	if !strings.Contains(resultText(result), "DryBuild") {
+		t.Errorf("expected 'DryBuild' in response, got: %s", resultText(result))
+	}
+}
+
+func TestTriggerReconcileHandler(t *testing.T) {
+	fake := &fakeNixOSClient{reconcileOut: "issued: systemctl start --no-block vigil-auto-reconcile.service\nresponse: "}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "trigger_reconcile", map[string]any{"host": "hetzner-worker-1"})
+
+	if result.IsError {
+		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
+	}
+	if !strings.Contains(resultText(result), "issued:") {
+		t.Errorf("expected 'issued:' in response, got: %s", resultText(result))
+	}
+}
+
+func TestTriggerReconcileHandler_UnitNotFound(t *testing.T) {
+	fake := &fakeNixOSClient{reconcileErr: errors.New("trigger_reconcile: ssh: command exited with code 5")}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "trigger_reconcile", map[string]any{"host": "hetzner-worker-1"})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for unit not found")
+	}
+	if !strings.Contains(resultText(result), "TriggerReconcile") {
+		t.Errorf("expected 'TriggerReconcile' in response, got: %s", resultText(result))
 	}
 }

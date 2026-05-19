@@ -40,6 +40,9 @@ type NixOSClient interface {
 	GetJournal(ctx context.Context, host, unit string, lines int) (string, error)
 	GetSystemdStatus(ctx context.Context, host, unit string) (string, error)
 	EtcdSnapshotSave(ctx context.Context, host, destPath string) (string, error)
+	GetNixPath(ctx context.Context, hostname string) (string, error)
+	DryBuild(ctx context.Context, host string) (string, error)
+	TriggerReconcile(ctx context.Context, host string) (string, error)
 }
 
 type realNixOSClient struct {
