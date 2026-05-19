@@ -24,6 +24,7 @@ in
           mkdir -p "$(dirname "$STATE_FILE")"
           git -C /opt/nixos-config fetch origin
           NEW=$(git -C /opt/nixos-config rev-parse "origin/$BRANCH")
+          git -C /opt/nixos-config reset --hard "origin/$BRANCH"
           OLD=$(cat "$STATE_FILE" 2>/dev/null || echo "")
           if [ "$NEW" != "$OLD" ]; then
             nixos-rebuild switch --flake "/opt/nixos-config#$(hostname)"
