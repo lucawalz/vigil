@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -44,6 +45,7 @@ type GitClient interface {
 	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA string) (revertSHA string, err error)
 	ClosePR(ctx context.Context, prNumber int) error
 	DeleteBranch(ctx context.Context, branch string) error
+	ReadFile(ctx context.Context, cloneDir, branch, path string) (string, error)
 }
 
 type realGitClient struct {
@@ -276,6 +278,48 @@ func (c *realGitClient) DeleteBranch(ctx context.Context, branch string) error {
 		return fmt.Errorf("delete_branch: %w", err)
 	}
 	return nil
+}
+
+func (c *realGitClient) ReadFile(ctx context.Context, cloneDir, branch, path string) (string, error) {
+	r, err := git.PlainOpen(cloneDir)
+	if err != nil {
+		return "", fmt.Errorf("read_file: open repo: %w", err)
+	}
+	ref, err := r.Reference(plumbing.NewRemoteReferenceName("origin", branch), true)
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		fetchErr := r.FetchContext(ctx, &git.FetchOptions{
+			RefSpecs: []gitconfig.RefSpec{
+				gitconfig.RefSpec("refs/heads/" + branch + ":refs/remotes/origin/" + branch),
+			},
+			Auth: &githttp.BasicAuth{Username: gitAccessToken, Password: c.cfg.GitHubToken},
+		})
+		if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+			return "", fmt.Errorf("branch not found: %s", branch)
+		}
+		ref, err = r.Reference(plumbing.NewRemoteReferenceName("origin", branch), true)
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return "", fmt.Errorf("branch not found: %s", branch)
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("read_file: resolve ref: %w", err)
+	}
+	commit, err := r.CommitObject(ref.Hash())
+	if err != nil {
+		return "", fmt.Errorf("read_file: commit object: %w", err)
+	}
+	file, err := commit.File(path)
+	if errors.Is(err, object.ErrFileNotFound) {
+		return "", fmt.Errorf("path not found: %s", path)
+	}
+	if err != nil {
+		return "", fmt.Errorf("read_file: file: %w", err)
+	}
+	contents, err := file.Contents()
+	if err != nil {
+		return "", fmt.Errorf("read_file: read contents: %w", err)
+	}
+	return contents, nil
 }
 
 // go-git v5 does not expose a native Revert; fall back to the git binary.
