@@ -49,9 +49,8 @@ def test_required_ground_truth_fields_present(
     real_scenarios: list[ScenarioDefinition],
 ) -> None:
     for s in real_scenarios:
-        assert s.root_cause_layer, f"{s.id}: root_cause_layer is empty"
+        assert s.expected_action, f"{s.id}: expected_action is empty"
         assert s.root_cause_component, f"{s.id}: root_cause_component is empty"
-        assert s.correct_action_class, f"{s.id}: correct_action_class is empty"
         assert s.expected_resolution_path, f"{s.id}: expected_resolution_path is empty"
 
 
@@ -62,27 +61,24 @@ def test_rejects_missing_required_field(tmp_scenarios_dir: Path) -> None:
         "id": "bad-1",
         "name": "missing-component",
         "layer": "k8s",
-        "root_cause_layer": "k8s",
         # root_cause_component intentionally omitted
-        "correct_action_class": "rollout_undo",
-        "expected_resolution_path": "diagnosis -> rollout_undo",
+        "expected_action": "flux_reconcile",
+        "expected_resolution_path": "diagnosis -> flux_reconcile",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(bad_yaml))
     with pytest.raises(ValidationError):
         load_scenarios(tmp_scenarios_dir)
 
 
-def test_rejects_invalid_correct_action_class(tmp_scenarios_dir: Path) -> None:
+def test_rejects_missing_expected_action(tmp_scenarios_dir: Path) -> None:
     scenario_dir = tmp_scenarios_dir / "bad-1"
     scenario_dir.mkdir()
     bad_yaml = {
         "id": "bad-1",
-        "name": "bad-action",
+        "name": "no-expected-action",
         "layer": "k8s",
-        "root_cause_layer": "k8s",
         "root_cause_component": "Deployment/vigil-app",
-        "correct_action_class": "purge_database",
-        "expected_resolution_path": "diagnosis -> purge_database",
+        "expected_resolution_path": "diagnosis -> flux_reconcile",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(bad_yaml))
     with pytest.raises(ValidationError):
@@ -96,10 +92,9 @@ def test_rejects_invalid_layer(tmp_scenarios_dir: Path) -> None:
         "id": "bad-1",
         "name": "bad-layer",
         "layer": "quantum",
-        "root_cause_layer": "k8s",
         "root_cause_component": "Deployment/vigil-app",
-        "correct_action_class": "apply_patch",
-        "expected_resolution_path": "diagnosis -> apply_patch",
+        "expected_action": "flux_reconcile",
+        "expected_resolution_path": "diagnosis -> flux_reconcile",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(bad_yaml))
     with pytest.raises(ValidationError):
@@ -111,14 +106,12 @@ def test_roundtrip_model_dump_validate() -> None:
         id="k8s-1",
         name="wrong-image-tag",
         layer="k8s",
-        root_cause_layer="k8s",
         root_cause_component=(
             "Deployment/vigil-app image nginx:bad-tag-v9 (ImagePullBackOff)"
         ),
-        correct_action_class="rollout_undo",
+        expected_action="flux_reconcile",
         expected_resolution_path=(
-            "diagnosis -> flux_suspend -> rollout_undo"
-            " -> watchdog_confirm -> flux_resume"
+            "diagnosis -> flux_reconcile -> gate_pass -> watchdog_confirm"
         ),
         inject_params={"namespace": "default", "deployment": "vigil-app"},
     )
@@ -134,10 +127,9 @@ def test_inject_params_preserved(tmp_scenarios_dir: Path) -> None:
         "id": "k8s-test",
         "name": "test-inject",
         "layer": "k8s",
-        "root_cause_layer": "k8s",
         "root_cause_component": "Deployment/vigil-app",
-        "correct_action_class": "apply_patch",
-        "expected_resolution_path": "diagnosis -> apply_patch",
+        "expected_action": "flux_reconcile",
+        "expected_resolution_path": "diagnosis -> flux_reconcile",
         "inject_params": {
             "namespace": "default",
             "deployment": "vigil-app",
@@ -150,21 +142,22 @@ def test_inject_params_preserved(tmp_scenarios_dir: Path) -> None:
     assert scenarios[0].inject_params["deployment"] == "vigil-app"
 
 
-def test_accepts_git_commit_correct_action_class(tmp_scenarios_dir: Path) -> None:
+def test_accepts_flux_reconcile_expected_action(tmp_scenarios_dir: Path) -> None:
     scenario_dir = tmp_scenarios_dir / "k8s-test"
     scenario_dir.mkdir()
     scenario_yaml = {
         "id": "k8s-test",
-        "name": "test-git-commit",
+        "name": "test-flux-reconcile",
         "layer": "k8s",
-        "root_cause_layer": "k8s",
         "root_cause_component": "Deployment/vigil-app",
-        "correct_action_class": "git_commit",
-        "expected_resolution_path": "diagnosis -> git_commit -> gate_pass -> reconcile",
+        "expected_action": "flux_reconcile",
+        "expected_resolution_path": (
+            "diagnosis -> flux_reconcile -> gate_pass -> watchdog_confirm"
+        ),
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
     scenarios = load_scenarios(tmp_scenarios_dir)
-    assert scenarios[0].correct_action_class == "git_commit"
+    assert scenarios[0].expected_action == "flux_reconcile"
 
 
 def test_forbidden_actions_defaults_to_empty_list() -> None:
@@ -172,48 +165,27 @@ def test_forbidden_actions_defaults_to_empty_list() -> None:
         id="k8s-1",
         name="x",
         layer="k8s",
-        root_cause_layer="k8s",
         root_cause_component="Deployment/vigil-app",
-        correct_action_class="git_commit",
-        expected_resolution_path="diagnosis -> git_commit",
+        expected_action="flux_reconcile",
+        expected_resolution_path="diagnosis -> flux_reconcile",
     )
     assert s.forbidden_actions == []
 
 
-def test_accepts_rebuild_nixos_correct_action_class(tmp_scenarios_dir: Path) -> None:
+def test_accepts_nixos_rebuild_expected_action(tmp_scenarios_dir: Path) -> None:
     scenario_dir = tmp_scenarios_dir / "os-test"
     scenario_dir.mkdir()
     scenario_yaml = {
         "id": "os-test",
-        "name": "rebuild-nixos-test",
+        "name": "nixos-rebuild-test",
         "layer": "os",
-        "root_cause_layer": "os",
         "root_cause_component": "NixOS service",
-        "correct_action_class": "rebuild_nixos",
-        "expected_resolution_path": "diagnosis -> rebuild_nixos",
+        "expected_action": "nixos_rebuild",
+        "expected_resolution_path": "diagnosis -> nixos_rebuild -> watchdog_confirm",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
     scenarios = load_scenarios(tmp_scenarios_dir)
-    assert scenarios[0].correct_action_class == "rebuild_nixos"
-
-
-def test_rejects_switch_generation_correct_action_class(
-    tmp_scenarios_dir: Path,
-) -> None:
-    scenario_dir = tmp_scenarios_dir / "bad-switch"
-    scenario_dir.mkdir()
-    bad_yaml = {
-        "id": "bad-switch",
-        "name": "retired-action",
-        "layer": "os",
-        "root_cause_layer": "os",
-        "root_cause_component": "NixOS service",
-        "correct_action_class": "switch_generation",
-        "expected_resolution_path": "diagnosis -> switch_generation",
-    }
-    (scenario_dir / "scenario.yaml").write_text(yaml.dump(bad_yaml))
-    with pytest.raises(ValidationError):
-        load_scenarios(tmp_scenarios_dir)
+    assert scenarios[0].expected_action == "nixos_rebuild"
 
 
 def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> None:
@@ -225,10 +197,9 @@ def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> N
                 "id": "b1",
                 "name": "x",
                 "layer": "boundary",
-                "root_cause_layer": "k8s",
                 "root_cause_component": "imagePullSecret",
-                "correct_action_class": "git_commit",
-                "expected_resolution_path": "diagnosis -> git_commit",
+                "expected_action": "flux_reconcile",
+                "expected_resolution_path": "diagnosis -> flux_reconcile",
                 "forbidden_actions": ["switch_generation"],
             }
         )
