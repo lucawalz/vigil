@@ -27,6 +27,7 @@ type K8sClient interface {
 	DescribeNode(ctx context.Context, name string) (string, error)
 	GetTaints(ctx context.Context, node string) (string, error)
 	DeleteResource(ctx context.Context, kind, namespace, name string) (string, error)
+	GetResourceYAML(ctx context.Context, kind, namespace, name string) (string, error)
 }
 
 type realK8sClient struct {

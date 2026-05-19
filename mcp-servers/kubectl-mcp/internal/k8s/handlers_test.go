@@ -16,15 +16,16 @@ import (
 )
 
 type fakeK8sClient struct {
-	pods           string
-	describePod    string
-	logs           string
-	rolloutStatus  string
-	events         string
-	describeNode   string
-	taints         string
-	deleteResource string
-	err            error
+	pods            string
+	describePod     string
+	logs            string
+	rolloutStatus   string
+	events          string
+	describeNode    string
+	taints          string
+	deleteResource  string
+	getResourceYAML string
+	err             error
 }
 
 var _ k8s.K8sClient = &fakeK8sClient{}
@@ -63,6 +64,10 @@ func (f *fakeK8sClient) GetTaints(_ context.Context, _ string) (string, error) {
 
 func (f *fakeK8sClient) DeleteResource(_ context.Context, _, _, _ string) (string, error) {
 	return f.deleteResource, f.err
+}
+
+func (f *fakeK8sClient) GetResourceYAML(_ context.Context, _, _, _ string) (string, error) {
+	return f.getResourceYAML, f.err
 }
 
 func callGetPods(t *testing.T, fake *fakeK8sClient, maxBytes int, args map[string]any) (*mcp.CallToolResult, error) {
@@ -236,6 +241,113 @@ func TestRolloutStatusHandler_Success(t *testing.T) {
 	}
 }
 
+func callGetResourceYaml(t *testing.T, fake *fakeK8sClient, maxBytes int, args map[string]any) (*mcp.CallToolResult, error) {
+	t.Helper()
+	srv, err := mcptest.NewServer(t, server.ServerTool{
+		Tool: mcp.NewTool("get_resource_yaml",
+			mcp.WithString("kind", mcp.Required()),
+			mcp.WithString("namespace", mcp.Required()),
+			mcp.WithString("name", mcp.Required()),
+		),
+		Handler: k8s.HandleGetResourceYaml(fake, maxBytes),
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer srv.Close()
+
+	var req mcp.CallToolRequest
+	req.Params.Name = "get_resource_yaml"
+	req.Params.Arguments = args
+	return srv.Client().CallTool(context.Background(), req)
+}
+
+func TestGetResourceYamlHandler_Success(t *testing.T) {
+	yaml := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: my-app\n"
+	fake := &fakeK8sClient{getResourceYAML: yaml}
+	result, err := callGetResourceYaml(t, fake, 4096, map[string]any{
+		"kind": "Deployment", "namespace": "default", "name": "my-app",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error result")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, yaml) {
+		t.Errorf("expected YAML in response, got: %s", text)
+	}
+}
+
+func TestGetResourceYamlHandler_MissingKind(t *testing.T) {
+	fake := &fakeK8sClient{}
+	result, err := callGetResourceYaml(t, fake, 4096, map[string]any{
+		"namespace": "default", "name": "my-app",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing kind")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "kind") {
+		t.Errorf("expected 'kind' in error message, got: %s", text)
+	}
+}
+
+func TestGetResourceYamlHandler_MissingNamespace(t *testing.T) {
+	fake := &fakeK8sClient{}
+	result, err := callGetResourceYaml(t, fake, 4096, map[string]any{
+		"kind": "Deployment", "name": "my-app",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing namespace")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "namespace") {
+		t.Errorf("expected 'namespace' in error message, got: %s", text)
+	}
+}
+
+func TestGetResourceYamlHandler_MissingName(t *testing.T) {
+	fake := &fakeK8sClient{}
+	result, err := callGetResourceYaml(t, fake, 4096, map[string]any{
+		"kind": "Deployment", "namespace": "default",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing name")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "name") {
+		t.Errorf("expected 'name' in error message, got: %s", text)
+	}
+}
+
+func TestGetResourceYamlHandler_DomainError(t *testing.T) {
+	fake := &fakeK8sClient{err: fmt.Errorf("connection refused")}
+	result, err := callGetResourceYaml(t, fake, 4096, map[string]any{
+		"kind": "Deployment", "namespace": "default", "name": "my-app",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for domain error")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "GetResourceYAML") {
+		t.Errorf("expected 'GetResourceYAML' in error message, got: %s", text)
+	}
+}
+
 func TestKubectlToolInventory(t *testing.T) {
 	fake := &fakeK8sClient{}
 	cfg := &config.Config{MaxOutputBytesDescribe: 4096, MaxOutputBytesLogs: 4096}
@@ -250,6 +362,7 @@ func TestKubectlToolInventory(t *testing.T) {
 	required := []string{
 		"get_nodes", "get_pods", "describe_pod", "get_logs", "rollout_status",
 		"get_events", "describe_node", "get_taints", "delete_resource",
+		"get_resource_yaml",
 	}
 	for _, name := range required {
 		if !names[name] {
@@ -262,8 +375,8 @@ func TestKubectlToolInventory(t *testing.T) {
 	if names["apply_patch"] {
 		t.Error("apply_patch must not be registered")
 	}
-	if len(tools) != 9 {
-		t.Errorf("expected exactly 9 tools, got %d", len(tools))
+	if len(tools) != 10 {
+		t.Errorf("expected exactly 10 tools, got %d", len(tools))
 	}
 }
 
