@@ -1,11 +1,10 @@
 id: k8s-2
 name: crashloop-backoff
 layer: k8s
+expected_action: flux_reconcile
 
-root_cause_layer: k8s
 root_cause_component: "Deployment/vigil-app container crashes on APP_CRASH_MODE=1 env var"
-correct_action_class: git_commit
-expected_resolution_path: "diagnosis -> git_commit (remove crash env) -> gate_pass -> reconcile -> watchdog_confirm"
+expected_resolution_path: "diagnosis -> flux_reconcile (remove crash env) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

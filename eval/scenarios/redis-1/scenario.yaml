@@ -1,11 +1,10 @@
 id: redis-1
 name: redis-oom-eviction
 layer: k8s
+expected_action: flux_reconcile
 
-root_cause_layer: k8s
 root_cause_component: "StatefulSet/redis-master OOMKilled (memory limit 10Mi)"
-correct_action_class: git_commit
-expected_resolution_path: "diagnosis -> git_commit (restore memory limit; StatefulSet support pending in lookup_manifest_path) -> gate_pass -> reconcile -> watchdog_confirm"
+expected_resolution_path: "diagnosis -> flux_reconcile (restore memory limit; StatefulSet support pending in lookup_manifest_path) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   namespace: default

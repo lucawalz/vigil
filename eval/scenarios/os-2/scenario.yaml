@@ -1,11 +1,10 @@
 id: os-2
 name: systemd-unit-stopped
 layer: os
+expected_action: nixos_rebuild
 
-root_cause_layer: os
 root_cause_component: "k3s-agent.service stopped on worker-2 via systemctl"
-correct_action_class: rebuild_nixos
-expected_resolution_path: "diagnosis (ssh_mcp journal + systemd_status) -> escalate -> nixos_mcp rebuild_test -> watchdog_confirm"
+expected_resolution_path: "diagnosis (ssh_mcp journal + systemd_status) -> escalate -> nixos_mcp nixos_rebuild -> watchdog_confirm"
 
 inject_params:
   target_host: hetzner-worker-2

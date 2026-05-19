@@ -1,11 +1,10 @@
 id: cross-2
 name: node-oom-kills-critical-pod
 layer: cross
+expected_action: nixos_rebuild
 
-root_cause_layer: os
 root_cause_component: "k3s-agent stopped on worker-2; all pods on node transition to NotReady"
-correct_action_class: rebuild_nixos
-expected_resolution_path: "diagnosis starts at k8s (pod NotReady) -> escalates to os (node NotReady, k3s stopped) -> nixos_mcp rebuild_test -> watchdog_confirm"
+expected_resolution_path: "diagnosis starts at k8s (pod NotReady) -> escalates to os (node NotReady, k3s stopped) -> nixos_mcp nixos_rebuild -> watchdog_confirm"
 
 inject_params:
   target_host: hetzner-worker-2
