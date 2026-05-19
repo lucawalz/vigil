@@ -1,19 +1,29 @@
-"""Deterministic (kind, namespace, name) -> repo-relative manifest path lookup."""
+"""Manifest path resolution via Kustomization YAML or hostname convention."""
 
 from __future__ import annotations
 
-_MANIFEST_PATHS: dict[tuple[str, str, str], str] = {
-    ("Deployment", "default", "vigil-app"): (
-        "infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml"
-    ),
-    ("StatefulSet", "default", "redis-master"): (
-        "infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/redis/helmrelease.yaml"
-    ),
-}
+import yaml
 
 
-def lookup_manifest_path(kind: str, namespace: str, name: str) -> str:
-    path = _MANIFEST_PATHS.get((kind, namespace, name))
-    if path is None:
-        return f"unknown resource: {kind}/{namespace}/{name}"
-    return path
+class ManifestPathError(Exception):
+    """Raised when manifest path cannot be resolved for the given resource."""
+
+
+def lookup_k8s_manifest_path(kustomization_yaml: str, resource_name: str) -> str:
+    try:
+        data = yaml.safe_load(kustomization_yaml)
+    except yaml.YAMLError as exc:
+        raise ManifestPathError(f"YAML parse error: {exc}") from exc
+
+    if not isinstance(data, dict) or data.get("kind") != "Kustomization":
+        raise ManifestPathError("YAML is not a Kustomization object")
+
+    spec_path = (data.get("spec") or {}).get("path")
+    if not spec_path:
+        raise ManifestPathError("Kustomization spec.path is absent or empty")
+
+    return f"{spec_path.lstrip('/')}/{resource_name}.yaml"
+
+
+def lookup_os_manifest_path(hostname: str) -> str:
+    return f"infra/nixos/hosts/{hostname}/default.nix"

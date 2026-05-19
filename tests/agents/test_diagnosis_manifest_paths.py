@@ -1,50 +1,47 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from diagnosis.manifest_paths import _MANIFEST_PATHS, lookup_manifest_path
-
-
-def test_lookup_manifest_path_returns_path_for_vigil_app_deployment() -> None:
-    assert (
-        lookup_manifest_path("Deployment", "default", "vigil-app")
-        == "infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml"
-    )
+import pytest
+from diagnosis.manifest_paths import (
+    ManifestPathError,
+    lookup_k8s_manifest_path,
+    lookup_os_manifest_path,
+)
 
 
-def test_lookup_manifest_path_returns_error_for_unknown_resource() -> None:
-    assert (
-        lookup_manifest_path("Deployment", "default", "unknown-app")
-        == "unknown resource: Deployment/default/unknown-app"
-    )
+def test_lookup_k8s_manifest_path_returns_path() -> None:
+    kust_yaml = "kind: Kustomization\nspec:\n  path: kubernetes/apps\n"
+    result = lookup_k8s_manifest_path(kust_yaml, "vigil-app")
+    assert result == "kubernetes/apps/vigil-app.yaml"
 
 
-def test_lookup_manifest_path_returns_error_for_wrong_kind() -> None:
-    assert (
-        lookup_manifest_path("StatefulSet", "default", "vigil-app")
-        == "unknown resource: StatefulSet/default/vigil-app"
-    )
+def test_lookup_k8s_manifest_path_strips_leading_slash() -> None:
+    kust_yaml = "kind: Kustomization\nspec:\n  path: /kubernetes/apps\n"
+    result = lookup_k8s_manifest_path(kust_yaml, "vigil-app")
+    assert result == "kubernetes/apps/vigil-app.yaml"
 
 
-def test_known_path_exists_on_disk() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    path = lookup_manifest_path("Deployment", "default", "vigil-app")
-    assert (repo_root / path).exists()
+def test_lookup_k8s_manifest_path_raises_for_non_kustomization() -> None:
+    yaml_str = "kind: Deployment\nmetadata:\n  name: vigil-app\n"
+    with pytest.raises(ManifestPathError):
+        lookup_k8s_manifest_path(yaml_str, "vigil-app")
 
 
-def test_manifest_paths_table_is_non_empty_dict() -> None:
-    assert isinstance(_MANIFEST_PATHS, dict) and len(_MANIFEST_PATHS) >= 1
+def test_lookup_k8s_manifest_path_raises_when_spec_path_missing() -> None:
+    kust_yaml = "kind: Kustomization\nspec:\n  interval: 5m\n"
+    with pytest.raises(ManifestPathError):
+        lookup_k8s_manifest_path(kust_yaml, "vigil-app")
 
 
-def test_lookup_redis_master_returns_helmrelease_path() -> None:
-    result = lookup_manifest_path("StatefulSet", "default", "redis-master")
-    assert result.endswith("redis/helmrelease.yaml"), (
-        f"expected path ending in 'redis/helmrelease.yaml', got {result!r}"
-    )
+def test_lookup_k8s_manifest_path_raises_on_invalid_yaml() -> None:
+    with pytest.raises(ManifestPathError):
+        lookup_k8s_manifest_path("}{invalid yaml}{", "vigil-app")
 
 
-def test_lookup_postgresql_returns_unknown_resource() -> None:
-    result = lookup_manifest_path("StatefulSet", "default", "postgresql")
-    assert result.startswith("unknown resource"), (
-        f"expected 'unknown resource' prefix, got {result!r}"
-    )
+def test_lookup_os_manifest_path_uses_hostname_convention() -> None:
+    result = lookup_os_manifest_path("hetzner-1")
+    assert result == "infra/nixos/hosts/hetzner-1/default.nix"
+
+
+def test_lookup_os_manifest_path_pure_string() -> None:
+    result = lookup_os_manifest_path("any-host")
+    assert result == "infra/nixos/hosts/any-host/default.nix"

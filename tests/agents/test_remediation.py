@@ -117,22 +117,14 @@ def test_run_remediation_returns_tuple_with_usage() -> None:
     assert "return result.output, result.usage(), result.all_messages()" in source
 
 
-def test_remediation_prompt_os_branch() -> None:
-    """OS fault path must not involve git-mcp or Flux suspension."""
+def test_remediation_prompt_dispatch_branches() -> None:
     mod_source = inspect.getsource(_rem_agent_mod)
-    assert "requires_os_level" in mod_source
-    assert "requires_os_level is True" in mod_source
-    assert "requires_os_level is False" in mod_source
-    os_branch = mod_source.split("requires_os_level is True", 1)[1]
-    os_branch = os_branch.split("Return a RemediationResult", 1)[0]
-    assert "create_branch" not in os_branch
-    assert "suspend_kustomization" not in os_branch
-
-
-def test_remediation_prompt_rebuild_test() -> None:
-    """OS repair path must reference rebuild_test as the nixos-mcp entry point."""
-    mod_source = inspect.getsource(_rem_agent_mod)
-    assert "rebuild_test" in mod_source
+    assert "flux_reconcile" in mod_source
+    assert "git_commit_k8s" in mod_source
+    assert "nixos_rebuild" in mod_source
+    assert "git_commit_nix" in mod_source
+    old_branch_discriminant = "requires_os" + "_level"
+    assert old_branch_discriminant not in mod_source
 
 
 def test_remediation_deps_has_git_mcp() -> None:
