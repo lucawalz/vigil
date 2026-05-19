@@ -532,9 +532,7 @@ async def test_diagnosis_accuracy_scored_true_for_k8s_scenario(
 ) -> None:
     scenarios_dir = tmp_path / "scenarios" / "k8s-1"
     scenarios_dir.mkdir(parents=True)
-    (scenarios_dir / "scenario.yaml").write_text(
-        "correct_action_class: git_commit\n"
-    )
+    (scenarios_dir / "scenario.yaml").write_text("correct_action_class: git_commit\n")
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
     _run_orch_setup(monkeypatch, tmp_path)
     record = await run_orchestration(
@@ -726,16 +724,12 @@ async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
     assert record.outcome == "success"
 
 
-
-
 def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
     tmp_path: Path,
 ) -> None:
     scenario_dir = tmp_path / "boundary-2"
     scenario_dir.mkdir(parents=True)
-    (scenario_dir / "scenario.yaml").write_text(
-        "expected_action: nixos_rebuild\n"
-    )
+    (scenario_dir / "scenario.yaml").write_text("expected_action: nixos_rebuild\n")
     report = SimpleNamespace(recommended_action="nixos_rebuild")
 
     import os as _os
@@ -1326,9 +1320,7 @@ async def test_escalate_action_returns_escalated_record(
     escalate_report = _canned_report_with_action("escalate")
     diag_rv = (escalate_report, Usage(input_tokens=100, output_tokens=50), [])
     fetch_snapshot_mock = AsyncMock(return_value=_canned_baseline())
-    run_remediation_mock = AsyncMock(
-        return_value=(_canned_remediation(), Usage(), [])
-    )
+    run_remediation_mock = AsyncMock(return_value=(_canned_remediation(), Usage(), []))
     run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(orch_mod, "capture_health_snapshot", fetch_snapshot_mock)
@@ -1488,9 +1480,7 @@ def test_score_accuracy_compat_mapping_git_commit_to_flux_reconcile(
 ) -> None:
     scenario_dir = tmp_path / "compat-1"
     scenario_dir.mkdir(parents=True)
-    (scenario_dir / "scenario.yaml").write_text(
-        "correct_action_class: git_commit\n"
-    )
+    (scenario_dir / "scenario.yaml").write_text("correct_action_class: git_commit\n")
 
     import os as _os
 

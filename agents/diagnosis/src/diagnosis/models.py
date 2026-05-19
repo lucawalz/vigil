@@ -33,8 +33,11 @@ class DiagnosisReport(BaseModel):
     )
     evidence: str = Field(description="Verbatim log line or event proving root cause")
     recommended_action: Literal[
-        "flux_reconcile", "git_commit_k8s", "nixos_rebuild",
-        "git_commit_nix", "escalate"
+        "flux_reconcile",
+        "git_commit_k8s",
+        "nixos_rebuild",
+        "git_commit_nix",
+        "escalate",
     ]
     confidence: float = Field(ge=0.0, le=1.0)
     target_host: str | None = Field(
