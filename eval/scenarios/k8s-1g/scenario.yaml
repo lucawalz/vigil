@@ -1,0 +1,12 @@
+id: k8s-1g
+name: wrong-image-tag-committed
+layer: k8s
+expected_action: git_commit_k8s
+
+root_cause_component: "vigil-app.yaml committed bad image nginx:bad-tag-v9 on eval-baseline"
+expected_resolution_path: "diagnosis -> git_commit_k8s (fix image in manifest) -> gate_pass -> reconcile -> watchdog_confirm"
+
+inject_params:
+  manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
+  bad_image: "nginx:bad-tag-v9"
+  good_image: "nginx:stable"
