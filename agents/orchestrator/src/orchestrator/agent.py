@@ -80,10 +80,9 @@ def build_run_id(
 ) -> tuple[str, str, str]:
     """Return (run_id, seed_str, sha7).
 
-    When `seed` is provided, it is stringified and used verbatim in the run_id
-    ({scenario}_{seed}_{model}_{sha7}). When `seed` is None, the legacy
-    UTC-timestamp fallback preserves backward compatibility for pre-Phase-7
-    callers that do not supply a seed (e.g., raw Alertmanager webhooks).
+    When `seed` is None — as for raw Alertmanager webhooks routed through
+    `/webhook` without a `?seed=` query parameter — fall back to a UTC
+    timestamp so the run_id remains unique across concurrent webhook deliveries.
     """
     if seed is not None:
         seed_str = str(seed)
@@ -102,10 +101,10 @@ def build_run_id(
     return run_id, seed_str, sha7
 
 
-_OS_LAYERS = frozenset({"os", "cross"})
-_OS_REPAIR_ACTIONS = frozenset({"rebuild_nixos"})
-_K8S_REPAIR_ACTIONS = frozenset({"git_commit"})
-_IMPERATIVE_REPAIR_ACTIONS = frozenset({"delete_resource"})
+_COMPAT_ACTION_MAP: dict[str, str] = {
+    "git_commit": "flux_reconcile",
+    "rebuild_nixos": "nixos_rebuild",
+}
 
 
 def _load_scenario_data(scenario: str) -> dict:
@@ -123,14 +122,16 @@ def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
     data = _load_scenario_data(scenario)
     if not data:
         return None
-    expected_layer = data.get("root_cause_layer")
-    if expected_layer is None:
+    expected = data.get("expected_action")
+    if expected is not None:
+        return report.recommended_action == expected
+    correct = data.get("correct_action_class")
+    if correct is None:
         return None
-    expected_os = expected_layer in _OS_LAYERS
-    layer_correct = report.requires_os_level == expected_os
-    if data.get("layer") == "boundary" and report.requires_os_level:
-        return False
-    return layer_correct
+    mapped = _COMPAT_ACTION_MAP.get(correct)
+    if mapped is None:
+        return None
+    return report.recommended_action == mapped
 
 
 def _check_forbidden_actions(scenario: str, actions_taken: list[str]) -> list[str]:
@@ -180,23 +181,48 @@ async def _fetch_flux_snapshot(flux_mcp: MCPServerStdio) -> dict:
 
 
 async def _issue_rollback(
+    recommended_action: str,
     git_mcp: MCPServerStdio,
     flux_mcp: MCPServerStdio,
-    merge_commit_sha: str,
+    nixos_mcp: MCPServerStdio,
+    merge_commit_sha: str | None,
+    target_host: str | None,
 ) -> bool:
-    """Revert the merged PR and force Flux reconcile. Returns True on full success."""
+    """Dispatch rollback by recommended_action class. Returns True on full success."""
     try:
-        await git_mcp.direct_call_tool(
-            "revert_commit",
-            {"merge_commit_sha": merge_commit_sha},
-        )
-        await flux_mcp.direct_call_tool(
-            "reconcile_kustomization",
-            {"namespace": "flux-system", "name": "cluster-apps"},
-        )
+        if recommended_action == "flux_reconcile":
+            await flux_mcp.direct_call_tool(
+                "reconcile_kustomization",
+                {"namespace": "flux-system", "name": "cluster-apps"},
+            )
+        elif recommended_action == "git_commit_k8s":
+            await git_mcp.direct_call_tool(
+                "revert_commit",
+                {"merge_commit_sha": merge_commit_sha},
+            )
+            await flux_mcp.direct_call_tool(
+                "reconcile_kustomization",
+                {"namespace": "flux-system", "name": "cluster-apps"},
+            )
+        elif recommended_action == "nixos_rebuild":
+            await nixos_mcp.direct_call_tool(
+                "switch_generation",
+                {"host": target_host},
+            )
+        elif recommended_action == "git_commit_nix":
+            await git_mcp.direct_call_tool(
+                "revert_commit",
+                {"merge_commit_sha": merge_commit_sha},
+            )
+            await nixos_mcp.direct_call_tool(
+                "trigger_reconcile",
+                {"host": target_host},
+            )
+        else:
+            return False
         return True
     except Exception:
-        log.exception("rollback failed for merge_commit_sha=%s", merge_commit_sha)
+        log.exception("rollback failed for action=%s", recommended_action)
         return False
 
 
@@ -220,7 +246,7 @@ async def run_orchestration(
     breaker = _CircuitBreaker()
     model = build_model(model_name)
 
-    diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp)
+    diagnosis_deps = DiagnosisDeps(kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp, git_mcp=git_mcp)
     remediation_deps = RemediationDeps(
         git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
     )
@@ -323,12 +349,37 @@ async def run_orchestration(
             breaker.success()
             iteration_count += 1
 
-            action_is_k8s = report.recommended_action in _K8S_REPAIR_ACTIONS
-            action_is_imperative = (
-                report.recommended_action in _IMPERATIVE_REPAIR_ACTIONS
-            )
+            if report.recommended_action == "escalate":
+                mttr_s = asyncio.get_event_loop().time() - t0
+                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record = RunRecord(
+                    run_id=run_id,
+                    scenario=scenario,
+                    seed=seed_str,
+                    model=model_name,
+                    git_sha7=sha7,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    outcome="escalated",
+                    success_rate=False,
+                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                    MTTR_s=mttr_s,
+                    destructive_repair=False,
+                    rollback_triggered=False,
+                    rollback_success=None,
+                    total_input_tokens=total_usage.input_tokens or 0,
+                    total_output_tokens=total_usage.output_tokens or 0,
+                    total_tool_calls=_count_tool_calls(diag_msgs),
+                    iteration_count=iteration_count,
+                    autonomy_level="full",
+                    actions_taken=[],
+                    model_version=model_name,
+                )
+                log.info("run %s finished outcome=escalated", run_id)
+                _write_run_record(record)
+                return record
 
-            if action_is_k8s:
+            if report.recommended_action == "git_commit_k8s":
                 try:
                     current = await _fetch_flux_snapshot(flux_mcp)
                     baseline = event.flux_baseline
@@ -380,74 +431,7 @@ async def run_orchestration(
 
             baseline = await capture_health_snapshot(watchdog_deps)
 
-            if action_is_imperative:
-                if report.proposed_patch is None:
-                    record = _abort_record(
-                        "delete_resource missing proposed_patch", "abort"
-                    )
-                    _write_run_record(record)
-                    return record
-                kind = report.proposed_patch.resource_kind
-                namespace = report.proposed_patch.resource_namespace
-                name = report.proposed_patch.resource_name
-                try:
-                    await kubectl_mcp.direct_call_tool(
-                        "delete_resource",
-                        {"kind": kind, "namespace": namespace, "name": name},
-                    )
-                except Exception:
-                    log.exception(
-                        "run %s aborted: delete_resource failed (%s/%s/%s)",
-                        run_id,
-                        kind,
-                        namespace,
-                        name,
-                    )
-                    record = _abort_record("delete_resource_tool_error", "abort")
-                    _write_run_record(record)
-                    return record
-                await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
-                watchdog_result = await run_watchdog(watchdog_deps, baseline)
-                if watchdog_result.degraded:
-                    imp_outcome = "rollback_failed"
-                    imp_rollback_triggered = True
-                    imp_rollback_success: bool | None = False
-                else:
-                    imp_outcome = "success"
-                    imp_rollback_triggered = False
-                    imp_rollback_success = None
-                mttr_s = asyncio.get_event_loop().time() - t0
-                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record = RunRecord(
-                    run_id=run_id,
-                    scenario=scenario,
-                    seed=seed_str,
-                    model=model_name,
-                    git_sha7=sha7,
-                    started_at=started_at,
-                    ended_at=ended_at,
-                    outcome=imp_outcome,
-                    success_rate=(imp_outcome == "success"),
-                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
-                    MTTR_s=mttr_s,
-                    destructive_repair=True,
-                    rollback_triggered=imp_rollback_triggered,
-                    rollback_success=imp_rollback_success,
-                    total_input_tokens=total_usage.input_tokens or 0,
-                    total_output_tokens=total_usage.output_tokens or 0,
-                    total_tool_calls=_count_tool_calls(diag_msgs) + 1,
-                    iteration_count=iteration_count,
-                    autonomy_level="full",
-                    actions_taken=["delete_resource"],
-                    model_version=model_name,
-                )
-                log.info(
-                    "run %s finished outcome=%s (delete_resource)", run_id, imp_outcome
-                )
-                _write_run_record(record)
-                return record
-
-            if action_is_k8s:
+            if report.recommended_action == "git_commit_k8s":
                 try:
                     async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
                         remediation_result, rem_usage, rem_msgs = await run_remediation(
@@ -510,12 +494,15 @@ async def run_orchestration(
             actions_taken = _extract_tool_names(rem_msgs)
 
             outcome: str
-            if action_is_k8s and remediation_result.gate_status == "closed":
+            if (
+                report.recommended_action == "git_commit_k8s"
+                and remediation_result.gate_status == "closed"
+            ):
                 outcome = "gate_failed"
                 rollback_triggered = False
                 rollback_success = None
             elif (
-                action_is_k8s
+                report.recommended_action == "git_commit_k8s"
                 and remediation_result.merge_commit_sha is None
                 and remediation_result.agent_commits
                 and len(remediation_result.agent_commits) > GIT_COMMIT_BUDGET
@@ -525,16 +512,17 @@ async def run_orchestration(
                 rollback_success = None
             elif watchdog_result.degraded:
                 rollback_triggered = True
-                if action_is_k8s and remediation_result.merge_commit_sha:
-                    rollback_success = await _issue_rollback(
-                        git_mcp, flux_mcp, remediation_result.merge_commit_sha
-                    )
-                    outcome = (
-                        "rollback_succeeded" if rollback_success else "rollback_failed"
-                    )
-                else:
-                    rollback_success = False
-                    outcome = "rollback_failed"
+                rollback_success = await _issue_rollback(
+                    report.recommended_action,
+                    git_mcp,
+                    flux_mcp,
+                    nixos_mcp,
+                    remediation_result.merge_commit_sha,
+                    report.target_host,
+                )
+                outcome = (
+                    "rollback_succeeded" if rollback_success else "rollback_failed"
+                )
             else:
                 outcome = "success"
                 rollback_triggered = False
