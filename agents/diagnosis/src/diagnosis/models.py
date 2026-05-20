@@ -51,13 +51,13 @@ class DiagnosisReport(BaseModel):
     live_observed: str = Field(
         description=(
             "Verbatim short quote of the bad value seen on the live cluster,"
-            " e.g. 'image=nginx:bad-tag-v9 (kubectl get deployment vigil-app)'"
+            " e.g. 'image=<bad-value> (kubectl get deployment <name>)'"
         )
     )
     declared_observed: str = Field(
         description=(
             "Verbatim short quote of the value seen in git via read_file,"
-            " e.g. 'image=nginx:stable (read_file main:infra/.../vigil-app.yaml)'"
+            " e.g. 'image=<git-value> (read_file main:<path>)'"
         )
     )
     recommended_action: Literal[

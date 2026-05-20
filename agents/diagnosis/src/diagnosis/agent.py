@@ -43,7 +43,7 @@ Rules:
   ImagePullBackOff are symptoms, not root causes. Trace each symptom to the
   underlying component (wrong image tag, memory limit too low, missing secret, etc.).
 - root_cause_component must be an exact Deployment/Pod/image identifier from kubectl
-  output (e.g., "vigil-app:bad-tag-v9"), not a generic description.
+  output (e.g., "Deployment/vigil-app"), not a generic description.
 - evidence must be a verbatim log line or event quoted from tool output.
 - Use kubectl-mcp tools directly for all Kubernetes operations.
 
@@ -95,9 +95,9 @@ Workflow for K8s faults:
        "declared_drift" if git itself has the wrong value; "both_drift" or "no_drift"
        if the situation is ambiguous or already healthy.
      live_observed: a short verbatim quote from kubectl output of the bad live value,
-       e.g. "image=nginx:bad-tag-v9 (get_resource_yaml default/vigil-app)".
+       e.g. "image=<bad-value> (get_resource_yaml <namespace>/<name>)".
      declared_observed: a short verbatim quote from read_file of the declared value,
-       e.g. "image=nginx:stable (read_file main:infra/.../vigil-app.yaml)".
+       e.g. "image=<git-value> (read_file main:<path>)".
    If live_observed and declared_observed show the SAME value, the cluster has already
    self-healed; set drift_classification="no_drift" and recommended_action="escalate".
 
