@@ -112,9 +112,9 @@ def test_remediation_result_fields_stable() -> None:
 def test_run_remediation_returns_tuple_with_usage() -> None:
     """Orchestrator needs usage tuple for token aggregation."""
     source = inspect.getsource(run_remediation)
-    assert "result.usage()" in source
+    assert "result.usage" in source
     assert "result.all_messages()" in source
-    assert "return result.output, result.usage(), result.all_messages()" in source
+    assert "return result.output, result.usage, result.all_messages()" in source
 
 
 def test_remediation_prompt_dispatch_branches() -> None:

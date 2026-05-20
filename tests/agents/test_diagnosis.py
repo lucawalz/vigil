@@ -68,9 +68,9 @@ def test_run_diagnosis_signature_accepts_diagnosis_deps() -> None:
 def test_run_diagnosis_returns_tuple_with_usage() -> None:
     """Orchestrator needs usage tuple for token aggregation."""
     source = inspect.getsource(run_diagnosis)
-    assert "result.usage()" in source
+    assert "result.usage" in source
     assert "result.all_messages()" in source
-    assert "return result.output, result.usage(), result.all_messages()" in source
+    assert "return result.output, result.usage, result.all_messages()" in source
 
 
 def test_diagnosis_system_prompt_contains_action_selection_rule() -> None:
@@ -85,10 +85,60 @@ def test_diagnosis_report_escalate_is_valid() -> None:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="ManifestPathError: not a Kustomization",
+        drift_classification="no_drift",
+        live_observed="n/a (manifest path unresolvable)",
+        declared_observed="n/a (manifest path unresolvable)",
         recommended_action="escalate",
         confidence=0.9,
     )
     assert report.recommended_action == "escalate"
+
+
+def _base_report_kwargs(**overrides: object) -> dict:
+    return {
+        "root_cause": "image pull failure",
+        "root_cause_component": "vigil-app:bad-tag",
+        "severity": "high",
+        "affected_resources": ["default/vigil-app"],
+        "evidence": "ImagePullBackOff: nginx:bad-tag-v9",
+        "drift_classification": "live_only_drift",
+        "live_observed": "image=nginx:bad-tag-v9",
+        "declared_observed": "image=nginx:stable",
+        "recommended_action": "flux_reconcile",
+        "confidence": 0.95,
+        **overrides,
+    }
+
+
+def test_drift_classification_validator_rejects_live_drift_with_git_commit() -> None:
+    import pytest
+
+    with pytest.raises(Exception, match="live_only_drift"):
+        DiagnosisReport(**_base_report_kwargs(recommended_action="git_commit_k8s"))
+
+
+def test_drift_classification_validator_rejects_declared_drift_with_flux_reconcile() -> None:
+    import pytest
+
+    with pytest.raises(Exception, match="declared_drift"):
+        DiagnosisReport(
+            **_base_report_kwargs(
+                drift_classification="declared_drift",
+                recommended_action="flux_reconcile",
+            )
+        )
+
+
+def test_drift_classification_validator_accepts_valid_pairs() -> None:
+    for dc, action in [
+        ("live_only_drift", "flux_reconcile"),
+        ("live_only_drift", "nixos_rebuild"),
+        ("declared_drift", "git_commit_k8s"),
+        ("declared_drift", "git_commit_nix"),
+        ("both_drift", "escalate"),
+        ("no_drift", "escalate"),
+    ]:
+        DiagnosisReport(**_base_report_kwargs(drift_classification=dc, recommended_action=action))
 
 
 def test_system_prompt_uses_git_commit_for_k8s_faults() -> None:

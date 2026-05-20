@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_ai.mcp import MCPServerStdio
 
 
@@ -20,6 +20,10 @@ class ProposedPatch(BaseModel):
     )
 
 
+_LIVE_ONLY = {"flux_reconcile", "nixos_rebuild"}
+_DECLARED = {"git_commit_k8s", "git_commit_nix"}
+
+
 class DiagnosisReport(BaseModel):
     """Structured output from the Diagnosis agent."""
 
@@ -32,6 +36,30 @@ class DiagnosisReport(BaseModel):
         description="Exact resource names from kubectl output, including namespace"
     )
     evidence: str = Field(description="Verbatim log line or event proving root cause")
+    drift_classification: Literal[
+        "live_only_drift",
+        "declared_drift",
+        "both_drift",
+        "no_drift",
+    ] = Field(
+        description=(
+            "Direction of drift. live_only_drift: cluster mutated, git is correct."
+            " declared_drift: git itself has the wrong value."
+            " both_drift or no_drift: escalate."
+        )
+    )
+    live_observed: str = Field(
+        description=(
+            "Verbatim short quote of the bad value seen on the live cluster,"
+            " e.g. 'image=nginx:bad-tag-v9 (kubectl get deployment vigil-app)'"
+        )
+    )
+    declared_observed: str = Field(
+        description=(
+            "Verbatim short quote of the value seen in git via read_file,"
+            " e.g. 'image=nginx:stable (read_file main:infra/.../vigil-app.yaml)'"
+        )
+    )
     recommended_action: Literal[
         "flux_reconcile",
         "git_commit_k8s",
@@ -60,6 +88,26 @@ class DiagnosisReport(BaseModel):
             " for git-mcp.write_manifest"
         ),
     )
+
+    @model_validator(mode="after")
+    def _drift_action_consistent(self) -> "DiagnosisReport":
+        dc = self.drift_classification
+        action = self.recommended_action
+        if dc == "live_only_drift" and action not in _LIVE_ONLY:
+            raise ValueError(
+                f"drift_classification='live_only_drift' requires flux_reconcile or"
+                f" nixos_rebuild, not '{action}'"
+            )
+        if dc == "declared_drift" and action not in _DECLARED:
+            raise ValueError(
+                f"drift_classification='declared_drift' requires git_commit_k8s or"
+                f" git_commit_nix, not '{action}'"
+            )
+        if dc in {"both_drift", "no_drift"} and action != "escalate":
+            raise ValueError(
+                f"drift_classification='{dc}' requires escalate, not '{action}'"
+            )
+        return self
 
 
 @dataclass(frozen=True)

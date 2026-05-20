@@ -148,4 +148,4 @@ async def run_remediation(
         usage_limits=UsageLimits(request_limit=20),
         model=model,
     )
-    return result.output, result.usage(), result.all_messages()
+    return result.output, result.usage, result.all_messages()

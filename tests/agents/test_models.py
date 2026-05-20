@@ -57,32 +57,41 @@ def test_diagnosis_report_confidence_bounds() -> None:
         )
 
 
+def _minimal_report(**overrides: object) -> DiagnosisReport:
+    return DiagnosisReport(
+        root_cause="image tag wrong",
+        root_cause_component="vigil-app:bad-tag-v9",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="Failed to pull image",
+        drift_classification="declared_drift",
+        live_observed="image=nginx:bad-tag-v9",
+        declared_observed="image=nginx:bad-tag-v9 (read_file main:...vigil-app.yaml)",
+        recommended_action="git_commit_k8s",
+        confidence=0.9,
+        **overrides,
+    )
+
+
 def test_diagnosis_report_accepts_git_commit_k8s_action() -> None:
-    r = DiagnosisReport(
-        root_cause="image tag wrong",
-        root_cause_component="vigil-app:bad-tag-v9",
-        severity="high",
-        affected_resources=["default/vigil-app"],
-        evidence="Failed to pull image",
-        recommended_action="git_commit_k8s",
-        confidence=0.9,
-    )
+    r = _minimal_report()
     assert r.manifest_path is None
     assert r.proposed_patch is None
 
 
-def test_diagnosis_report_backward_compat_no_new_fields() -> None:
-    r = DiagnosisReport(
-        root_cause="image tag wrong",
-        root_cause_component="vigil-app:bad-tag-v9",
-        severity="high",
-        affected_resources=["default/vigil-app"],
-        evidence="Failed to pull image",
-        recommended_action="git_commit_k8s",
-        confidence=0.9,
-    )
-    assert r.manifest_path is None
-    assert r.proposed_patch is None
+def test_diagnosis_report_requires_drift_classification() -> None:
+    with pytest.raises(ValidationError, match="drift_classification"):
+        DiagnosisReport(
+            root_cause="image tag wrong",
+            root_cause_component="vigil-app:bad-tag-v9",
+            severity="high",
+            affected_resources=["default/vigil-app"],
+            evidence="Failed to pull image",
+            live_observed="image=nginx:bad-tag-v9",
+            declared_observed="image=nginx:stable",
+            recommended_action="git_commit_k8s",
+            confidence=0.9,
+        )
 
 
 def test_diagnosis_report_with_proposed_patch_roundtrip() -> None:
@@ -92,14 +101,7 @@ def test_diagnosis_report_with_proposed_patch_roundtrip() -> None:
         resource_namespace="default",
         patch_body="apiVersion: apps/v1\nkind: Deployment\n",
     )
-    r = DiagnosisReport(
-        root_cause="image tag wrong",
-        root_cause_component="vigil-app:bad-tag-v9",
-        severity="high",
-        affected_resources=["default/vigil-app"],
-        evidence="Failed to pull image",
-        recommended_action="git_commit_k8s",
-        confidence=0.9,
+    r = _minimal_report(
         manifest_path="apps/vigil/deployment.yaml",
         proposed_patch=patch,
     )

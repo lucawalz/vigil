@@ -65,10 +65,12 @@ def _count_tool_calls(msgs: list[ModelMessage]) -> int:
 
 
 def _extract_tool_names(msgs: list[ModelMessage]) -> list[str]:
+    from pydantic_ai.messages import ToolCallPart
+
     names: list[str] = []
     for msg in msgs:
         for part in getattr(msg, "parts", []):
-            if hasattr(part, "tool_name"):
+            if isinstance(part, ToolCallPart):
                 names.append(part.tool_name)
     return names
 

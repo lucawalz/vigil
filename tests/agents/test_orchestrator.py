@@ -36,6 +36,15 @@ from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
 
 
+_ACTION_DRIFT: dict[str, str] = {
+    "flux_reconcile": "live_only_drift",
+    "nixos_rebuild": "live_only_drift",
+    "git_commit_k8s": "declared_drift",
+    "git_commit_nix": "declared_drift",
+    "escalate": "no_drift",
+}
+
+
 def _canned_report() -> DiagnosisReport:
     return DiagnosisReport(
         root_cause="wrong image tag",
@@ -43,6 +52,9 @@ def _canned_report() -> DiagnosisReport:
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
+        drift_classification="declared_drift",
+        live_observed="image=nginx:bad-tag-v9 (get_resource_yaml default/vigil-app)",
+        declared_observed="image=nginx:bad-tag-v9 (read_file main:...vigil-app.yaml)",
         recommended_action="git_commit_k8s",
         confidence=0.95,
         manifest_path="infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml",
@@ -66,6 +78,9 @@ def _canned_report_with_action(
         severity="high",
         affected_resources=["default/vigil-app"],
         evidence="test evidence",
+        drift_classification=_ACTION_DRIFT[action],
+        live_observed="live=bad-value",
+        declared_observed="declared=good-value" if action != "escalate" else "n/a",
         recommended_action=action,
         confidence=0.9,
         target_host=target_host,
@@ -987,11 +1002,13 @@ def test_outcome_budget_exhausted() -> None:
 
 
 def test_extract_tool_names_returns_names_in_order() -> None:
+    from pydantic_ai.messages import ToolCallPart
+
     from orchestrator.agent import _extract_tool_names
 
     parts = [
-        SimpleNamespace(tool_name="create_branch", args={}),
-        SimpleNamespace(tool_name="commit_files", args={}),
+        ToolCallPart(tool_name="create_branch", args={}),
+        ToolCallPart(tool_name="commit_files", args={}),
     ]
     msg = SimpleNamespace(parts=parts)
     assert _extract_tool_names([msg]) == ["create_branch", "commit_files"]

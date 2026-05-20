@@ -89,20 +89,32 @@ Workflow for K8s faults:
    repo-relative manifest path. If this call raises ManifestPathError (the tool
    returns an error result), emit recommended_action="escalate" immediately.
 5. Call read_file(branch="main", path=<manifest_path>) to fetch declared state.
-6. Compare live YAML against declared YAML to classify drift.
+6. Determine drift direction and populate these three fields BEFORE choosing
+   recommended_action:
+     drift_classification: "live_only_drift" if the cluster mutated but git is correct;
+       "declared_drift" if git itself has the wrong value; "both_drift" or "no_drift"
+       if the situation is ambiguous or already healthy.
+     live_observed: a short verbatim quote from kubectl output of the bad live value,
+       e.g. "image=nginx:bad-tag-v9 (get_resource_yaml default/vigil-app)".
+     declared_observed: a short verbatim quote from read_file of the declared value,
+       e.g. "image=nginx:stable (read_file main:infra/.../vigil-app.yaml)".
+   If live_observed and declared_observed show the SAME value, the cluster has already
+   self-healed; set drift_classification="no_drift" and recommended_action="escalate".
 
 Workflow for OS faults:
 1. Call lookup_os_manifest_path(hostname) to get the repo-relative NixOS config path.
 2. Call read_file(branch="main", path=<config_path>) to fetch declared state, and/or
    call dry_build(hostname) to validate current declared config.
-3. Compare live OS state (via get_journal, get_systemd_status, get_generations) against
-   declared state to classify drift.
+3. Determine drift direction and populate drift_classification, live_observed, and
+   declared_observed (same contract as the K8s workflow step 6 above).
 
 For git_commit_k8s faults, before emitting proposed_patch:
 1. Derive the manifest path via the K8s workflow above.
 2. Populate DiagnosisReport.proposed_patch with a ProposedPatch whose patch_body is
-   the full replacement manifest YAML (apiVersion, kind, metadata, spec). The
-   resource_kind, resource_name, and resource_namespace fields mirror the resource.
+   derived from the read_file content with the single faulty field corrected. Never
+   use get_resource_yaml output as the base for patch_body — it contains runtime-only
+   fields (creationTimestamp, resourceVersion, uid, status) that must not enter git.
+   The resource_kind, resource_name, and resource_namespace fields mirror the resource.
    When the manifest path ends in "helmrelease.yaml", generate patch_body as the
    HelmRelease YAML with corrected .spec.values.* (not a StatefulSet or Deployment
    spec patch).
@@ -113,19 +125,26 @@ kubectl or the previous ReplicaSet's pod template, then emit that as patch_body.
 There is no separate imperative rollback action; the GitOps path handles regression
 via the same git_commit_k8s mechanism.
 
+Drift-to-action mapping (drift_classification drives recommended_action):
+- live_only_drift → flux_reconcile (K8s) or nixos_rebuild (OS). Git is correct.
+- declared_drift → git_commit_k8s (K8s) or git_commit_nix (OS). Git must be fixed.
+- both_drift / no_drift → escalate. The situation is outside the four-quadrant model.
+These mappings are enforced by the DiagnosisReport schema validator; a mismatched
+pair will be rejected.
+
 recommended_action selection:
 - flux_reconcile: live resource drifted from declared state, but the declared state
   in git is correct; Flux can self-heal by reconciling. Set proposed_patch=None.
 - git_commit_k8s: declared manifest state in git is itself wrong (bad image tag,
   wrong config value); a git commit on the K8s manifest is required to fix declared
   state. Populate proposed_patch with resource_kind/namespace/name AND patch_body
-  (full replacement manifest YAML).
+  (full replacement manifest YAML derived from read_file, not from live YAML).
 - nixos_rebuild: live NixOS host drifted from declared NixOS config, but the config
   in git is correct; rebuilding the host restores the desired state. Set
   proposed_patch=None. Set target_host to the affected hostname.
 - git_commit_nix: declared NixOS config in git is itself wrong; a git commit on the
   NixOS config is required. Populate proposed_patch with patch_body (corrected config
-  YAML). Set target_host to the affected hostname.
+  YAML derived from read_file). Set target_host to the affected hostname.
 - escalate: manifest path cannot be resolved (lookup_k8s_manifest_path raises
   ManifestPathError), the resource is not Flux-managed, or the fault falls outside
   the four-quadrant model. Set proposed_patch=None.
@@ -193,4 +212,4 @@ async def run_diagnosis(
         ),
         model=model,
     )
-    return result.output, result.usage(), result.all_messages()
+    return result.output, result.usage, result.all_messages()
