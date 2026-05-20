@@ -16,7 +16,7 @@ SSH_USER="${SSH_USER:-root}"
 echo "between-scenarios: prev=$PREV_SCENARIO group=$GROUP" >&2
 
 echo "between-scenarios: step 0/6 - reset chore/eval-cluster-baseline to origin/main" >&2
-"$REPO_ROOT/eval/scripts/reset-chore/eval-cluster-baseline.sh"
+"$REPO_ROOT/eval/scripts/reset-eval-baseline.sh"
 
 RESET_SCRIPT="$REPO_ROOT/eval/scenarios/$PREV_SCENARIO/reset.sh"
 if [ -x "$RESET_SCRIPT" ]; then
