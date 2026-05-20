@@ -72,6 +72,7 @@ in
   environment.systemPackages = with pkgs; [
     uv
     kubectl
+    fluxcd
     jq
     curl
     git
