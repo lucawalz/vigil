@@ -97,7 +97,8 @@ def run_cmd(
         click.echo(f"ERROR: {e}", err=True)
         resolved_runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
         _write_setup_error_record(
-            scenario, seed, model, resolved_runs_dir, str(e), outcome="diagnosis_timeout"
+            scenario, seed, model, resolved_runs_dir, str(e),
+            outcome="diagnosis_timeout",
         )
         sys.exit(2)
     except (RuntimeError, FileNotFoundError) as e:
