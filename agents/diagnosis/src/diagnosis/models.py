@@ -29,7 +29,7 @@ class DiagnosisReport(BaseModel):
 
     root_cause: str = Field(description="One-sentence root cause, not a symptom")
     root_cause_component: str = Field(
-        description="Deployment/pod/image name at fault (e.g., 'vigil-app:bad-tag-v9')"
+        description="Deployment/pod/image name at fault (e.g., '<deployment>:<bad-tag>')"
     )
     severity: str = Field(pattern="^(low|medium|high|critical)$")
     affected_resources: list[str] = Field(
