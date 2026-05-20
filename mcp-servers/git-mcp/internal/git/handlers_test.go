@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -261,8 +263,20 @@ func TestCreateBranchHandler_NoTokenInOutput(t *testing.T) {
 	}
 }
 
+func seedManifest(t *testing.T, cloneDir, relPath, body string) {
+	t.Helper()
+	abs := filepath.Join(cloneDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("seedManifest mkdir: %v", err)
+	}
+	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+		t.Fatalf("seedManifest write: %v", err)
+	}
+}
+
 func TestWriteManifestHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\n")
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("write_manifest",
@@ -273,7 +287,7 @@ func TestWriteManifestHandler_Success(t *testing.T) {
 
 	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
 		"manifest_path": "apps/deploy.yaml",
-		"patch_body":    "apiVersion: apps/v1",
+		"patch_body":    "apiVersion: apps/v1\nkind: Deployment\n",
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -289,6 +303,7 @@ func TestWriteManifestHandler_Success(t *testing.T) {
 
 func TestWriteManifestHandler_DomainError(t *testing.T) {
 	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\n")
 	fake := &fakeGitClient{err: fmt.Errorf("write failed")}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("write_manifest",
@@ -306,6 +321,128 @@ func TestWriteManifestHandler_DomainError(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected IsError=true for domain error")
+	}
+}
+
+func TestWriteManifestHandler_RejectsMissingPath(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/does-not-exist.yaml",
+		"patch_body":    "apiVersion: v1\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing path")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "does not exist") {
+		t.Errorf("expected 'does not exist' in error, got: %s", text)
+	}
+}
+
+func TestWriteManifestHandler_RejectsNoOpPatch(t *testing.T) {
+	cloneDir := t.TempDir()
+	body := "apiVersion: v1\nkind: Deployment\n"
+	seedManifest(t, cloneDir, "apps/deploy.yaml", body)
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    body,
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for no-op patch")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "no-op") {
+		t.Errorf("expected 'no-op' in error, got: %s", text)
+	}
+}
+
+func TestWriteManifestHandler_RejectsRuntimeOnlyFields(t *testing.T) {
+	cases := []struct {
+		name        string
+		patchBody   string
+		wantInError string
+	}{
+		{
+			name:        "creationTimestamp",
+			patchBody:   "apiVersion: v1\nkind: Deployment\nmetadata:\n  creationTimestamp: \"2026-05-20T10:00:00Z\"\n  name: foo\n",
+			wantInError: "metadata.creationTimestamp",
+		},
+		{
+			name:        "resourceVersion",
+			patchBody:   "apiVersion: v1\nkind: Deployment\nmetadata:\n  resourceVersion: \"12345\"\n  name: foo\n",
+			wantInError: "metadata.resourceVersion",
+		},
+		{
+			name:        "uid",
+			patchBody:   "apiVersion: v1\nkind: Deployment\nmetadata:\n  uid: abc-def\n  name: foo\n",
+			wantInError: "metadata.uid",
+		},
+		{
+			name:        "generation",
+			patchBody:   "apiVersion: v1\nkind: Deployment\nmetadata:\n  generation: 3\n  name: foo\n",
+			wantInError: "metadata.generation",
+		},
+		{
+			name:        "managedFields",
+			patchBody:   "apiVersion: v1\nkind: Deployment\nmetadata:\n  managedFields:\n  - manager: kubectl\n  name: foo\n",
+			wantInError: "metadata.managedFields",
+		},
+		{
+			name:        "top-level status",
+			patchBody:   "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\nstatus:\n  replicas: 3\n",
+			wantInError: "status",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cloneDir := t.TempDir()
+			seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+			fake := &fakeGitClient{}
+			state := preloadedState(cloneDir, "remediation/run-001")
+			tool := mcp.NewTool("write_manifest",
+				mcp.WithString("manifest_path", mcp.Required()),
+				mcp.WithString("patch_body", mcp.Required()),
+			)
+			handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+			result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+				"manifest_path": "apps/deploy.yaml",
+				"patch_body":    tc.patchBody,
+			})
+			if err != nil {
+				t.Fatalf("CallTool error: %v", err)
+			}
+			if !result.IsError {
+				t.Errorf("expected IsError=true for runtime-only field %s", tc.name)
+			}
+			text := result.Content[0].(mcp.TextContent).Text
+			if !strings.Contains(text, tc.wantInError) {
+				t.Errorf("expected %q in error, got: %s", tc.wantInError, text)
+			}
+		})
 	}
 }
 

@@ -62,6 +62,29 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 	}
 }
 
+type runtimeFieldRule struct {
+	name    string
+	pattern *regexp.Regexp
+}
+
+var runtimeOnlyFieldRules = []runtimeFieldRule{
+	{"metadata.creationTimestamp", regexp.MustCompile(`(?m)^  creationTimestamp:`)},
+	{"metadata.resourceVersion", regexp.MustCompile(`(?m)^  resourceVersion:`)},
+	{"metadata.uid", regexp.MustCompile(`(?m)^  uid:`)},
+	{"metadata.generation", regexp.MustCompile(`(?m)^  generation:`)},
+	{"metadata.managedFields", regexp.MustCompile(`(?m)^  managedFields:`)},
+	{"status", regexp.MustCompile(`(?m)^status:`)},
+}
+
+func findRuntimeOnlyField(yamlBody string) string {
+	for _, rule := range runtimeOnlyFieldRules {
+		if rule.pattern.MatchString(yamlBody) {
+			return rule.name
+		}
+	}
+	return ""
+}
+
 func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -88,6 +111,20 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 		absPath := filepath.Join(cloneDir, cleaned)
 		if !strings.HasPrefix(absPath, cloneDir+string(filepath.Separator)) {
 			return mcp.NewToolResultError("manifest_path: path traversal rejected"), nil
+		}
+
+		existing, err := os.ReadFile(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return mcp.NewToolResultError("manifest_path: file does not exist on base branch; remediation cannot create new manifests"), nil
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("HandleWriteManifest: read existing: %v", err)), nil
+		}
+		if string(existing) == patchBody {
+			return mcp.NewToolResultError("patch_body: identical to current file; no-op patches are rejected"), nil
+		}
+		if violation := findRuntimeOnlyField(patchBody); violation != "" {
+			return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML"), nil
 		}
 
 		if err := client.WriteFile(ctx, cloneDir, cleaned, patchBody); err != nil {
