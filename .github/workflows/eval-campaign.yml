@@ -231,7 +231,11 @@ jobs:
               echo "Campaign circuit breaker tripped (3 consecutive baseline_degraded) — aborting group $GROUP"
               break
             fi
-            if [ "$VIGIL_EVAL_STATUS" -ne 0 ] && [ "$VIGIL_EVAL_STATUS" -ne 10 ]; then echo "scenario $S exited non-zero — recorded in runs_index.jsonl"; fi
+            if [ "$VIGIL_EVAL_STATUS" -eq 1 ] || [ "$VIGIL_EVAL_STATUS" -eq 2 ]; then
+              echo "scenario $S exited $VIGIL_EVAL_STATUS — recorded in runs_index.jsonl"
+            elif [ "$VIGIL_EVAL_STATUS" -ne 0 ]; then
+              echo "scenario $S exited $VIGIL_EVAL_STATUS — NOT recorded in runs_index.jsonl"
+            fi
             PREV=$S
           done
 
