@@ -38,13 +38,11 @@ type K8sClient interface {
 }
 
 type realK8sClient struct {
-	cs *kubernetes.Clientset
+	cs kubernetes.Interface
 	dc dynamic.Interface
 	rm meta.RESTMapper
 }
 
-// NewRealK8sClient creates one singleton Clientset at server startup.
-// Never create a new clientset per tool call — TCP+TLS handshake is expensive.
 func NewRealK8sClient(cfg *rest.Config) K8sClient {
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
@@ -263,7 +261,11 @@ func (c *realK8sClient) DeleteResource(ctx context.Context, kind, namespace, nam
 }
 
 func (c *realK8sClient) GetResourceYAML(ctx context.Context, kind, namespace, name string) (string, error) {
-	mapping, err := c.rm.RESTMapping(schema.ParseGroupKind(kind))
+	gvk, err := c.resolveKind(kind)
+	if err != nil {
+		return "", err
+	}
+	mapping, err := c.rm.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
 		return "", fmt.Errorf("map kind %s: %w", kind, err)
 	}
@@ -287,6 +289,25 @@ func (c *realK8sClient) GetResourceYAML(ctx context.Context, kind, namespace, na
 		return "", fmt.Errorf("marshal yaml: %w", err)
 	}
 	return string(out), nil
+}
+
+func (c *realK8sClient) resolveKind(kind string) (schema.GroupVersionKind, error) {
+	_, lists, err := c.cs.Discovery().ServerGroupsAndResources()
+	if lists == nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("discovery: %w", err)
+	}
+	for _, list := range lists {
+		gv, parseErr := schema.ParseGroupVersion(list.GroupVersion)
+		if parseErr != nil {
+			continue
+		}
+		for _, r := range list.APIResources {
+			if r.Kind == kind {
+				return gv.WithKind(kind), nil
+			}
+		}
+	}
+	return schema.GroupVersionKind{}, fmt.Errorf("kind %q not found in discovery", kind)
 }
 
 func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deploymentName string) (string, error) {
