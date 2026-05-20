@@ -3,7 +3,7 @@ name: k3s-invalid-flag-via-commit
 layer: os
 expected_action: git_commit_nix
 
-root_cause_component: "hetzner-worker-1/default.nix commits services.k3s.extraFlags = lib.mkForce [ \"--invalid-flag-xyz\" ] on eval-baseline"
+root_cause_component: "hetzner-worker-1/default.nix commits services.k3s.extraFlags = lib.mkForce [ \"--invalid-flag-xyz\" ] on chore/eval-cluster-baseline"
 expected_resolution_path: "diagnosis -> git_commit_nix (remove mkForce extraFlags override) -> auto-reconciler -> watchdog_confirm"
 
 inject_params:

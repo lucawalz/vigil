@@ -876,7 +876,7 @@ func TestDeleteBranchHandler_MissingArgument(t *testing.T) {
 func TestReadFileHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{readFileOut: "apiVersion: v1\nkind: ConfigMap\n"}
-	state := preloadedState(cloneDir, "eval-baseline")
+	state := preloadedState(cloneDir, "chore/eval-cluster-baseline")
 	tool := mcp.NewTool("read_file",
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
@@ -884,7 +884,7 @@ func TestReadFileHandler_Success(t *testing.T) {
 	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
-		"branch": "eval-baseline",
+		"branch": "chore/eval-cluster-baseline",
 		"path":   "infra/k8s/cm.yaml",
 	})
 	if err != nil {
@@ -902,7 +902,7 @@ func TestReadFileHandler_Success(t *testing.T) {
 func TestReadFileHandler_BranchNotFound(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{readFileErr: errors.New("branch not found: missing-branch")}
-	state := preloadedState(cloneDir, "eval-baseline")
+	state := preloadedState(cloneDir, "chore/eval-cluster-baseline")
 	tool := mcp.NewTool("read_file",
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
@@ -928,7 +928,7 @@ func TestReadFileHandler_BranchNotFound(t *testing.T) {
 func TestReadFileHandler_PathNotFound(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{readFileErr: errors.New("path not found: nope.yaml")}
-	state := preloadedState(cloneDir, "eval-baseline")
+	state := preloadedState(cloneDir, "chore/eval-cluster-baseline")
 	tool := mcp.NewTool("read_file",
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
@@ -936,7 +936,7 @@ func TestReadFileHandler_PathNotFound(t *testing.T) {
 	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
-		"branch": "eval-baseline",
+		"branch": "chore/eval-cluster-baseline",
 		"path":   "nope.yaml",
 	})
 	if err != nil {
@@ -954,7 +954,7 @@ func TestReadFileHandler_PathNotFound(t *testing.T) {
 func TestReadFileHandler_MissingBranch(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{}
-	state := preloadedState(cloneDir, "eval-baseline")
+	state := preloadedState(cloneDir, "chore/eval-cluster-baseline")
 	tool := mcp.NewTool("read_file",
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
@@ -979,7 +979,7 @@ func TestReadFileHandler_MissingBranch(t *testing.T) {
 func TestReadFileHandler_MissingPath(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{}
-	state := preloadedState(cloneDir, "eval-baseline")
+	state := preloadedState(cloneDir, "chore/eval-cluster-baseline")
 	tool := mcp.NewTool("read_file",
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
@@ -987,7 +987,7 @@ func TestReadFileHandler_MissingPath(t *testing.T) {
 	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
-		"branch": "eval-baseline",
+		"branch": "chore/eval-cluster-baseline",
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -1011,7 +1011,7 @@ func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
 	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
-		"branch": "eval-baseline",
+		"branch": "chore/eval-cluster-baseline",
 		"path":   "infra/k8s/cm.yaml",
 	})
 	if err != nil {

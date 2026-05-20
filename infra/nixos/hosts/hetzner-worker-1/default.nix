@@ -38,6 +38,6 @@
 
   services.vigilAutoReconciler = {
     enable = true;
-    branch = "eval-baseline";
+    branch = "chore/eval-cluster-baseline";
   };
 }

@@ -15,8 +15,8 @@ SSH_USER="${SSH_USER:-root}"
 
 echo "between-scenarios: prev=$PREV_SCENARIO group=$GROUP" >&2
 
-echo "between-scenarios: step 0/6 - reset eval-baseline to origin/main" >&2
-"$REPO_ROOT/eval/scripts/reset-eval-baseline.sh"
+echo "between-scenarios: step 0/6 - reset chore/eval-cluster-baseline to origin/main" >&2
+"$REPO_ROOT/eval/scripts/reset-chore/eval-cluster-baseline.sh"
 
 RESET_SCRIPT="$REPO_ROOT/eval/scenarios/$PREV_SCENARIO/reset.sh"
 if [ -x "$RESET_SCRIPT" ]; then
@@ -37,7 +37,7 @@ if [ "$GROUP" = "cross" ] || [ "$GROUP" = "os" ]; then
   for host in hetzner-worker-1 hetzner-worker-2; do
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
       "$SSH_USER@$host" \
-      "git -C /opt/nixos-config fetch origin && git -C /opt/nixos-config reset --hard origin/eval-baseline && nixos-rebuild switch --flake /opt/nixos-config#$host" \
+      "git -C /opt/nixos-config fetch origin && git -C /opt/nixos-config reset --hard origin/chore/eval-cluster-baseline && nixos-rebuild switch --flake /opt/nixos-config#$host" \
       || echo "between-scenarios: nixos-rebuild on $host failed, continuing" >&2
   done
 else

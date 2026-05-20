@@ -3,7 +3,7 @@ name: oom-memory-limit-committed
 layer: k8s
 expected_action: git_commit_k8s
 
-root_cause_component: "vigil-app.yaml committed resources.limits.memory: \"4Mi\" on eval-baseline causing OOM kills"
+root_cause_component: "vigil-app.yaml committed resources.limits.memory: \"4Mi\" on chore/eval-cluster-baseline causing OOM kills"
 expected_resolution_path: "diagnosis -> git_commit_k8s (restore memory limit in manifest) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:

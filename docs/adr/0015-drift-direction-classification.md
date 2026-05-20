@@ -32,14 +32,14 @@ The root cause is that the agent had no concept of drift direction. K8s and NixO
 
 Chosen option: "2×2 action surface keyed by layer × drift origin", because it assigns a distinct, correct remediation primitive to every fault quadrant, eliminates the empty-PR failure mode, and gives the eval campaign a separately scoreable in-repo cell for each layer.
 
-The Diagnosis agent inspects both live cluster state and `eval-baseline` HEAD for each affected resource, computes drift direction, and emits one of the four actions. The Remediation agent executes the emitted action without further diagnosis.
+The Diagnosis agent inspects both live cluster state and `chore/eval-cluster-baseline` HEAD for each affected resource, computes drift direction, and emits one of the four actions. The Remediation agent executes the emitted action without further diagnosis.
 
 ### Consequences
 
 - Good: Each of the four quadrants maps to an unambiguous action; the eval campaign can score layer-classification and direction-classification independently
 - Good: Live-drift faults never produce a commit; in-repo drift faults never issue a bare reconcile; the structural mismatch that caused PR #77 is eliminated
 - Good: Action vocabulary is a closed enum; adding a new fault type requires categorising it into an existing quadrant, not inventing a new action class
-- Bad: Diagnosis agent must fetch both live object YAML and `eval-baseline` HEAD for every fault; adds two remote reads per diagnosis, increasing latency
+- Bad: Diagnosis agent must fetch both live object YAML and `chore/eval-cluster-baseline` HEAD for every fault; adds two remote reads per diagnosis, increasing latency
 - Bad: Eight g-variant scenarios increase eval campaign cost roughly proportionally to the existing scenario count
 
 **Validation Status:** Pending — g-variant smoke campaign (k8s-1g..5g, os-1g..3g)
@@ -52,7 +52,7 @@ The decision holds as long as:
 - `eval/scenarios/k8s-{1..5}g/scenario.yaml` each carry `expected_action: git_commit_k8s`
 - `eval/scenarios/os-{1..3}/scenario.yaml` each carry `expected_action: nixos_rebuild`
 - `eval/scenarios/os-{1..3}g/scenario.yaml` each carry `expected_action: git_commit_nix`
-- No g-variant run opens a PR against `main`; `RunRecord.agent_branch` targets `eval-baseline` exclusively
+- No g-variant run opens a PR against `main`; `RunRecord.agent_branch` targets `chore/eval-cluster-baseline` exclusively
 - All eight smoke-run scenarios return `outcome == "success"`
 
 ### Pros and Cons of the Options
@@ -61,7 +61,7 @@ The decision holds as long as:
 
 - Good: Four actions cover every layer–direction combination; both diagnosis and remediation are unambiguous
 - Good: Eval campaign can score each quadrant independently, producing four separate accuracy metrics
-- Bad: Diagnosis agent must inspect `eval-baseline` HEAD in addition to live cluster state, adding a remote read step to the diagnosis flow
+- Bad: Diagnosis agent must inspect `chore/eval-cluster-baseline` HEAD in addition to live cluster state, adding a remote read step to the diagnosis flow
 
 #### Single `git_commit` action for all faults
 
@@ -69,17 +69,17 @@ The decision holds as long as:
 
 #### Direction inference deferred to the Remediation agent
 
-- Bad: The Remediation agent receives only the emitted action from Diagnosis; deferring direction resolution forces it to fetch `eval-baseline` state and re-execute diagnosis logic. This splits "what is wrong" across two agents, breaking the contract that Diagnosis emits a complete action and Remediation executes without further reasoning — the same violation that ADR-0005 introduced dedicated roles to prevent.
+- Bad: The Remediation agent receives only the emitted action from Diagnosis; deferring direction resolution forces it to fetch `chore/eval-cluster-baseline` state and re-execute diagnosis logic. This splits "what is wrong" across two agents, breaking the contract that Diagnosis emits a complete action and Remediation executes without further reasoning — the same violation that ADR-0005 introduced dedicated roles to prevent.
 
 #### No classification; always reconcile
 
-- Bad: Flux reconcile applies the current `eval-baseline` HEAD to the cluster; when `eval-baseline` carries a committed bad manifest (the g-variant inject case), reconciling propagates the fault rather than correcting it. The cluster enters a restart loop recoverable only by reverting the commit, but the agent has no signal to revert because the reconcile completed successfully from Flux's perspective.
+- Bad: Flux reconcile applies the current `chore/eval-cluster-baseline` HEAD to the cluster; when `chore/eval-cluster-baseline` carries a committed bad manifest (the g-variant inject case), reconciling propagates the fault rather than correcting it. The cluster enters a restart loop recoverable only by reverting the commit, but the agent has no signal to revert because the reconcile completed successfully from Flux's perspective.
 
 ## Operational constraints
 
-**g-variant scenarios must run sequentially.** `eval-baseline` is a single shared branch tracked by the Flux `GitRepository` (`gotk-sync.yaml:11`). Concurrent g-variant `inject.sh` runs clobber each other's commits on `eval-baseline`, producing undefined cluster state.
+**g-variant scenarios must run sequentially.** `chore/eval-cluster-baseline` is a single shared branch tracked by the Flux `GitRepository` (`gotk-sync.yaml:11`). Concurrent g-variant `inject.sh` runs clobber each other's commits on `chore/eval-cluster-baseline`, producing undefined cluster state.
 
-**`eval-baseline` is a permanent operational branch.** Deleting it breaks the Hetzner cluster's GitOps: Flux loses its source branch and all kustomisations fail to reconcile. The branch must persist for the lifetime of the eval cluster.
+**`chore/eval-cluster-baseline` is a permanent operational branch.** Deleting it breaks the Hetzner cluster's GitOps: Flux loses its source branch and all kustomisations fail to reconcile. The branch must persist for the lifetime of the eval cluster.
 
 ## More Information
 

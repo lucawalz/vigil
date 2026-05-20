@@ -3,7 +3,7 @@ name: k3s-systemd-execstart-override-via-commit
 layer: os
 expected_action: git_commit_nix
 
-root_cause_component: "hetzner-worker-1/default.nix commits systemd.services.k3s.serviceConfig.ExecStart = lib.mkForce \"${pkgs.coreutils}/bin/false\" on eval-baseline (Nix-store path, not bare /bin/false which does not exist on NixOS)"
+root_cause_component: "hetzner-worker-1/default.nix commits systemd.services.k3s.serviceConfig.ExecStart = lib.mkForce \"${pkgs.coreutils}/bin/false\" on chore/eval-cluster-baseline (Nix-store path, not bare /bin/false which does not exist on NixOS)"
 expected_resolution_path: "diagnosis -> git_commit_nix (remove mkForce ExecStart override) -> auto-reconciler -> watchdog_confirm"
 
 inject_params:
