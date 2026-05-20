@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: vigil-app
+    eval-scenario: k8s-2
+  name: vigil-app
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vigil-app
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: vigil-app
+    spec:
+      containers:
+      - args:
+        - |
+          if [ "${APP_CRASH_MODE:-0}" = "1" ]; then
+            echo "APP_CRASH_MODE=1 — exiting 1 on purpose"
+            exit 1
+          fi
+          exec nginx -g 'daemon off;'
+        command:
+        - /bin/sh
+        - -c
+        image: nginx:stable
+        imagePullPolicy: IfNotPresent
+        name: vigil-app
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            memory: 64Mi
