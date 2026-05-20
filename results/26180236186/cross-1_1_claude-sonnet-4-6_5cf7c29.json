@@ -1,0 +1,21 @@
+{
+  "run_id": "cross-1_1_claude-sonnet-4-6_5cf7c29",
+  "scenario": "cross-1",
+  "seed": 1,
+  "model": "claude-sonnet-4-6",
+  "outcome": "setup_error",
+  "success_rate": false,
+  "diagnosis_accuracy": null,
+  "MTTR_s": null,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "total_tool_calls": 0,
+  "iteration_count": 0,
+  "autonomy_level": "full",
+  "actions_taken": [],
+  "started_at": "2026-05-20T17:59:20Z",
+  "ended_at": "2026-05-20T17:59:20Z",
+  "error_message": "/root/vigil/eval/scripts/reset-eval-baseline.sh exited 128: fatal: could not read Username for 'https://github.com': No such device or address"
+}
