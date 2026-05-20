@@ -1,0 +1,21 @@
+{
+  "run_id": "cross-3_1_claude-sonnet-4-6_a13f1a9",
+  "scenario": "cross-3",
+  "seed": 1,
+  "model": "claude-sonnet-4-6",
+  "outcome": "setup_error",
+  "success_rate": false,
+  "diagnosis_accuracy": null,
+  "MTTR_s": null,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "total_tool_calls": 0,
+  "iteration_count": 0,
+  "autonomy_level": "full",
+  "actions_taken": [],
+  "started_at": "2026-05-20T19:10:15Z",
+  "ended_at": "2026-05-20T19:10:15Z",
+  "error_message": "/root/vigil/eval/scenarios/cross-3/inject.sh exited 5: Failed to stop systemd-resolved.service: Unit systemd-resolved.service not loaded."
+}
