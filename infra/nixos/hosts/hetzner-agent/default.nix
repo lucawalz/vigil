@@ -24,7 +24,7 @@ let
 
   kubectl-mcp = mkMcpServer {
     name = "kubectl-mcp";
-    vendorHash = "sha256-FIslni/JU5foc4Qf0W3q3lyQIK9GMiE1d3UroxgCT+8=";
+    vendorHash = "sha256-AKbV8OSZXeyhSabRTL7SJKs4pYs/3htJ48QABmwXIXg=";
   };
   flux-mcp = mkMcpServer {
     name = "flux-mcp";
