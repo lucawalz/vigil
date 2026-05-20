@@ -360,7 +360,7 @@ async def run_one(
     if runs_dir is None:
         runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
 
-    reset_baseline_sh = scenarios_dir.parent / "scripts" / "reset-chore/eval-cluster-baseline.sh"
+    reset_baseline_sh = scenarios_dir.parent / "scripts" / "reset-eval-baseline.sh"
     reset_sh = _script_path(scenarios_dir, scenario_id, "reset.sh")
     inject_sh = _script_path(scenarios_dir, scenario_id, "inject.sh")
 
