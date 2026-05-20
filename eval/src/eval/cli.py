@@ -95,6 +95,10 @@ def run_cmd(
         )
     except TimeoutError as e:
         click.echo(f"ERROR: {e}", err=True)
+        resolved_runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
+        _write_setup_error_record(
+            scenario, seed, model, resolved_runs_dir, str(e), outcome="diagnosis_timeout"
+        )
         sys.exit(2)
     except (RuntimeError, FileNotFoundError) as e:
         click.echo(f"ERROR: {e}", err=True)
@@ -124,6 +128,7 @@ def _write_setup_error_record(
     model: str,
     runs_dir: Path,
     error_msg: str,
+    outcome: str = "setup_error",
 ) -> None:
     try:
         sha7 = subprocess.check_output(
@@ -144,7 +149,7 @@ def _write_setup_error_record(
         "scenario": scenario_id,
         "seed": seed,
         "model": model,
-        "outcome": "setup_error",
+        "outcome": outcome,
         "success_rate": False,
         "diagnosis_accuracy": None,
         "MTTR_s": None,
@@ -168,7 +173,7 @@ def _write_setup_error_record(
         "scenario": scenario_id,
         "seed": seed,
         "model": model,
-        "outcome": "setup_error",
+        "outcome": outcome,
         "success_rate": False,
     }
     with index_path.open("a") as fh:
