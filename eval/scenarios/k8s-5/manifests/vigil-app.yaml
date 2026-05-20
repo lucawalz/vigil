@@ -5,7 +5,6 @@ metadata:
   namespace: default
   labels:
     app: vigil-app
-    eval-scenario: k8s-5
 spec:
   replicas: 1
   selector:
