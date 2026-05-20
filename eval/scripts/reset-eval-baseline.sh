@@ -8,7 +8,7 @@ SSH_KEY="${SSH_KEY_PATH:-/root/.ssh/id_ed25519}"
 SSH_USER="${SSH_USER:-root}"
 
 git -C "$REPO_ROOT" fetch origin
-git push --force origin "origin/main:chore/eval-cluster-baseline"
+git -C "$REPO_ROOT" push --force origin "origin/main:chore/eval-cluster-baseline"
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
   || echo "reset-chore/eval-cluster-baseline: flux source reconcile failed, continuing" >&2
 
