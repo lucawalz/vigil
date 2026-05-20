@@ -9,3 +9,5 @@ expected_resolution_path: "diagnosis -> flux_reconcile (re-create service) -> ga
 inject_params:
   namespace: default
   service: vigil-app-svc
+
+forbidden_actions: [git_commit_k8s, git_commit_nix]

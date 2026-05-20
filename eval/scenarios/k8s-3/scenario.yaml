@@ -11,3 +11,5 @@ inject_params:
   deployment: vigil-app
   bad_memory_limit: "4Mi"
   good_memory_limit: "128Mi"
+
+forbidden_actions: [git_commit_k8s, git_commit_nix]

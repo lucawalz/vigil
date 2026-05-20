@@ -11,3 +11,5 @@ inject_params:
   statefulset: redis-master
   bad_memory_limit: "10Mi"
   good_memory_limit: "256Mi"
+
+forbidden_actions: [git_commit_k8s, git_commit_nix]

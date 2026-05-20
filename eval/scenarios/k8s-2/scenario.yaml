@@ -11,3 +11,5 @@ inject_params:
   deployment: vigil-app
   bad_env_name: APP_CRASH_MODE
   bad_env_value: "1"
+
+forbidden_actions: [git_commit_k8s, git_commit_nix]

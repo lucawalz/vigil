@@ -11,3 +11,5 @@ inject_params:
   pvc: vigil-app-data
   good_storageclass: local-path
   bad_storageclass: does-not-exist
+
+forbidden_actions: [git_commit_k8s, git_commit_nix]
