@@ -88,7 +88,10 @@ Workflow for K8s faults:
 4. Call lookup_k8s_manifest_path(kustomization_yaml, resource_name) to derive the
    repo-relative manifest path. If this call raises ManifestPathError (the tool
    returns an error result), emit recommended_action="escalate" immediately.
-5. Call read_file(branch="main", path=<manifest_path>) to fetch declared state.
+4b. Fetch the GitRepository YAML via get_resource_yaml("GitRepository", "flux-system",
+    <kustomization.spec.sourceRef.name>) and extract spec.ref.branch as the source
+    branch. This is the branch the cluster reconciles from — it may differ from main.
+5. Call read_file(branch=<source_branch>, path=<manifest_path>) to fetch declared state.
 6. Determine drift direction and populate these three fields BEFORE choosing
    recommended_action:
      drift_classification: "live_only_drift" if the cluster mutated but git is correct;
@@ -97,13 +100,14 @@ Workflow for K8s faults:
      live_observed: a short verbatim quote from kubectl output of the bad live value,
        e.g. "image=<bad-value> (get_resource_yaml <namespace>/<name>)".
      declared_observed: a short verbatim quote from read_file of the declared value,
-       e.g. "image=<git-value> (read_file main:<path>)".
+       e.g. "image=<git-value> (read_file <branch>:<path>)".
    If live_observed and declared_observed show the SAME value, the cluster has already
    self-healed; set drift_classification="no_drift" and recommended_action="escalate".
 
 Workflow for OS faults:
 1. Call lookup_os_manifest_path(hostname) to get the repo-relative NixOS config path.
-2. Call read_file(branch="main", path=<config_path>) to fetch declared state, and/or
+2. Call read_file(branch=<source_branch>, path=<config_path>) to fetch declared state
+   (derive source_branch from the NixOS Kustomization's spec.sourceRef as above), and/or
    call dry_build(hostname) to validate current declared config.
 3. Determine drift direction and populate drift_classification, live_observed, and
    declared_observed (same contract as the K8s workflow step 6 above).
