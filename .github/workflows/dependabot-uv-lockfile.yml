@@ -13,12 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.LOCKFILE_PUSH_TOKEN }}
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -28,22 +27,13 @@ jobs:
         run: uv lock
 
       - name: Commit updated lockfile
-        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git diff --quiet uv.lock; then
             echo "uv.lock unchanged, nothing to commit"
-            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git add uv.lock
           git commit -m "chore(uv): regenerate workspace lockfile"
           git push
-          echo "pushed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Re-trigger CI on lockfile commit
-        if: steps.commit.outputs.pushed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run ci.yml --ref "${{ github.head_ref }}"
