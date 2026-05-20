@@ -1,6 +1,19 @@
 { config, lib, pkgs, meta, self, ... }:
 let
   repoRoot = builtins.dirOf (builtins.dirOf (toString self));
+
+  vigilGitCredentialHelper = pkgs.writeShellScript "vigil-git-credentials" ''
+    set -eu
+    if [ "''${1:-}" != "get" ]; then exit 0; fi
+    if [ -r /etc/vigil/env ]; then
+      set -a
+      . /etc/vigil/env
+      set +a
+    fi
+    if [ -n "''${GITHUB_TOKEN:-}" ]; then
+      printf 'username=x-access-token\npassword=%s\n' "$GITHUB_TOKEN"
+    fi
+  '';
   mkMcpServer = { name, vendorHash }: pkgs.buildGoModule {
     pname = name;
     version = "0.0.1";
@@ -146,6 +159,11 @@ in
       export KUBECONFIG="/etc/vigil/kubeconfig-eval-runner"
     fi
     export PATH="/usr/local/bin:/root/vigil/.venv/bin:$PATH"
+  '';
+
+  environment.etc."gitconfig".text = ''
+    [credential "https://github.com"]
+      helper = !${vigilGitCredentialHelper}
   '';
 
   services.openssh = {
