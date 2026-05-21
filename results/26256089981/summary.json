@@ -1,0 +1,203 @@
+{
+  "by_model": {
+    "claude-sonnet-4-6": {
+      "n_runs": 13,
+      "n_attempts": 6,
+      "success_rate": 0.0,
+      "success_rate_given_attempt": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "diagnosis_accuracy": null,
+      "diag_n": 0,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.0,
+      "n_eligible": 6,
+      "mean_input_tokens": 0,
+      "mean_output_tokens": 0,
+      "mean_tool_calls": 0,
+      "mean_iteration_count": 0
+    }
+  },
+  "by_scenario": {
+    "cross-1": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "cross-2": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "cross-3": {
+      "n_runs": 1,
+      "outcome": "baseline_degraded",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-1": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-2": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-3": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-5": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-5g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "cross-1": {
+      "layer": "cross",
+      "accuracy": null
+    },
+    "cross-2": {
+      "layer": "cross",
+      "accuracy": null
+    },
+    "cross-3": {
+      "layer": "cross",
+      "accuracy": null
+    },
+    "k8s-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 13,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "boundary-1",
+    "boundary-2",
+    "boundary-3",
+    "boundary-4",
+    "cross-1",
+    "cross-2",
+    "cross-3",
+    "deceptive-1",
+    "deceptive-2",
+    "ingress-1",
+    "k8s-1",
+    "k8s-1g",
+    "k8s-2",
+    "k8s-2g",
+    "k8s-3",
+    "k8s-3g",
+    "k8s-4",
+    "k8s-4g",
+    "k8s-5",
+    "k8s-5g",
+    "os-1",
+    "os-1g",
+    "os-2",
+    "os-2g",
+    "os-3",
+    "os-3g",
+    "pg-1",
+    "redis-1"
+  ]
+}
