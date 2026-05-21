@@ -16,6 +16,9 @@ func main() {
 	log.SetOutput(os.Stderr)
 
 	cfg := config.Load()
+	if len(cfg.SSHHosts) == 0 {
+		log.Fatal("nixos-mcp: SSH_HOSTS is required; refusing to start without an allow-list")
+	}
 
 	client, err := nixos.NewRealNixOSClient(cfg.SSHUser, cfg.SSHKeyPath, cfg.SSHHosts)
 	if err != nil {
