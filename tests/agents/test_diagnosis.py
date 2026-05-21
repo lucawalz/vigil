@@ -115,7 +115,7 @@ def test_drift_classification_validator_rejects_live_drift_with_git_commit() -> 
         DiagnosisReport(**_base_report_kwargs(recommended_action="git_commit_k8s"))
 
 
-def test_drift_classification_validator_rejects_declared_drift_with_flux_reconcile() -> None:
+def test_declared_drift_with_flux_reconcile_is_rejected() -> None:
     import pytest
 
     with pytest.raises(Exception, match="declared_drift"):
@@ -136,7 +136,9 @@ def test_drift_classification_validator_accepts_valid_pairs() -> None:
         ("both_drift", "escalate"),
         ("no_drift", "escalate"),
     ]:
-        DiagnosisReport(**_base_report_kwargs(drift_classification=dc, recommended_action=action))
+        DiagnosisReport(
+            **_base_report_kwargs(drift_classification=dc, recommended_action=action)
+        )
 
 
 def test_system_prompt_uses_git_commit_for_k8s_faults() -> None:

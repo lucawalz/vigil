@@ -86,7 +86,8 @@ If recommended_action == "git_commit_nix":
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
     1. create_branch(run_id=<run_id>)
     1b. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
-        the current declared content. If identical to proposed_patch.patch_body, escalate.
+        the current declared content. If identical to proposed_patch.patch_body,
+        escalate.
     2. write_manifest(manifest_path=DiagnosisReport.manifest_path,
                      patch_body=DiagnosisReport.proposed_patch.patch_body)
     3. commit_files(message='fix(remediation): <short root cause summary>')
