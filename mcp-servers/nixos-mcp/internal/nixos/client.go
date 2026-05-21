@@ -120,7 +120,7 @@ func (c *realNixOSClient) SwitchGeneration(_ context.Context, host string, gener
 }
 
 func (c *realNixOSClient) RebuildTest(_ context.Context, host string) (string, error) {
-	_, rebuildErr := c.runSSH(host, "sudo nixos-rebuild test")
+	_, rebuildErr := c.runSSH(host, fmt.Sprintf("sudo nixos-rebuild test --flake /opt/vigil/infra/nixos#%s", host))
 	exitCode := 0
 	if rebuildErr != nil {
 		exitCode = 1
@@ -180,7 +180,7 @@ func (c *realNixOSClient) GetNixPath(_ context.Context, hostname string) (string
 }
 
 func (c *realNixOSClient) DryBuild(_ context.Context, host string) (string, error) {
-	return c.runSSH(host, "sudo nixos-rebuild dry-activate")
+	return c.runSSH(host, fmt.Sprintf("sudo nixos-rebuild dry-activate --flake /opt/vigil/infra/nixos#%s", host))
 }
 
 func (c *realNixOSClient) TriggerReconcile(_ context.Context, host string) (string, error) {
