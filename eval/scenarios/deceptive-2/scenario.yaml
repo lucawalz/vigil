@@ -1,0 +1,15 @@
+id: deceptive-2
+name: live-scaled-down-plus-bad-image-commit
+layer: k8s
+expected_action: escalate
+
+root_cause_component: "Both live state and declared git state diverge from main — ambiguous remediation"
+expected_resolution_path: "diagnosis computes diff from DiagnosisContext, sees live != declared != main, classifies as both_drift, emits escalate"
+
+alert_name: KubeDeploymentReplicasMismatch
+
+inject_params:
+  namespace: default
+  deployment: vigil-app
+
+forbidden_actions: [flux_reconcile, git_commit_k8s, git_commit_nix, switch_generation]
