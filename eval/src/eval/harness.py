@@ -191,10 +191,23 @@ def _reset_circuit_breaker() -> None:
         pass
 
 
+def _load_scenario_alert_name(scenario_id: str) -> str:
+    scenarios_dir = Path(os.environ.get("VIGIL_SCENARIOS_DIR", "eval/scenarios"))
+    scenario_yaml = scenarios_dir / scenario_id / "scenario.yaml"
+    if scenario_yaml.exists():
+        with scenario_yaml.open() as f:
+            data = yaml.safe_load(f) or {}
+        name = data.get("alert_name", "")
+        if name:
+            return name
+    return scenario_id
+
+
 def _build_fault_event(
     scenario_id: str, target_host: str | None = None
 ) -> dict[str, Any]:
-    labels: dict[str, str] = {"alertname": f"EvalHarness-{scenario_id}"}
+    alert_name = _load_scenario_alert_name(scenario_id)
+    labels: dict[str, str] = {"alertname": alert_name}
     if target_host:
         labels["node"] = target_host
     return {
@@ -211,12 +224,12 @@ def _build_fault_event(
                 "fingerprint": f"eval-{scenario_id}",
             }
         ],
-        "groupLabels": {"alertname": f"EvalHarness-{scenario_id}"},
+        "groupLabels": {"alertname": alert_name},
         "commonLabels": labels,
         "commonAnnotations": {},
         "externalURL": "",
         "version": "4",
-        "groupKey": f"eval/{scenario_id}",
+        "groupKey": f"eval/{alert_name}",
         "truncatedAlerts": 0,
     }
 

@@ -10,3 +10,5 @@ inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
   bad_image: "nginx:bad-tag-v9"
   good_image: "nginx:stable"
+
+alert_name: KubeContainerWaiting

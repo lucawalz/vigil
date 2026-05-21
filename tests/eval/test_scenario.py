@@ -121,6 +121,7 @@ def test_roundtrip_model_dump_validate() -> None:
         expected_resolution_path=(
             "diagnosis -> flux_reconcile -> gate_pass -> watchdog_confirm"
         ),
+        alert_name="KubeContainerWaiting",
         inject_params={"namespace": "default", "deployment": "vigil-app"},
     )
     dumped = original.model_dump()
@@ -138,6 +139,7 @@ def test_inject_params_preserved(tmp_scenarios_dir: Path) -> None:
         "root_cause_component": "Deployment/vigil-app",
         "expected_action": "flux_reconcile",
         "expected_resolution_path": "diagnosis -> flux_reconcile",
+        "alert_name": "KubeContainerWaiting",
         "inject_params": {
             "namespace": "default",
             "deployment": "vigil-app",
@@ -162,6 +164,7 @@ def test_accepts_flux_reconcile_expected_action(tmp_scenarios_dir: Path) -> None
         "expected_resolution_path": (
             "diagnosis -> flux_reconcile -> gate_pass -> watchdog_confirm"
         ),
+        "alert_name": "KubeContainerWaiting",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
     scenarios = load_scenarios(tmp_scenarios_dir)
@@ -176,6 +179,7 @@ def test_forbidden_actions_defaults_to_empty_list() -> None:
         root_cause_component="Deployment/vigil-app",
         expected_action="flux_reconcile",
         expected_resolution_path="diagnosis -> flux_reconcile",
+        alert_name="KubeContainerWaiting",
     )
     assert s.forbidden_actions == []
 
@@ -190,6 +194,7 @@ def test_accepts_nixos_rebuild_expected_action(tmp_scenarios_dir: Path) -> None:
         "root_cause_component": "NixOS service",
         "expected_action": "nixos_rebuild",
         "expected_resolution_path": "diagnosis -> nixos_rebuild -> watchdog_confirm",
+        "alert_name": "KubeNodeNotReady",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
     scenarios = load_scenarios(tmp_scenarios_dir)
@@ -209,6 +214,23 @@ def test_boundary_forbidden_actions_contains_switch_generation(
     )
 
 
+def test_alert_name_required_field(real_scenarios: list[ScenarioDefinition]) -> None:
+    for s in real_scenarios:
+        assert s.alert_name, f"{s.id}: alert_name is empty"
+
+
+def test_alert_name_missing_raises() -> None:
+    with pytest.raises(ValidationError):
+        ScenarioDefinition(
+            id="bad",
+            name="missing-alert-name",
+            layer="k8s",
+            root_cause_component="Deployment/vigil-app",
+            expected_action="flux_reconcile",
+            expected_resolution_path="diagnosis -> flux_reconcile",
+        )
+
+
 def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> None:
     scenario_dir = tmp_scenarios_dir / "b1"
     scenario_dir.mkdir()
@@ -221,6 +243,7 @@ def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> N
                 "root_cause_component": "imagePullSecret",
                 "expected_action": "flux_reconcile",
                 "expected_resolution_path": "diagnosis -> flux_reconcile",
+                "alert_name": "KubePodCrashLooping",
                 "forbidden_actions": ["switch_generation"],
             }
         )

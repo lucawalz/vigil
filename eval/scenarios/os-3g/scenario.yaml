@@ -9,3 +9,5 @@ expected_resolution_path: "diagnosis -> git_commit_nix (remove mkForce ExecStart
 inject_params:
   target_host: hetzner-worker-1
   fault_type: k3s-execstart-override-via-nix-commit
+
+alert_name: KubeNodeNotReady

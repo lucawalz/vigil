@@ -10,3 +10,5 @@ inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
   env_name: "APP_CRASH_MODE"
   env_value: "1"
+
+alert_name: KubePodCrashLooping

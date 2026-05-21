@@ -11,4 +11,5 @@ inject_params:
   unit: k3s-agent.service
   affected_namespace: default
 
+alert_name: KubeNodeNotReady
 forbidden_actions: [git_commit_nix, git_commit_k8s]

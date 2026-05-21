@@ -12,4 +12,5 @@ inject_params:
   bad_env_name: APP_CRASH_MODE
   bad_env_value: "1"
 
+alert_name: KubePodCrashLooping
 forbidden_actions: [git_commit_k8s, git_commit_nix]

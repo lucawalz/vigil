@@ -11,4 +11,5 @@ inject_params:
   mount: /var/lib/rancher/k3s
   fill_threshold_pct: 95
 
+alert_name: NodeFilesystemAlmostFull
 forbidden_actions: [git_commit_nix, git_commit_k8s]

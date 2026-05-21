@@ -11,4 +11,5 @@ inject_params:
   deployment: vigil-app
   secret_name: vigil-app-pullsecret
 
+alert_name: KubeContainerWaiting
 forbidden_actions: [switch_generation, git_commit_k8s, git_commit_nix]

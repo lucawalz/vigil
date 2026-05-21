@@ -11,4 +11,5 @@ inject_params:
   deployment: vigil-app
   configmap_name: vigil-app-config
 
+alert_name: KubePodCrashLooping
 forbidden_actions: [switch_generation, git_commit_k8s, git_commit_nix]

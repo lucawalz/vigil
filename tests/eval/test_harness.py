@@ -764,3 +764,74 @@ async def test_flux_baseline_included_in_webhook_post_body(
     flux_baseline = captured.get("json", {}).get("flux_baseline")
     assert flux_baseline is not None, "flux_baseline must be present in POST body"
     assert flux_baseline["cluster_apps"]["ready"] == "True"
+
+
+def _write_k8s1_scenario(
+    scenarios_dir: Path, alert_name: str = "KubeDeploymentReplicasMismatch"
+) -> None:
+    scenario_dir = scenarios_dir / "k8s-1"
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+    import yaml as _yaml
+
+    (scenario_dir / "scenario.yaml").write_text(
+        _yaml.dump(
+            {
+                "id": "k8s-1",
+                "name": "wrong-image-tag",
+                "layer": "k8s",
+                "root_cause_component": "Deployment/vigil-app",
+                "expected_action": "flux_reconcile",
+                "expected_resolution_path": "diagnosis -> flux_reconcile",
+                "alert_name": alert_name,
+            }
+        )
+    )
+
+
+def test_build_fault_event_uses_alert_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    expected_alert_name = "KubeDeploymentReplicasMismatch"
+    _write_k8s1_scenario(scenarios_dir, alert_name=expected_alert_name)
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    payload = _build_fault_event("k8s-1")
+
+    assert payload["alerts"][0]["labels"]["alertname"] == expected_alert_name
+    assert payload["groupLabels"]["alertname"] == expected_alert_name
+    assert expected_alert_name in payload["groupKey"]
+
+
+def test_no_scenario_id_leak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    _write_k8s1_scenario(scenarios_dir)
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    payload = _build_fault_event("k8s-1")
+
+    assert "k8s-1" not in payload["alerts"][0]["labels"]["alertname"]
+    assert "k8s-1" not in payload["groupLabels"]["alertname"]
+    assert "k8s-1" not in payload["groupKey"]
+
+
+def test_no_evalharness_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    _write_k8s1_scenario(scenarios_dir)
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    payload = _build_fault_event("k8s-1")
+
+    assert "EvalHarness-" not in payload["alerts"][0]["labels"]["alertname"]
+    assert "EvalHarness-" not in payload["groupLabels"]["alertname"]
+    assert "EvalHarness-" not in payload["groupKey"]

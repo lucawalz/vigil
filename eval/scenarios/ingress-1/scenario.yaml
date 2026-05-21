@@ -10,4 +10,5 @@ inject_params:
   namespace: default
   service: vigil-app-svc
 
+alert_name: KubeServiceEndpointsDown
 forbidden_actions: [git_commit_k8s, git_commit_nix]

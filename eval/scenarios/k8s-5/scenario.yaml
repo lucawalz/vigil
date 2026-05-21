@@ -12,4 +12,5 @@ inject_params:
   good_storageclass: local-path
   bad_storageclass: does-not-exist
 
+alert_name: KubePersistentVolumeClaimPending
 forbidden_actions: [git_commit_k8s, git_commit_nix]

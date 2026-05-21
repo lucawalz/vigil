@@ -11,4 +11,5 @@ inject_params:
   deployment: vigil-app
   policy_name: deny-egress
 
+alert_name: KubePodNotReady
 forbidden_actions: [switch_generation, git_commit_k8s, git_commit_nix]

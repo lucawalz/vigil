@@ -12,4 +12,5 @@ inject_params:
   good_image: "nginx:stable"
   bad_image: "nginx:bad-tag-v9"
 
+alert_name: KubeContainerWaiting
 forbidden_actions: [git_commit_k8s, git_commit_nix]

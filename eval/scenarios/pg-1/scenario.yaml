@@ -12,4 +12,5 @@ inject_params:
   bad_image: "bitnami/postgresql:bogus-tag-v0"
   good_image: "docker.io/bitnami/postgresql:16"
 
+alert_name: PostgresDown
 forbidden_actions: [git_commit_k8s, git_commit_nix]
