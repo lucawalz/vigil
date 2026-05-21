@@ -10,6 +10,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
+from .context import DiagnosisContext
 from .manifest_paths import (
     lookup_k8s_manifest_path as _lookup_k8s_manifest_path,
 )
@@ -38,6 +39,14 @@ Available tools:
     lookup_os_manifest_path(hostname): return the repo-relative NixOS config path for
                the given hostname
 
+Ground-truth context (DiagnosisContext):
+The user message includes a DiagnosisContext block containing:
+  source_branch, manifest_path, live_yaml, declared_yaml, diff
+These fields are pre-computed by Python and are ground truth. Treat them as
+authoritative inputs. Do not call get_resource_yaml or read_file to re-derive
+source_branch, manifest_path, live_yaml, or declared_yaml — those calls have already
+been made. Use the provided diff to determine drift direction.
+
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
   ImagePullBackOff are symptoms, not root causes. Trace each symptom to the
@@ -45,7 +54,8 @@ Rules:
 - root_cause_component must be an exact Deployment/Pod/image identifier from kubectl
   output (e.g., "Deployment/vigil-app"), not a generic description.
 - evidence must be a verbatim log line or event quoted from tool output.
-- Use kubectl-mcp tools directly for all Kubernetes operations.
+- Use kubectl-mcp tools for follow-up investigation (events, logs, taints, node
+  status) as needed.
 
 Triage axes:
 1. Scheduling: pod cannot run (Pending, FailedScheduling, taint mismatch, no
@@ -78,50 +88,26 @@ OS-level fault rules:
 - When the recommended action is nixos_rebuild or git_commit_nix, set target_host to
   the hostname from the "node" label.
 
-Workflow for K8s faults:
-1. Fetch live resource YAML via get_resource_yaml(kind, namespace, name).
-2. Read the Flux annotations kustomize.toolkit.fluxcd.io/name and
-   kustomize.toolkit.fluxcd.io/namespace from the live YAML to identify which
-   Kustomization manages the resource.
-3. Fetch the Kustomization YAML via get_resource_yaml(
-   "Kustomization", flux_ns, flux_name).
-4. Call lookup_k8s_manifest_path(kustomization_yaml, resource_name) to derive the
-   repo-relative manifest path. If this call raises ManifestPathError (the tool
-   returns an error result), emit recommended_action="escalate" immediately.
-4b. Fetch the GitRepository YAML via get_resource_yaml("GitRepository", "flux-system",
-    <kustomization.spec.sourceRef.name>) and extract spec.ref.branch as the source
-    branch. This is the branch the cluster reconciles from — it may differ from main.
-5. Call read_file(branch=<source_branch>, path=<manifest_path>) to fetch declared state.
-6. Determine drift direction and populate these three fields BEFORE choosing
-   recommended_action:
-     drift_classification: "live_only_drift" if the cluster mutated but git is correct;
-       "declared_drift" if git itself has the wrong value; "both_drift" or "no_drift"
-       if the situation is ambiguous or already healthy.
-     live_observed: a short verbatim quote from kubectl output of the bad live value,
-       e.g. "image=<bad-value> (get_resource_yaml <namespace>/<name>)".
-     declared_observed: a short verbatim quote from read_file of the declared value,
-       e.g. "image=<git-value> (read_file <branch>:<path>)".
-   If live_observed and declared_observed show the SAME value, the cluster has already
-   self-healed; set drift_classification="no_drift" and recommended_action="escalate".
-
-Workflow for OS faults:
-1. Call lookup_os_manifest_path(hostname) to get the repo-relative NixOS config path.
-2. Call read_file(branch=<source_branch>, path=<config_path>) to fetch declared state
-   (derive source_branch from the NixOS Kustomization's spec.sourceRef as above), and/or
-   call dry_build(hostname) to validate current declared config.
-3. Determine drift direction and populate drift_classification, live_observed, and
-   declared_observed (same contract as the K8s workflow step 6 above).
+Drift classification from DiagnosisContext:
+Use the provided diff field from DiagnosisContext to classify drift direction:
+  live_only_drift: live_yaml differs from declared_yaml because the cluster mutated
+    but git is correct. The diff shows lines present in live but absent in declared.
+  declared_drift: declared_yaml itself has the wrong value; git must be fixed.
+    The diff shows lines in declared that contradict the correct live state.
+  both_drift: live and declared both deviate from the expected state; escalate.
+  no_drift: live_yaml and declared_yaml are identical; the cluster has self-healed;
+    set recommended_action="escalate".
 
 For git_commit_k8s faults, before emitting proposed_patch:
-1. Derive the manifest path via the K8s workflow above.
+1. Use DiagnosisContext.manifest_path as the target path (do not re-derive it).
 2. Populate DiagnosisReport.proposed_patch with a ProposedPatch whose patch_body is
-   derived from the read_file content with the single faulty field corrected. Never
-   use get_resource_yaml output as the base for patch_body — it contains runtime-only
-   fields (creationTimestamp, resourceVersion, uid, status) that must not enter git.
-   The resource_kind, resource_name, and resource_namespace fields mirror the resource.
-   When the manifest path ends in "helmrelease.yaml", generate patch_body as the
-   HelmRelease YAML with corrected .spec.values.* (not a StatefulSet or Deployment
-   spec patch).
+   derived from DiagnosisContext.declared_yaml with the single faulty field corrected.
+   Never use get_resource_yaml output as the base for patch_body — it contains
+   runtime-only fields (creationTimestamp, resourceVersion, uid, status) that must
+   not enter git. The resource_kind, resource_name, and resource_namespace fields
+   mirror the resource. When the manifest path ends in "helmrelease.yaml", generate
+   patch_body as the HelmRelease YAML with corrected .spec.values.* (not a
+   StatefulSet or Deployment spec patch).
 
 For rollout regression faults (bad Deployment rollout where the previous revision is
 the fix): reconstruct the previous-good manifest by reading rollout history via
@@ -142,13 +128,15 @@ recommended_action selection:
 - git_commit_k8s: declared manifest state in git is itself wrong (bad image tag,
   wrong config value); a git commit on the K8s manifest is required to fix declared
   state. Populate proposed_patch with resource_kind/namespace/name AND patch_body
-  (full replacement manifest YAML derived from read_file, not from live YAML).
+  (full replacement manifest YAML derived from DiagnosisContext.declared_yaml, not
+  from live YAML).
 - nixos_rebuild: live NixOS host drifted from declared NixOS config, but the config
   in git is correct; rebuilding the host restores the desired state. Set
   proposed_patch=None. Set target_host to the affected hostname.
 - git_commit_nix: declared NixOS config in git is itself wrong; a git commit on the
   NixOS config is required. Populate proposed_patch with patch_body (corrected config
-  YAML derived from read_file). Set target_host to the affected hostname.
+  YAML derived from DiagnosisContext.declared_yaml). Set target_host to the affected
+  hostname.
 - escalate: manifest path cannot be resolved (lookup_k8s_manifest_path raises
   ManifestPathError), the resource is not Flux-managed, or the fault falls outside
   the four-quadrant model. Set proposed_patch=None.
@@ -162,7 +150,8 @@ patch_body / target_host rules:
 - When confidence is below 0.6, gather more evidence with additional tool calls
   rather than committing to a repair action prematurely.
 
-Emit a DiagnosisReport with all required fields populated from tool output.
+Emit a DiagnosisReport with all required fields populated from tool output and the
+provided DiagnosisContext.
 Do not call switch_generation or etcd_snapshot_save; diagnosis is read-only."""
 
 
@@ -190,10 +179,12 @@ def lookup_os_manifest_path(hostname: str) -> str:
 async def run_diagnosis(
     deps: DiagnosisDeps,
     fault: FaultEvent,
+    context: DiagnosisContext,
     model: OpenAIChatModel | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
     _nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
-    _kubectl_write_tools = frozenset()
+    # Blocks delete_resource; expand if kubectl-mcp gains additional write tools.
+    _kubectl_write_tools = frozenset({"delete_resource"})
     _git_write_tools: frozenset[str] = frozenset()
     kubectl_readonly = FilteredToolset(
         deps.kubectl_mcp,
@@ -207,8 +198,18 @@ async def run_diagnosis(
         deps.git_mcp,
         filter_func=lambda _ctx, tool_def: tool_def.name not in _git_write_tools,
     )
+    user_message = (
+        f"Diagnose fault.\n\n"
+        f"Fault: {fault.model_dump_json()}\n\n"
+        f"DiagnosisContext:\n"
+        f"  source_branch: {context.source_branch}\n"
+        f"  manifest_path: {context.manifest_path}\n"
+        f"  live_yaml:\n{context.live_yaml}\n"
+        f"  declared_yaml:\n{context.declared_yaml}\n"
+        f"  diff:\n{context.diff}"
+    )
     result = await diagnosis_agent.run(
-        f"Diagnose fault: {fault.model_dump_json()}",
+        user_message,
         deps=deps,
         toolsets=[kubectl_readonly, nixos_readonly, git_readonly],
         usage_limits=UsageLimits(

@@ -58,10 +58,10 @@ def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:
 
 
 def test_run_diagnosis_signature_accepts_diagnosis_deps() -> None:
-    """run_diagnosis(deps, fault, model=None) -> tuple."""
+    """run_diagnosis(deps, fault, context, model=None) -> tuple."""
     sig = inspect.signature(run_diagnosis)
     params = list(sig.parameters.values())
-    assert len(params) == 3
+    assert len(params) == 4
     assert params[0].name == "deps"
     ann = params[0].annotation
     assert ann is DiagnosisDeps or (isinstance(ann, str) and "DiagnosisDeps" in ann)
@@ -88,8 +88,6 @@ def test_diagnosis_report_escalate_is_valid() -> None:
         affected_resources=["default/vigil-app"],
         evidence="ManifestPathError: not a Kustomization",
         drift_classification="no_drift",
-        live_observed="n/a (manifest path unresolvable)",
-        declared_observed="n/a (manifest path unresolvable)",
         recommended_action="escalate",
         confidence=0.9,
     )
@@ -104,8 +102,6 @@ def _base_report_kwargs(**overrides: object) -> dict:
         "affected_resources": ["default/vigil-app"],
         "evidence": "ImagePullBackOff: nginx:bad-tag-v9",
         "drift_classification": "live_only_drift",
-        "live_observed": "image=nginx:bad-tag-v9",
-        "declared_observed": "image=nginx:stable",
         "recommended_action": "flux_reconcile",
         "confidence": 0.95,
         **overrides,
@@ -180,9 +176,9 @@ def test_lookup_manifest_path_helpers_registered_as_tools() -> None:
     assert "def lookup_os_manifest_path" in source
 
 
-def test_kubectl_write_tools_is_empty_frozenset() -> None:
+def test_kubectl_write_tools_blocks_delete_resource() -> None:
     source = inspect.getsource(_diag_module)
-    assert "_kubectl_write_tools = frozenset()" in source
+    assert "delete_resource" in source
 
 
 def test_system_prompt_has_three_axis_labels() -> None:
@@ -224,8 +220,6 @@ def test_proposed_patch_allows_none_patch_body() -> None:
     assert patch.patch_body is None
 
 
-# --- Task 2: Schema removal + prompt rewrite + _kubectl_write_tools ---
-
 
 def test_diagnosis_report_lacks_live_observed_field() -> None:
     assert "live_observed" not in DiagnosisReport.model_fields
@@ -256,7 +250,7 @@ def test_diagnosis_report_drift_action_consistent_validator_intact() -> None:
             affected_resources=["default/vigil-app"],
             evidence="ImagePullBackOff",
             drift_classification="live_only_drift",
-            recommended_action="nixos_rebuild",
+            recommended_action="git_commit_k8s",
             confidence=0.9,
         )
 
@@ -286,8 +280,6 @@ def test_kubectl_write_tools_resolved() -> None:
         "_kubectl_write_tools must be non-empty or have explanatory comment"
     )
 
-
-# --- DiagnosisContext tests ---
 
 
 def test_diagnosis_context_is_frozen() -> None:
@@ -429,7 +421,9 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
     mock_git = AsyncMock()
-    mock_git.direct_call_tool = AsyncMock(return_value={"content": declared_yaml_content})
+    mock_git.direct_call_tool = AsyncMock(
+        return_value={"content": declared_yaml_content}
+    )
     mock_nixos = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
@@ -587,7 +581,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
 
 def test_build_diagnosis_context_os_happy_path() -> None:
     import asyncio
-    from unittest.mock import AsyncMock, call
+    from unittest.mock import AsyncMock
 
     from diagnosis.context import build_diagnosis_context
     from orchestrator.models import FaultEvent

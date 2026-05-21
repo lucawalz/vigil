@@ -35,7 +35,6 @@ from pydantic_ai.usage import Usage
 from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
 
-
 _ACTION_DRIFT: dict[str, str] = {
     "flux_reconcile": "live_only_drift",
     "nixos_rebuild": "live_only_drift",
@@ -53,8 +52,6 @@ def _canned_report() -> DiagnosisReport:
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
         drift_classification="declared_drift",
-        live_observed="image=nginx:bad-tag-v9 (get_resource_yaml default/vigil-app)",
-        declared_observed="image=nginx:bad-tag-v9 (read_file main:...vigil-app.yaml)",
         recommended_action="git_commit_k8s",
         confidence=0.95,
         manifest_path="infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml",
@@ -79,8 +76,6 @@ def _canned_report_with_action(
         affected_resources=["default/vigil-app"],
         evidence="test evidence",
         drift_classification=_ACTION_DRIFT[action],
-        live_observed="live=bad-value",
-        declared_observed="declared=good-value" if action != "escalate" else "n/a",
         recommended_action=action,
         confidence=0.9,
         target_host=target_host,
@@ -1002,9 +997,8 @@ def test_outcome_budget_exhausted() -> None:
 
 
 def test_extract_tool_names_returns_names_in_order() -> None:
-    from pydantic_ai.messages import ToolCallPart
-
     from orchestrator.agent import _extract_tool_names
+    from pydantic_ai.messages import ToolCallPart
 
     parts = [
         ToolCallPart(tool_name="create_branch", args={}),
@@ -1111,7 +1105,8 @@ def test_check_forbidden_actions_switch_generation_maps_to_nixos_rebuild(
     root = tmp_path / "scenarios"
     _make_scenario_dir(root, "sc", ["nixos_rebuild"])
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
-    assert _check_forbidden_actions("sc", ["switch_generation"]) == ["switch_generation"]
+    result = _check_forbidden_actions("sc", ["switch_generation"])
+    assert result == ["switch_generation"]
 
 
 def test_check_forbidden_actions_reconcile_kustomization_maps_to_flux_reconcile(

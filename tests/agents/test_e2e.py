@@ -35,8 +35,6 @@ def _canned_report() -> DiagnosisReport:
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
         drift_classification="declared_drift",
-        live_observed="image=nginx:bad-tag-v9 (get_resource_yaml default/vigil-app)",
-        declared_observed="image=nginx:bad-tag-v9 (read_file main:...vigil-app.yaml)",
         recommended_action="git_commit_k8s",
         confidence=0.95,
     )
