@@ -224,6 +224,69 @@ def test_proposed_patch_allows_none_patch_body() -> None:
     assert patch.patch_body is None
 
 
+# --- Task 2: Schema removal + prompt rewrite + _kubectl_write_tools ---
+
+
+def test_diagnosis_report_lacks_live_observed_field() -> None:
+    assert "live_observed" not in DiagnosisReport.model_fields
+
+
+def test_diagnosis_report_lacks_declared_observed_field() -> None:
+    assert "declared_observed" not in DiagnosisReport.model_fields
+
+
+def test_diagnosis_report_drift_action_consistent_validator_intact() -> None:
+    report_valid = DiagnosisReport(
+        root_cause="image pull failure",
+        root_cause_component="vigil-app",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="ImagePullBackOff",
+        drift_classification="live_only_drift",
+        recommended_action="flux_reconcile",
+        confidence=0.9,
+    )
+    assert report_valid.recommended_action == "flux_reconcile"
+
+    with pytest.raises(Exception):
+        DiagnosisReport(
+            root_cause="image pull failure",
+            root_cause_component="vigil-app",
+            severity="high",
+            affected_resources=["default/vigil-app"],
+            evidence="ImagePullBackOff",
+            drift_classification="live_only_drift",
+            recommended_action="nixos_rebuild",
+            confidence=0.9,
+        )
+
+
+def test_run_diagnosis_signature_requires_context() -> None:
+    from diagnosis.context import DiagnosisContext
+
+    sig = inspect.signature(run_diagnosis)
+    params = sig.parameters
+    assert "context" in params
+    assert params["context"].default is inspect.Parameter.empty, (
+        "context must be required (no default)"
+    )
+    ann = params["context"].annotation
+    assert ann is DiagnosisContext or (
+        isinstance(ann, str) and "DiagnosisContext" in ann
+    )
+
+
+def test_kubectl_write_tools_resolved() -> None:
+    import diagnosis.agent as _mod
+
+    source = inspect.getsource(_mod)
+    non_empty = "_kubectl_write_tools = frozenset({" in source
+    has_comment = "kubectl-mcp write tools" in source
+    assert non_empty or has_comment, (
+        "_kubectl_write_tools must be non-empty or have explanatory comment"
+    )
+
+
 # --- DiagnosisContext tests ---
 
 
