@@ -100,9 +100,9 @@ def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
 
 
 def _parse_child_kust_entries(kust_data: dict) -> list[tuple[str, str]]:
-    entries = (
-        ((kust_data.get("status") or {}).get("inventory") or {}).get("entries") or []
-    )
+    entries = ((kust_data.get("status") or {}).get("inventory") or {}).get(
+        "entries"
+    ) or []
     result = []
     for entry in entries:
         entry_id = entry.get("id", "")
