@@ -42,7 +42,7 @@ type GitClient interface {
 	CreatePR(ctx context.Context, title, head, base, body string) (prNumber int, err error)
 	EnableAutoMerge(ctx context.Context, prNumber int) error
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
-	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA string) (revertSHA string, err error)
+	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (revertSHA string, err error)
 	ClosePR(ctx context.Context, prNumber int) error
 	DeleteBranch(ctx context.Context, branch string) error
 	ReadFile(ctx context.Context, cloneDir, branch, path string) (string, error)
@@ -323,7 +323,7 @@ func (c *realGitClient) ReadFile(ctx context.Context, cloneDir, branch, path str
 }
 
 // go-git v5 does not expose a native Revert; fall back to the git binary.
-func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA string) (string, error) {
+func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (string, error) {
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
 		return "", sanitiseAuthError(fmt.Errorf("revert_commit: open repo: %w", err), c.cfg.AuthURL())
@@ -334,10 +334,10 @@ func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitS
 	}
 
 	if err := wt.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.NewBranchReferenceName(defaultBaseBranch),
+		Branch: plumbing.NewBranchReferenceName(branch),
 		Create: false,
 	}); err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: checkout main: %w", err), c.cfg.AuthURL())
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: checkout %s: %w", branch, err), c.cfg.AuthURL())
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "revert", "--no-edit", mergeCommitSHA)

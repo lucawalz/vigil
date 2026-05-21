@@ -13,6 +13,7 @@ import (
 type GitServer struct {
 	mu            sync.Mutex
 	currentBranch string
+	baseBranch    string
 	lastCommitSHA string
 	runID         string
 	cloneDir      string
@@ -35,6 +36,18 @@ func (s *GitServer) SetBranch(branch string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.currentBranch = branch
+}
+
+func (s *GitServer) BaseBranch() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.baseBranch
+}
+
+func (s *GitServer) SetBaseBranch(branch string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.baseBranch = branch
 }
 
 func (s *GitServer) SetLastCommit(sha string) {

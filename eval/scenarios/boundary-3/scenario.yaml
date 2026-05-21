@@ -11,7 +11,5 @@ inject_params:
   deployment: vigil-app
   quota_name: tight-quota
 
-forbidden_actions:
-  - switch_generation
-
-forbidden_actions: [git_commit_k8s, git_commit_nix]
+alert_name: KubeQuotaExceeded
+forbidden_actions: [switch_generation, git_commit_k8s, git_commit_nix]

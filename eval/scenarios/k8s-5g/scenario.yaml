@@ -10,3 +10,5 @@ inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
   bad_selector_label: "vigil-app-typo"
   good_selector_label: "vigil-app"
+
+alert_name: KubeDeploymentReplicasMismatch

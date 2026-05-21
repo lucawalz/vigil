@@ -56,6 +56,19 @@ def test_circuit_breaker_success_resets_counter() -> None:
 # --- Integration tests for ABORT paths --------------------------------
 
 
+def _mock_diagnosis_context() -> AsyncMock:
+    from diagnosis.context import DiagnosisContext
+
+    ctx = DiagnosisContext(
+        source_branch="main",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+    return AsyncMock(return_value=ctx)
+
+
 async def test_run_orchestration_abort_on_usage_limit_exceeded(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -67,6 +80,7 @@ async def test_run_orchestration_abort_on_usage_limit_exceeded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -99,6 +113,7 @@ async def test_run_orchestration_abort_on_unexpected_model_behavior(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -130,6 +145,7 @@ async def test_run_orchestration_abort_on_circuit_breaker_tripped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",

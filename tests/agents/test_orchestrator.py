@@ -35,7 +35,6 @@ from pydantic_ai.usage import Usage
 from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
 
-
 _ACTION_DRIFT: dict[str, str] = {
     "flux_reconcile": "live_only_drift",
     "nixos_rebuild": "live_only_drift",
@@ -53,8 +52,6 @@ def _canned_report() -> DiagnosisReport:
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image vigil-app:bad-tag-v9",
         drift_classification="declared_drift",
-        live_observed="image=nginx:bad-tag-v9 (get_resource_yaml default/vigil-app)",
-        declared_observed="image=nginx:bad-tag-v9 (read_file main:...vigil-app.yaml)",
         recommended_action="git_commit_k8s",
         confidence=0.95,
         manifest_path="infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml",
@@ -79,8 +76,6 @@ def _canned_report_with_action(
         affected_resources=["default/vigil-app"],
         evidence="test evidence",
         drift_classification=_ACTION_DRIFT[action],
-        live_observed="live=bad-value",
-        declared_observed="declared=good-value" if action != "escalate" else "n/a",
         recommended_action=action,
         confidence=0.9,
         target_host=target_host,
@@ -470,10 +465,27 @@ def test_build_run_id_falls_back_to_0000000_when_env_empty_and_git_missing(
     assert sha7 == "0000000"
 
 
+def _canned_diagnosis_context():
+    from diagnosis.context import DiagnosisContext
+
+    return DiagnosisContext(
+        source_branch="main",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+
+
 def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.delenv("GIT_SHA7", raising=False)
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(
+        orch_mod,
+        "build_diagnosis_context",
+        AsyncMock(return_value=_canned_diagnosis_context()),
+    )
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -1002,9 +1014,8 @@ def test_outcome_budget_exhausted() -> None:
 
 
 def test_extract_tool_names_returns_names_in_order() -> None:
-    from pydantic_ai.messages import ToolCallPart
-
     from orchestrator.agent import _extract_tool_names
+    from pydantic_ai.messages import ToolCallPart
 
     parts = [
         ToolCallPart(tool_name="create_branch", args={}),
@@ -1060,6 +1071,106 @@ def test_check_forbidden_actions_returns_empty_when_scenario_missing(
     scenarios_root.mkdir()
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
     assert _check_forbidden_actions("does-not-exist", ["x"]) == []
+
+
+def _make_scenario_dir(root: Path, scenario_id: str, forbidden: list[str]) -> None:
+    d = root / scenario_id
+    d.mkdir(parents=True, exist_ok=True)
+    import yaml as _yaml
+
+    (d / "scenario.yaml").write_text(_yaml.dump({"forbidden_actions": forbidden}))
+
+
+def test_check_forbidden_actions_commit_files_maps_to_git_commit_k8s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "k8s-1", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("k8s-1", ["commit_files"]) == ["commit_files"]
+
+
+def test_check_forbidden_actions_create_pr_maps_to_git_commit_nix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "os-1", ["git_commit_nix"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("os-1", ["create_pr"]) == ["create_pr"]
+
+
+def test_check_forbidden_actions_write_manifest_maps_to_git_commit_k8s_and_nix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["git_commit_k8s", "git_commit_nix"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("sc", ["write_manifest"]) == ["write_manifest"]
+
+
+def test_check_forbidden_actions_switch_generation_maps_to_nixos_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["nixos_rebuild"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    result = _check_forbidden_actions("sc", ["switch_generation"])
+    assert result == ["switch_generation"]
+
+
+def test_check_forbidden_actions_reconcile_kustomization_maps_to_flux_reconcile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["flux_reconcile"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    result = _check_forbidden_actions("sc", ["reconcile_kustomization"])
+    assert result == ["reconcile_kustomization"]
+
+
+def test_check_forbidden_actions_unknown_tool_not_in_violations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("sc", ["get_pods"]) == []
+
+
+def test_check_forbidden_actions_empty_actions_returns_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("sc", []) == []
+
+
+def test_check_forbidden_actions_returns_tool_name_not_action_class(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "k8s-1", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    violations = _check_forbidden_actions("k8s-1", ["commit_files"])
+    assert violations == ["commit_files"]
+    assert "git_commit_k8s" not in violations
 
 
 def test_run_record_forbidden_action_violations_serialises_list() -> None:
@@ -1621,3 +1732,153 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
     assert len(trigger_calls) == 1
     assert trigger_calls[0].args[1] == {"host": "hetzner-1"}
     flux_mcp.direct_call_tool.assert_not_called()
+
+
+async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.context import ManifestPathUnresolvable
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), Usage(), []))
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod,
+        "build_diagnosis_context",
+        AsyncMock(side_effect=ManifestPathUnresolvable("no flux annotations")),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "escalated"
+    run_diagnosis_mock.assert_not_called()
+
+
+async def test_orchestrator_passes_base_branch_to_create_branch(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.context import DiagnosisContext
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+
+    ctx = DiagnosisContext(
+        source_branch="eval-baseline",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="- live: yaml\n+ declared: yaml",
+    )
+    monkeypatch.setattr(
+        orch_mod, "build_diagnosis_context", AsyncMock(return_value=ctx)
+    )
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_remediation",
+        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    create_branch_calls = [
+        c
+        for c in mock_git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "create_branch"
+    ]
+    assert len(create_branch_calls) >= 1
+    args_dict = create_branch_calls[0].args[1]
+    assert args_dict.get("base_branch") == "eval-baseline"
+
+
+async def test_orchestrator_base_branch_falls_back_to_main_when_source_branch_empty(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.context import DiagnosisContext
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+
+    ctx = DiagnosisContext(
+        source_branch="",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+    monkeypatch.setattr(
+        orch_mod, "build_diagnosis_context", AsyncMock(return_value=ctx)
+    )
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_remediation",
+        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    create_branch_calls = [
+        c
+        for c in mock_git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "create_branch"
+    ]
+    assert len(create_branch_calls) >= 1
+    args_dict = create_branch_calls[0].args[1]
+    assert args_dict.get("base_branch") == "main"

@@ -29,7 +29,7 @@ class DiagnosisReport(BaseModel):
 
     root_cause: str = Field(description="One-sentence root cause, not a symptom")
     root_cause_component: str = Field(
-        description="Deployment/pod/image name at fault (e.g., '<deployment>:<bad-tag>')"
+        description="Deployment/pod/image at fault (e.g., '<deployment>:<bad-tag>')"
     )
     severity: str = Field(pattern="^(low|medium|high|critical)$")
     affected_resources: list[str] = Field(
@@ -46,18 +46,6 @@ class DiagnosisReport(BaseModel):
             "Direction of drift. live_only_drift: cluster mutated, git is correct."
             " declared_drift: git itself has the wrong value."
             " both_drift or no_drift: escalate."
-        )
-    )
-    live_observed: str = Field(
-        description=(
-            "Verbatim short quote of the bad value seen on the live cluster,"
-            " e.g. 'image=<bad-value> (kubectl get deployment <name>)'"
-        )
-    )
-    declared_observed: str = Field(
-        description=(
-            "Verbatim short quote of the value seen in git via read_file,"
-            " e.g. 'image=<git-value> (read_file main:<path>)'"
         )
     )
     recommended_action: Literal[

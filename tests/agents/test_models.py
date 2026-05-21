@@ -65,8 +65,6 @@ def _minimal_report(**overrides: object) -> DiagnosisReport:
         affected_resources=["default/vigil-app"],
         evidence="Failed to pull image",
         drift_classification="declared_drift",
-        live_observed="image=nginx:bad-tag-v9",
-        declared_observed="image=nginx:bad-tag-v9 (read_file main:...vigil-app.yaml)",
         recommended_action="git_commit_k8s",
         confidence=0.9,
         **overrides,
@@ -87,8 +85,6 @@ def test_diagnosis_report_requires_drift_classification() -> None:
             severity="high",
             affected_resources=["default/vigil-app"],
             evidence="Failed to pull image",
-            live_observed="image=nginx:bad-tag-v9",
-            declared_observed="image=nginx:stable",
             recommended_action="git_commit_k8s",
             confidence=0.9,
         )

@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from diagnosis.context import DiagnosisContext
 from orchestrator.models import FaultEvent
 
 
@@ -75,3 +76,30 @@ def mock_git_mcp() -> AsyncMock:
     m.call_tool = AsyncMock(return_value={"content": "ok"})
     m.direct_call_tool = AsyncMock(return_value={"content": "ok"})
     return m
+
+
+@pytest.fixture
+def mock_diagnosis_context() -> DiagnosisContext:
+    return DiagnosisContext(
+        source_branch="main",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _default_build_diagnosis_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    import orchestrator.agent as orch_mod
+
+    ctx = DiagnosisContext(
+        source_branch="main",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+    monkeypatch.setattr(
+        orch_mod, "build_diagnosis_context", AsyncMock(return_value=ctx)
+    )

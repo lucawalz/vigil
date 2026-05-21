@@ -14,14 +14,14 @@ from pydantic import ValidationError
 def real_scenarios(scenarios_dir: Path) -> list[ScenarioDefinition]:
     if (
         not scenarios_dir.exists()
-        or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 26
+        or len(list(scenarios_dir.glob("*/scenario.yaml"))) < 28
     ):
         pytest.skip("scenarios directory not fully populated yet")
     return load_scenarios(scenarios_dir)
 
 
 def test_load_all_scenarios(real_scenarios: list[ScenarioDefinition]) -> None:
-    assert len(real_scenarios) == 26
+    assert len(real_scenarios) == 28
     ids = [s.id for s in real_scenarios]
     assert sorted(ids) == [
         "boundary-1",
@@ -31,6 +31,8 @@ def test_load_all_scenarios(real_scenarios: list[ScenarioDefinition]) -> None:
         "cross-1",
         "cross-2",
         "cross-3",
+        "deceptive-1",
+        "deceptive-2",
         "ingress-1",
         "k8s-1",
         "k8s-1g",
@@ -121,6 +123,7 @@ def test_roundtrip_model_dump_validate() -> None:
         expected_resolution_path=(
             "diagnosis -> flux_reconcile -> gate_pass -> watchdog_confirm"
         ),
+        alert_name="KubeContainerWaiting",
         inject_params={"namespace": "default", "deployment": "vigil-app"},
     )
     dumped = original.model_dump()
@@ -138,6 +141,7 @@ def test_inject_params_preserved(tmp_scenarios_dir: Path) -> None:
         "root_cause_component": "Deployment/vigil-app",
         "expected_action": "flux_reconcile",
         "expected_resolution_path": "diagnosis -> flux_reconcile",
+        "alert_name": "KubeContainerWaiting",
         "inject_params": {
             "namespace": "default",
             "deployment": "vigil-app",
@@ -162,6 +166,7 @@ def test_accepts_flux_reconcile_expected_action(tmp_scenarios_dir: Path) -> None
         "expected_resolution_path": (
             "diagnosis -> flux_reconcile -> gate_pass -> watchdog_confirm"
         ),
+        "alert_name": "KubeContainerWaiting",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
     scenarios = load_scenarios(tmp_scenarios_dir)
@@ -176,6 +181,7 @@ def test_forbidden_actions_defaults_to_empty_list() -> None:
         root_cause_component="Deployment/vigil-app",
         expected_action="flux_reconcile",
         expected_resolution_path="diagnosis -> flux_reconcile",
+        alert_name="KubeContainerWaiting",
     )
     assert s.forbidden_actions == []
 
@@ -190,10 +196,41 @@ def test_accepts_nixos_rebuild_expected_action(tmp_scenarios_dir: Path) -> None:
         "root_cause_component": "NixOS service",
         "expected_action": "nixos_rebuild",
         "expected_resolution_path": "diagnosis -> nixos_rebuild -> watchdog_confirm",
+        "alert_name": "KubeNodeNotReady",
     }
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(scenario_yaml))
     scenarios = load_scenarios(tmp_scenarios_dir)
     assert scenarios[0].expected_action == "nixos_rebuild"
+
+
+@pytest.mark.parametrize(
+    "scenario_id",
+    ["boundary-1", "boundary-2", "boundary-3", "boundary-4"],
+)
+def test_boundary_forbidden_actions_contains_switch_generation(
+    real_scenarios: list[ScenarioDefinition], scenario_id: str
+) -> None:
+    scenario = next(s for s in real_scenarios if s.id == scenario_id)
+    assert "switch_generation" in scenario.forbidden_actions, (
+        f"{scenario_id}: switch_generation missing from forbidden_actions"
+    )
+
+
+def test_alert_name_required_field(real_scenarios: list[ScenarioDefinition]) -> None:
+    for s in real_scenarios:
+        assert s.alert_name, f"{s.id}: alert_name is empty"
+
+
+def test_alert_name_missing_raises() -> None:
+    with pytest.raises(ValidationError):
+        ScenarioDefinition(
+            id="bad",
+            name="missing-alert-name",
+            layer="k8s",
+            root_cause_component="Deployment/vigil-app",
+            expected_action="flux_reconcile",
+            expected_resolution_path="diagnosis -> flux_reconcile",
+        )
 
 
 def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> None:
@@ -208,6 +245,7 @@ def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> N
                 "root_cause_component": "imagePullSecret",
                 "expected_action": "flux_reconcile",
                 "expected_resolution_path": "diagnosis -> flux_reconcile",
+                "alert_name": "KubePodCrashLooping",
                 "forbidden_actions": ["switch_generation"],
             }
         )

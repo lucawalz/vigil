@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -29,6 +30,8 @@ type SessionState interface {
 	BeginSession(runID, cloneDir string)
 	Branch() (branch string, cloneDir string)
 	SetBranch(branch string)
+	BaseBranch() string
+	SetBaseBranch(branch string)
 	SetLastCommit(sha string)
 	RunID() string
 	CloneDir() string
@@ -50,6 +53,11 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
 		}
 
+		base, _ := args["base_branch"].(string)
+		if base == "" {
+			base = defaultBaseBranch
+		}
+
 		branch := branchPrefix + runID
 		if err := client.CreateBranch(ctx, cloneDir, branch); err != nil {
 			_ = os.RemoveAll(cloneDir)
@@ -57,6 +65,7 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 		}
 		state.BeginSession(runID, cloneDir)
 		state.SetBranch(branch)
+		state.SetBaseBranch(base)
 
 		return mcp.NewToolResultText(truncateOutput("branch created: "+branch, maxBytes)), nil
 	}
@@ -83,6 +92,25 @@ func findRuntimeOnlyField(yamlBody string) string {
 		}
 	}
 	return ""
+}
+
+// If nix-instantiate is missing, the error surfaces to the caller; a misconfigured host must not silently allow writes.
+func validateNixSyntax(ctx context.Context, content string) error {
+	tmp, err := os.CreateTemp("", "vigil-nix-*.nix")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.WriteString(content); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	_ = tmp.Close()
+	cmd := exec.CommandContext(ctx, "nix-instantiate", "--parse", tmp.Name())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
@@ -123,8 +151,14 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 		if string(existing) == patchBody {
 			return mcp.NewToolResultError("patch_body: identical to current file; no-op patches are rejected"), nil
 		}
-		if violation := findRuntimeOnlyField(patchBody); violation != "" {
-			return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML"), nil
+		if strings.HasSuffix(cleaned, ".nix") {
+			if err := validateNixSyntax(ctx, patchBody); err != nil {
+				return mcp.NewToolResultError("patch_body: nix syntax error: " + err.Error()), nil
+			}
+		} else {
+			if violation := findRuntimeOnlyField(patchBody); violation != "" {
+				return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML"), nil
+			}
 		}
 
 		if err := client.WriteFile(ctx, cloneDir, cleaned, patchBody); err != nil {
@@ -335,11 +369,15 @@ func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) serv
 			return mcp.NewToolResultError("HandleRevertCommit: session not initialised; call create_branch first"), nil
 		}
 
-		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA)
+		baseBranch := state.BaseBranch()
+		if baseBranch == "" {
+			baseBranch = defaultBaseBranch
+		}
+		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA, baseBranch)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleRevertCommit: %v", err)), nil
 		}
-		state.SetBranch(defaultBaseBranch)
+		state.SetBranch(baseBranch)
 		return mcp.NewToolResultText(truncateOutput("reverted: "+revertSHA, maxBytes)), nil
 	}
 }

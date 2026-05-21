@@ -216,7 +216,7 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
 
     lines: list[str] = []
-    lines.append("# Phase 9 — Eval Campaign Aggregation Report")
+    lines.append("# Eval Campaign Aggregation Report")
     lines.append("")
     lines.append(
         f"Total runs: {summary['totals']['n']} across "

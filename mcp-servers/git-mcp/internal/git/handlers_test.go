@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ type fakeGitClient struct {
 	prMerged          bool
 	prMergeSHA        string
 	revertSHA         string
+	lastRevertBranch  string
 	err               error
 	getPRCalls        int
 	autoMergeErr      error
@@ -81,7 +83,8 @@ func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, str
 	return f.prState, f.prMerged, f.prMergeSHA, f.err
 }
 
-func (f *fakeGitClient) RevertCommit(_ context.Context, _, _ string) (string, error) {
+func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, branch string) (string, error) {
+	f.lastRevertBranch = branch
 	return f.revertSHA, f.err
 }
 
@@ -104,6 +107,7 @@ type fakeSessionState struct {
 	runID         string
 	cloneDir      string
 	currentBranch string
+	baseBranch    string
 	lastCommitSHA string
 }
 
@@ -126,6 +130,18 @@ func (s *fakeSessionState) SetBranch(branch string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.currentBranch = branch
+}
+
+func (s *fakeSessionState) BaseBranch() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.baseBranch
+}
+
+func (s *fakeSessionState) SetBaseBranch(branch string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.baseBranch = branch
 }
 
 func (s *fakeSessionState) SetLastCommit(sha string) {
@@ -1163,6 +1179,115 @@ func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
 	}
 }
 
+func nixInstantiateAvailable(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("nix-instantiate"); err != nil {
+		t.Skip("nix-instantiate not in PATH")
+	}
+}
+
+func TestHandleWriteManifest_NixSyntaxValid(t *testing.T) {
+	nixInstantiateAvailable(t)
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "hosts/worker-1.nix", "{ pkgs, ... }: {}\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "hosts/worker-1.nix",
+		"patch_body":    "{ pkgs, ... }: { services.foo.enable = true; }\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for valid Nix content, got error: %v", result.Content)
+	}
+}
+
+func TestHandleWriteManifest_NixSyntaxInvalid(t *testing.T) {
+	nixInstantiateAvailable(t)
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "hosts/worker-1.nix", "{ pkgs, ... }: {}\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "hosts/worker-1.nix",
+		"patch_body":    "{ services.foo.enable = true;\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for malformed Nix content")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "nix syntax error") {
+		t.Errorf("expected 'nix syntax error' in error message, got: %s", text)
+	}
+}
+
+func TestHandleWriteManifest_YamlRuntimeFieldStillCaught(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\n  creationTimestamp: \"2026-01-01T00:00:00Z\"\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for YAML with runtime-only field")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "creationTimestamp") {
+		t.Errorf("expected 'creationTimestamp' in error message, got: %s", text)
+	}
+}
+
+func TestHandleWriteManifest_YamlValidPasses(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\nspec:\n  replicas: 2\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for valid YAML content, got error: %v", result.Content)
+	}
+}
+
 func TestSessionStateMutex_Concurrent(t *testing.T) {
 	s := &gitserver.GitServer{}
 	var wg sync.WaitGroup
@@ -1177,4 +1302,166 @@ func TestSessionStateMutex_Concurrent(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestGitServer_BaseBranchDefaultEmpty(t *testing.T) {
+	s := &gitserver.GitServer{}
+	if got := s.BaseBranch(); got != "" {
+		t.Errorf("expected empty string before SetBaseBranch, got %q", got)
+	}
+}
+
+func TestGitServer_SetBaseBranchPersists(t *testing.T) {
+	s := &gitserver.GitServer{}
+	s.SetBaseBranch("eval-baseline")
+	if got := s.BaseBranch(); got != "eval-baseline" {
+		t.Errorf("expected %q, got %q", "eval-baseline", got)
+	}
+}
+
+func TestGitServer_BaseBranchConcurrent(t *testing.T) {
+	s := &gitserver.GitServer{}
+	var wg sync.WaitGroup
+	wg.Add(concurrentGoroutines)
+	for i := range concurrentGoroutines {
+		go func(n int) {
+			defer wg.Done()
+			s.SetBaseBranch(fmt.Sprintf("branch-%d", n))
+			_ = s.BaseBranch()
+		}(i)
+	}
+	wg.Wait()
+}
+
+func TestHandleCreateBranch_BaseBranchDefault(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("create_branch",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "abc123"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := state.BaseBranch(); got != "main" {
+		t.Errorf("expected baseBranch %q, got %q", "main", got)
+	}
+}
+
+func TestHandleCreateBranch_BaseBranchExplicit(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("create_branch",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{
+		"run_id":      "abc456",
+		"base_branch": "eval-baseline",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := state.BaseBranch(); got != "eval-baseline" {
+		t.Errorf("expected baseBranch %q, got %q", "eval-baseline", got)
+	}
+}
+
+func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("chore/eval-cluster-baseline")
+
+	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
+	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := fake.lastRevertBranch; got != "chore/eval-cluster-baseline" {
+		t.Errorf("expected lastRevertBranch %q, got %q", "chore/eval-cluster-baseline", got)
+	}
+	branch, _ := state.Branch()
+	if branch != "chore/eval-cluster-baseline" {
+		t.Errorf("expected session branch %q after revert, got %q", "chore/eval-cluster-baseline", branch)
+	}
+}
+
+func TestHandleRevertCommit_FallsBackToMainWhenBaseUnset(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	state := preloadedState(cloneDir, "remediation/run-001")
+
+	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
+	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := fake.lastRevertBranch; got != "main" {
+		t.Errorf("expected lastRevertBranch %q, got %q", "main", got)
+	}
+}
+
+func TestRealGitClient_RevertCommitCheckoutMessage(t *testing.T) {
+	repoDir := t.TempDir()
+	if out, err := exec.Command("git", "-C", repoDir, "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "config", "user.email", "test@test.com").CombinedOutput(); err != nil {
+		t.Fatalf("git config email: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "config", "user.name", "test").CombinedOutput(); err != nil {
+		t.Fatalf("git config name: %v: %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "init.txt"), []byte("init"), 0o644); err != nil {
+		t.Fatalf("write init: %v", err)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "add", ".").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "commit", "-m", "init").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+
+	cfg := &config.Config{
+		GitHubToken: "tok",
+		RepoURL:     "https://github.com/x/y.git",
+	}
+	client := git.NewRealGitClient(cfg)
+
+	_, err := client.RevertCommit(context.Background(), repoDir, "deadbeef", "chore/eval-cluster-baseline")
+	if err == nil {
+		t.Fatal("expected error for non-existent branch, got nil")
+	}
+	if !strings.Contains(err.Error(), "chore/eval-cluster-baseline") {
+		t.Errorf("expected branch name in error message, got: %v", err)
+	}
+	if strings.Contains(err.Error(), ": checkout main:") {
+		t.Errorf("error message must not contain 'checkout main:', got: %v", err)
+	}
 }

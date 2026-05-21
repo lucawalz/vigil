@@ -14,21 +14,25 @@ claude-* model names use the native Anthropic path (ANTHROPIC_API_KEY read from 
 
 import os
 
-from pydantic_ai.models import Model, infer_model
+from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
+
+DEFAULT_TEMPERATURE: float = 1.0
 
 
 def build_model(
     model_name: str | None = None,
     model_options: dict | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
 ) -> Model:
     """Return a pydantic-ai model configured from environment variables."""
     name = model_name or os.environ.get("LLM_MODEL_NAME", "test")
+    settings = ModelSettings(temperature=temperature, **(model_options or {}))
     if name.startswith("claude-"):
-        return infer_model(f"anthropic:{name}")
-    settings = ModelSettings(**model_options) if model_options else None
+        return AnthropicModel(name, settings=settings)
     return OpenAIChatModel(
         name,
         provider=OpenAIProvider(

@@ -10,4 +10,5 @@ inject_params:
   target_host: hetzner-worker-1
   fault_type: k3s-disabled-via-nixos-switch
 
+alert_name: KubeNodeNotReady
 forbidden_actions: [git_commit_nix, git_commit_k8s]
