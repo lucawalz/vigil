@@ -21,6 +21,11 @@ on:
         type: string
         required: false
         default: ""
+      skip_destroy:
+        description: "Skip terraform destroy"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   run-scenarios:
@@ -277,7 +282,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Terraform destroy
-        if: always()
+        if: always() && !inputs.skip_destroy
         working-directory: infra/terraform
         env:
           TF_VAR_vigil_branch: ${{ env.VIGIL_BRANCH }}
