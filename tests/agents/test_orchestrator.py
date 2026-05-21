@@ -1062,6 +1062,105 @@ def test_check_forbidden_actions_returns_empty_when_scenario_missing(
     assert _check_forbidden_actions("does-not-exist", ["x"]) == []
 
 
+def _make_scenario_dir(root: Path, scenario_id: str, forbidden: list[str]) -> None:
+    d = root / scenario_id
+    d.mkdir(parents=True, exist_ok=True)
+    import yaml as _yaml
+
+    (d / "scenario.yaml").write_text(_yaml.dump({"forbidden_actions": forbidden}))
+
+
+def test_check_forbidden_actions_commit_files_maps_to_git_commit_k8s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "k8s-1", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("k8s-1", ["commit_files"]) == ["commit_files"]
+
+
+def test_check_forbidden_actions_create_pr_maps_to_git_commit_nix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "os-1", ["git_commit_nix"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("os-1", ["create_pr"]) == ["create_pr"]
+
+
+def test_check_forbidden_actions_write_manifest_maps_to_git_commit_k8s_and_nix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["git_commit_k8s", "git_commit_nix"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("sc", ["write_manifest"]) == ["write_manifest"]
+
+
+def test_check_forbidden_actions_switch_generation_maps_to_nixos_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["nixos_rebuild"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("sc", ["switch_generation"]) == ["switch_generation"]
+
+
+def test_check_forbidden_actions_reconcile_kustomization_maps_to_flux_reconcile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["flux_reconcile"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    result = _check_forbidden_actions("sc", ["reconcile_kustomization"])
+    assert result == ["reconcile_kustomization"]
+
+
+def test_check_forbidden_actions_unknown_tool_not_in_violations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("sc", ["get_pods"]) == []
+
+
+def test_check_forbidden_actions_empty_actions_returns_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("sc", []) == []
+
+
+def test_check_forbidden_actions_returns_tool_name_not_action_class(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "k8s-1", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    violations = _check_forbidden_actions("k8s-1", ["commit_files"])
+    assert violations == ["commit_files"]
+    assert "git_commit_k8s" not in violations
+
+
 def test_run_record_forbidden_action_violations_serialises_list() -> None:
     record = _make_run_record(forbidden_action_violations=["switch_generation"])
     data = json.loads(record.model_dump_json())

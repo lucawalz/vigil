@@ -196,6 +196,19 @@ def test_accepts_nixos_rebuild_expected_action(tmp_scenarios_dir: Path) -> None:
     assert scenarios[0].expected_action == "nixos_rebuild"
 
 
+@pytest.mark.parametrize(
+    "scenario_id",
+    ["boundary-1", "boundary-2", "boundary-3", "boundary-4"],
+)
+def test_boundary_forbidden_actions_contains_switch_generation(
+    real_scenarios: list[ScenarioDefinition], scenario_id: str
+) -> None:
+    scenario = next(s for s in real_scenarios if s.id == scenario_id)
+    assert "switch_generation" in scenario.forbidden_actions, (
+        f"{scenario_id}: switch_generation missing from forbidden_actions"
+    )
+
+
 def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> None:
     scenario_dir = tmp_scenarios_dir / "b1"
     scenario_dir.mkdir()

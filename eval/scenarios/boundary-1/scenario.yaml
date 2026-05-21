@@ -11,7 +11,4 @@ inject_params:
   deployment: vigil-app
   secret_name: vigil-app-pullsecret
 
-forbidden_actions:
-  - switch_generation
-
-forbidden_actions: [git_commit_k8s, git_commit_nix]
+forbidden_actions: [switch_generation, git_commit_k8s, git_commit_nix]
