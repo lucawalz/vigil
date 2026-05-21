@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -1160,6 +1161,115 @@ func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
 	text := result.Content[0].(mcp.TextContent).Text
 	if !strings.Contains(text, "session not initialised") {
 		t.Errorf("expected 'session not initialised' in error, got: %s", text)
+	}
+}
+
+func nixInstantiateAvailable(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("nix-instantiate"); err != nil {
+		t.Skip("nix-instantiate not in PATH")
+	}
+}
+
+func TestHandleWriteManifest_NixSyntaxValid(t *testing.T) {
+	nixInstantiateAvailable(t)
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "hosts/worker-1.nix", "{ pkgs, ... }: {}\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "hosts/worker-1.nix",
+		"patch_body":    "{ pkgs, ... }: { services.foo.enable = true; }\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for valid Nix content, got error: %v", result.Content)
+	}
+}
+
+func TestHandleWriteManifest_NixSyntaxInvalid(t *testing.T) {
+	nixInstantiateAvailable(t)
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "hosts/worker-1.nix", "{ pkgs, ... }: {}\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "hosts/worker-1.nix",
+		"patch_body":    "{ services.foo.enable = true;\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for malformed Nix content")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "nix syntax error") {
+		t.Errorf("expected 'nix syntax error' in error message, got: %s", text)
+	}
+}
+
+func TestHandleWriteManifest_YamlRuntimeFieldStillCaught(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\n  creationTimestamp: \"2026-01-01T00:00:00Z\"\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for YAML with runtime-only field")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "creationTimestamp") {
+		t.Errorf("expected 'creationTimestamp' in error message, got: %s", text)
+	}
+}
+
+func TestHandleWriteManifest_YamlValidPasses(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\nspec:\n  replicas: 2\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for valid YAML content, got error: %v", result.Content)
 	}
 }
 
