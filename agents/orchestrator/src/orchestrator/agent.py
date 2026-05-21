@@ -301,13 +301,9 @@ async def run_orchestration(
     try:
         async with asyncio.timeout(ORCHESTRATOR_RUN_TIMEOUT_S):
             try:
-                diagnosis_context = await build_diagnosis_context(
-                    diagnosis_deps, event
-                )
+                diagnosis_context = await build_diagnosis_context(diagnosis_deps, event)
             except ManifestPathUnresolvable as exc:
-                log.warning(
-                    "run %s: manifest path unresolvable: %s", run_id, exc
-                )
+                log.warning("run %s: manifest path unresolvable: %s", run_id, exc)
                 mttr_s = asyncio.get_event_loop().time() - t0
                 ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 record = RunRecord(
@@ -484,9 +480,7 @@ async def run_orchestration(
                     {"run_id": run_id, "base_branch": base_branch},
                 )
             except Exception:
-                log.debug(
-                    "run %s: base_branch pre-call skipped (non-fatal)", run_id
-                )
+                log.debug("run %s: base_branch pre-call skipped (non-fatal)", run_id)
 
             if report.recommended_action == "git_commit_k8s":
                 try:

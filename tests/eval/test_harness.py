@@ -805,9 +805,7 @@ def test_build_fault_event_uses_alert_name(
     assert expected_alert_name in payload["groupKey"]
 
 
-def test_no_scenario_id_leak(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_scenario_id_leak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from eval.harness import _build_fault_event
 
     scenarios_dir = tmp_path / "scenarios"
@@ -821,9 +819,7 @@ def test_no_scenario_id_leak(
     assert "k8s-1" not in payload["groupKey"]
 
 
-def test_no_evalharness_prefix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_evalharness_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from eval.harness import _build_fault_event
 
     scenarios_dir = tmp_path / "scenarios"

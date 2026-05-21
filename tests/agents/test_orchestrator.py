@@ -1734,7 +1734,6 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
     flux_mcp.direct_call_tool.assert_not_called()
 
 
-
 async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
