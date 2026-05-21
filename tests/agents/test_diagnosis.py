@@ -9,6 +9,8 @@ from __future__ import annotations
 import inspect
 import os
 
+import pytest
+
 # Provide test env vars BEFORE importing diagnosis.agent (build_model() reads them).
 os.environ.setdefault("LLM_MODEL_NAME", "test-model")
 os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
