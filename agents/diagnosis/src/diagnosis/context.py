@@ -78,15 +78,41 @@ def _extract_systemd_unit(fault: FaultEvent) -> str:
     return "vigil-auto-reconcile.service"
 
 
+_KUST_SUFFIX = "_kustomize.toolkit.fluxcd.io_Kustomization"
+
+
 def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
     try:
         data = yaml.safe_load(live_text)
-        annotations = (data.get("metadata") or {}).get("annotations") or {}
-        kust_name = annotations.get("kustomize.toolkit.fluxcd.io/name")
-        kust_ns = annotations.get("kustomize.toolkit.fluxcd.io/namespace")
+        metadata = data.get("metadata") or {}
+        # Flux v2 puts tracking identifiers in labels; check annotations as fallback
+        labels = metadata.get("labels") or {}
+        annotations = metadata.get("annotations") or {}
+        kust_name = labels.get("kustomize.toolkit.fluxcd.io/name") or annotations.get(
+            "kustomize.toolkit.fluxcd.io/name"
+        )
+        kust_ns = labels.get(
+            "kustomize.toolkit.fluxcd.io/namespace"
+        ) or annotations.get("kustomize.toolkit.fluxcd.io/namespace")
         return kust_name, kust_ns
     except Exception:
         return None, None
+
+
+def _parse_child_kust_entries(kust_data: dict) -> list[tuple[str, str]]:
+    entries = (
+        ((kust_data.get("status") or {}).get("inventory") or {}).get("entries") or []
+    )
+    result = []
+    for entry in entries:
+        entry_id = entry.get("id", "")
+        if not entry_id.endswith(_KUST_SUFFIX):
+            continue
+        ns_name = entry_id[: -len(_KUST_SUFFIX)]
+        parts = ns_name.split("_", 1)
+        if len(parts) == 2:
+            result.append((parts[0], parts[1]))
+    return result
 
 
 async def _resolve_manifest_path_k8s(
@@ -108,7 +134,7 @@ async def _resolve_manifest_path_k8s(
     kust_text = _extract_text(kust_result)
     try:
         kust_data = yaml.safe_load(kust_text)
-        spec_path = (kust_data.get("spec") or {}).get("path", "")
+        spec_path = (kust_data.get("spec") or {}).get("path", "").lstrip("./")
         if not spec_path:
             raise ManifestPathUnresolvable("Kustomization spec.path is absent")
     except (yaml.YAMLError, AttributeError) as exc:
@@ -116,7 +142,39 @@ async def _resolve_manifest_path_k8s(
         raise ManifestPathUnresolvable(msg) from exc
 
     resource_name = _extract_resource_name(fault)
-    return f"{spec_path.lstrip('/')}/{resource_name}.yaml"
+
+    direct_path = f"{spec_path}/{resource_name}.yaml"
+    try:
+        await deps.git_mcp.direct_call_tool(
+            "read_file", {"branch": source_branch, "path": direct_path}
+        )
+        return direct_path
+    except Exception:
+        pass
+
+    for child_ns, child_name in _parse_child_kust_entries(kust_data):
+        if child_name == kust_name and child_ns == kust_ns:
+            continue
+        try:
+            child_res = await deps.kubectl_mcp.direct_call_tool(
+                "get_resource_yaml",
+                {"kind": "Kustomization", "namespace": child_ns, "name": child_name},
+            )
+            child_data = yaml.safe_load(_extract_text(child_res)) or {}
+            child_spec_path = (child_data.get("spec") or {}).get("path", "").lstrip("./")
+            if not child_spec_path:
+                continue
+            candidate = f"{child_spec_path}/{resource_name}.yaml"
+            await deps.git_mcp.direct_call_tool(
+                "read_file", {"branch": source_branch, "path": candidate}
+            )
+            return candidate
+        except Exception:
+            continue
+
+    raise ManifestPathUnresolvable(
+        f"manifest {resource_name}.yaml not found under any Kustomization path"
+    )
 
 
 def _extract_resource_name(fault: FaultEvent) -> str:
