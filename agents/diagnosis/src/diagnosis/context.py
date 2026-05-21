@@ -161,7 +161,9 @@ async def _resolve_manifest_path_k8s(
                 {"kind": "Kustomization", "namespace": child_ns, "name": child_name},
             )
             child_data = yaml.safe_load(_extract_text(child_res)) or {}
-            child_spec_path = (child_data.get("spec") or {}).get("path", "").lstrip("./")
+            child_spec_path = (
+                (child_data.get("spec") or {}).get("path", "").lstrip("./")
+            )
             if not child_spec_path:
                 continue
             candidate = f"{child_spec_path}/{resource_name}.yaml"
