@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -85,6 +86,25 @@ func findRuntimeOnlyField(yamlBody string) string {
 	return ""
 }
 
+// If nix-instantiate is missing, the error surfaces to the caller; a misconfigured host must not silently allow writes.
+func validateNixSyntax(ctx context.Context, content string) error {
+	tmp, err := os.CreateTemp("", "vigil-nix-*.nix")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(content); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	_ = tmp.Close()
+	cmd := exec.CommandContext(ctx, "nix-instantiate", "--parse", tmp.Name())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -123,8 +143,14 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 		if string(existing) == patchBody {
 			return mcp.NewToolResultError("patch_body: identical to current file; no-op patches are rejected"), nil
 		}
-		if violation := findRuntimeOnlyField(patchBody); violation != "" {
-			return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML"), nil
+		if strings.HasSuffix(cleaned, ".nix") {
+			if err := validateNixSyntax(ctx, patchBody); err != nil {
+				return mcp.NewToolResultError("patch_body: nix syntax error: " + err.Error()), nil
+			}
+		} else {
+			if violation := findRuntimeOnlyField(patchBody); violation != "" {
+				return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML"), nil
+			}
 		}
 
 		if err := client.WriteFile(ctx, cloneDir, cleaned, patchBody); err != nil {
