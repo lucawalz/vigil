@@ -1715,3 +1715,156 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
     assert len(trigger_calls) == 1
     assert trigger_calls[0].args[1] == {"host": "hetzner-1"}
     flux_mcp.direct_call_tool.assert_not_called()
+
+
+# --- Task 3: build_diagnosis_context wiring + base_branch ---
+
+
+async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.context import ManifestPathUnresolvable
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), Usage(), []))
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod,
+        "build_diagnosis_context",
+        AsyncMock(side_effect=ManifestPathUnresolvable("no flux annotations")),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "escalated"
+    run_diagnosis_mock.assert_not_called()
+
+
+async def test_orchestrator_passes_base_branch_to_create_branch(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.context import DiagnosisContext
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+
+    ctx = DiagnosisContext(
+        source_branch="eval-baseline",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="- live: yaml\n+ declared: yaml",
+    )
+    monkeypatch.setattr(
+        orch_mod, "build_diagnosis_context", AsyncMock(return_value=ctx)
+    )
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_remediation",
+        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    create_branch_calls = [
+        c
+        for c in mock_git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "create_branch"
+    ]
+    assert len(create_branch_calls) >= 1
+    args_dict = create_branch_calls[0].args[1]
+    assert args_dict.get("base_branch") == "eval-baseline"
+
+
+async def test_orchestrator_base_branch_falls_back_to_main_when_source_branch_empty(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.context import DiagnosisContext
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+
+    ctx = DiagnosisContext(
+        source_branch="",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+    monkeypatch.setattr(
+        orch_mod, "build_diagnosis_context", AsyncMock(return_value=ctx)
+    )
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_remediation",
+        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    create_branch_calls = [
+        c
+        for c in mock_git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "create_branch"
+    ]
+    assert len(create_branch_calls) >= 1
+    args_dict = create_branch_calls[0].args[1]
+    assert args_dict.get("base_branch") == "main"
