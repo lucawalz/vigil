@@ -369,11 +369,15 @@ func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) serv
 			return mcp.NewToolResultError("HandleRevertCommit: session not initialised; call create_branch first"), nil
 		}
 
-		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA)
+		baseBranch := state.BaseBranch()
+		if baseBranch == "" {
+			baseBranch = defaultBaseBranch
+		}
+		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA, baseBranch)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleRevertCommit: %v", err)), nil
 		}
-		state.SetBranch(defaultBaseBranch)
+		state.SetBranch(baseBranch)
 		return mcp.NewToolResultText(truncateOutput("reverted: "+revertSHA, maxBytes)), nil
 	}
 }

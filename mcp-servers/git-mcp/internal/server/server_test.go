@@ -22,7 +22,9 @@ func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, str
 	return "", false, "", nil
 }
 func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error              { return nil }
-func (f *fakeGitClient) RevertCommit(_ context.Context, _, _ string) (string, error) { return "", nil }
+func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, _ string) (string, error) {
+	return "", nil
+}
 func (f *fakeGitClient) ClosePR(_ context.Context, _ int) error                      { return nil }
 func (f *fakeGitClient) DeleteBranch(_ context.Context, _ string) error              { return nil }
 func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, error)  { return "", nil }

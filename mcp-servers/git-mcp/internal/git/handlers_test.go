@@ -34,6 +34,7 @@ type fakeGitClient struct {
 	prMerged          bool
 	prMergeSHA        string
 	revertSHA         string
+	lastRevertBranch  string
 	err               error
 	getPRCalls        int
 	autoMergeErr      error
@@ -82,7 +83,8 @@ func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, str
 	return f.prState, f.prMerged, f.prMergeSHA, f.err
 }
 
-func (f *fakeGitClient) RevertCommit(_ context.Context, _, _ string) (string, error) {
+func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, branch string) (string, error) {
+	f.lastRevertBranch = branch
 	return f.revertSHA, f.err
 }
 
@@ -1373,5 +1375,93 @@ func TestHandleCreateBranch_BaseBranchExplicit(t *testing.T) {
 	}
 	if got := state.BaseBranch(); got != "eval-baseline" {
 		t.Errorf("expected baseBranch %q, got %q", "eval-baseline", got)
+	}
+}
+
+func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("chore/eval-cluster-baseline")
+
+	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
+	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := fake.lastRevertBranch; got != "chore/eval-cluster-baseline" {
+		t.Errorf("expected lastRevertBranch %q, got %q", "chore/eval-cluster-baseline", got)
+	}
+	branch, _ := state.Branch()
+	if branch != "chore/eval-cluster-baseline" {
+		t.Errorf("expected session branch %q after revert, got %q", "chore/eval-cluster-baseline", branch)
+	}
+}
+
+func TestHandleRevertCommit_FallsBackToMainWhenBaseUnset(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	state := preloadedState(cloneDir, "remediation/run-001")
+
+	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
+	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := fake.lastRevertBranch; got != "main" {
+		t.Errorf("expected lastRevertBranch %q, got %q", "main", got)
+	}
+}
+
+func TestRealGitClient_RevertCommitCheckoutMessage(t *testing.T) {
+	repoDir := t.TempDir()
+	if out, err := exec.Command("git", "-C", repoDir, "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "config", "user.email", "test@test.com").CombinedOutput(); err != nil {
+		t.Fatalf("git config email: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "config", "user.name", "test").CombinedOutput(); err != nil {
+		t.Fatalf("git config name: %v: %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "init.txt"), []byte("init"), 0o644); err != nil {
+		t.Fatalf("write init: %v", err)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "add", ".").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "commit", "-m", "init").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+
+	cfg := &config.Config{
+		GitHubToken: "tok",
+		RepoURL:     "https://github.com/x/y.git",
+	}
+	client := git.NewRealGitClient(cfg)
+
+	_, err := client.RevertCommit(context.Background(), repoDir, "deadbeef", "chore/eval-cluster-baseline")
+	if err == nil {
+		t.Fatal("expected error for non-existent branch, got nil")
+	}
+	if !strings.Contains(err.Error(), "chore/eval-cluster-baseline") {
+		t.Errorf("expected branch name in error message, got: %v", err)
+	}
+	if strings.Contains(err.Error(), ": checkout main:") {
+		t.Errorf("error message must not contain 'checkout main:', got: %v", err)
 	}
 }
