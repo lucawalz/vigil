@@ -12,6 +12,7 @@ from common import trace
 from common.constants import GIT_COMMIT_BUDGET
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
+from diagnosis.context import ManifestPathUnresolvable, build_diagnosis_context
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
@@ -300,9 +301,46 @@ async def run_orchestration(
     try:
         async with asyncio.timeout(ORCHESTRATOR_RUN_TIMEOUT_S):
             try:
+                diagnosis_context = await build_diagnosis_context(
+                    diagnosis_deps, event
+                )
+            except ManifestPathUnresolvable as exc:
+                log.warning(
+                    "run %s: manifest path unresolvable: %s", run_id, exc
+                )
+                mttr_s = asyncio.get_event_loop().time() - t0
+                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record = RunRecord(
+                    run_id=run_id,
+                    scenario=scenario,
+                    seed=seed_str,
+                    model=model_name,
+                    git_sha7=sha7,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    outcome="escalated",
+                    success_rate=False,
+                    diagnosis_accuracy=None,
+                    MTTR_s=mttr_s,
+                    destructive_repair=False,
+                    rollback_triggered=False,
+                    rollback_success=None,
+                    total_input_tokens=0,
+                    total_output_tokens=0,
+                    total_tool_calls=0,
+                    iteration_count=0,
+                    autonomy_level="full",
+                    actions_taken=[],
+                    model_version=model_name,
+                    setup_error=str(exc),
+                )
+                _write_run_record(record)
+                return record
+
+            try:
                 async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
                     report, diag_usage, diag_msgs = await run_diagnosis(
-                        diagnosis_deps, event, model=model
+                        diagnosis_deps, event, diagnosis_context, model=model
                     )
             except asyncio.TimeoutError:
                 log.error(
@@ -438,6 +476,17 @@ async def run_orchestration(
                     return record
 
             baseline = await capture_health_snapshot(watchdog_deps)
+
+            base_branch = diagnosis_context.source_branch or "main"
+            try:
+                await git_mcp.direct_call_tool(
+                    "create_branch",
+                    {"run_id": run_id, "base_branch": base_branch},
+                )
+            except Exception:
+                log.debug(
+                    "run %s: base_branch pre-call skipped (non-fatal)", run_id
+                )
 
             if report.recommended_action == "git_commit_k8s":
                 try:

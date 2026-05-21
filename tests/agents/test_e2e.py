@@ -69,8 +69,23 @@ def _canned_snap() -> HealthSnapshot:
 async def test_webhook_to_audit_log_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from diagnosis.context import DiagnosisContext
+
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "e2e-secret")
+    monkeypatch.setattr(
+        orch_mod,
+        "build_diagnosis_context",
+        AsyncMock(
+            return_value=DiagnosisContext(
+                source_branch="main",
+                manifest_path="apps/vigil-app.yaml",
+                live_yaml="live: yaml",
+                declared_yaml="declared: yaml",
+                diff="",
+            )
+        ),
+    )
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",

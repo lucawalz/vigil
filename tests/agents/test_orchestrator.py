@@ -465,10 +465,27 @@ def test_build_run_id_falls_back_to_0000000_when_env_empty_and_git_missing(
     assert sha7 == "0000000"
 
 
+def _canned_diagnosis_context():
+    from diagnosis.context import DiagnosisContext
+
+    return DiagnosisContext(
+        source_branch="main",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+
+
 def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.delenv("GIT_SHA7", raising=False)
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(
+        orch_mod,
+        "build_diagnosis_context",
+        AsyncMock(return_value=_canned_diagnosis_context()),
+    )
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -1716,8 +1733,6 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
     assert trigger_calls[0].args[1] == {"host": "hetzner-1"}
     flux_mcp.direct_call_tool.assert_not_called()
 
-
-# --- Task 3: build_diagnosis_context wiring + base_branch ---
 
 
 async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
