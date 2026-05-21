@@ -14,11 +14,11 @@ let
       printf 'username=x-access-token\npassword=%s\n' "$GITHUB_TOKEN"
     fi
   '';
-  mkMcpServer = { name, vendorHash }: pkgs.buildGoModule {
+  mkMcpServer = { name, vendorHash, nativeBuildInputs ? [] }: pkgs.buildGoModule {
     pname = name;
     version = "0.0.1";
     src = builtins.path { inherit name; path = "${repoRoot}/mcp-servers/${name}"; };
-    inherit vendorHash;
+    inherit vendorHash nativeBuildInputs;
     env.CGO_ENABLED = "0";
   };
 
@@ -41,6 +41,7 @@ let
   git-mcp = mkMcpServer {
     name = "git-mcp";
     vendorHash = "sha256-tq7OmbnjzeqL8xu3tbY5gi4IPEenYTR4fegGYvutpCE=";
+    nativeBuildInputs = [ pkgs.git ];
   };
 in
 {
