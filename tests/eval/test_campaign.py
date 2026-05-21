@@ -184,7 +184,8 @@ def _make_scenario_yaml(scenarios_dir: Path, sid: str) -> None:
     (d / "scenario.yaml").write_text(
         f"id: {sid}\nname: test\nlayer: k8s\n"
         "root_cause_component: x\nexpected_action: flux_reconcile\n"
-        "expected_resolution_path: x\ninject_params: {}\n"
+        "expected_resolution_path: x\nalert_name: KubeContainerWaiting\n"
+        "inject_params: {}\n"
     )
 
 
