@@ -191,23 +191,30 @@ def _reset_circuit_breaker() -> None:
         pass
 
 
-def _load_scenario_alert_name(scenario_id: str) -> str:
+_K8S_LABEL_KEYS: frozenset[str] = frozenset(
+    {"deployment", "namespace", "pod", "statefulset", "daemonset", "name", "service"}
+)
+
+
+def _load_scenario(scenario_id: str) -> dict[str, Any]:
     scenarios_dir = Path(os.environ.get("VIGIL_SCENARIOS_DIR", "eval/scenarios"))
     scenario_yaml = scenarios_dir / scenario_id / "scenario.yaml"
     if scenario_yaml.exists():
         with scenario_yaml.open() as f:
-            data = yaml.safe_load(f) or {}
-        name = data.get("alert_name", "")
-        if name:
-            return name
-    return scenario_id
+            return yaml.safe_load(f) or {}
+    return {}
 
 
 def _build_fault_event(
     scenario_id: str, target_host: str | None = None
 ) -> dict[str, Any]:
-    alert_name = _load_scenario_alert_name(scenario_id)
+    scenario = _load_scenario(scenario_id)
+    alert_name = scenario.get("alert_name") or scenario_id
+    inject_params: dict[str, Any] = scenario.get("inject_params") or {}
     labels: dict[str, str] = {"alertname": alert_name}
+    for key in _K8S_LABEL_KEYS:
+        if key in inject_params:
+            labels[key] = str(inject_params[key])
     if target_host:
         labels["node"] = target_host
     return {
