@@ -105,6 +105,7 @@ type fakeSessionState struct {
 	runID         string
 	cloneDir      string
 	currentBranch string
+	baseBranch    string
 	lastCommitSHA string
 }
 
@@ -127,6 +128,18 @@ func (s *fakeSessionState) SetBranch(branch string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.currentBranch = branch
+}
+
+func (s *fakeSessionState) BaseBranch() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.baseBranch
+}
+
+func (s *fakeSessionState) SetBaseBranch(branch string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.baseBranch = branch
 }
 
 func (s *fakeSessionState) SetLastCommit(sha string) {
@@ -1287,4 +1300,78 @@ func TestSessionStateMutex_Concurrent(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestGitServer_BaseBranchDefaultEmpty(t *testing.T) {
+	s := &gitserver.GitServer{}
+	if got := s.BaseBranch(); got != "" {
+		t.Errorf("expected empty string before SetBaseBranch, got %q", got)
+	}
+}
+
+func TestGitServer_SetBaseBranchPersists(t *testing.T) {
+	s := &gitserver.GitServer{}
+	s.SetBaseBranch("eval-baseline")
+	if got := s.BaseBranch(); got != "eval-baseline" {
+		t.Errorf("expected %q, got %q", "eval-baseline", got)
+	}
+}
+
+func TestGitServer_BaseBranchConcurrent(t *testing.T) {
+	s := &gitserver.GitServer{}
+	var wg sync.WaitGroup
+	wg.Add(concurrentGoroutines)
+	for i := range concurrentGoroutines {
+		go func(n int) {
+			defer wg.Done()
+			s.SetBaseBranch(fmt.Sprintf("branch-%d", n))
+			_ = s.BaseBranch()
+		}(i)
+	}
+	wg.Wait()
+}
+
+func TestHandleCreateBranch_BaseBranchDefault(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("create_branch",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "abc123"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := state.BaseBranch(); got != "main" {
+		t.Errorf("expected baseBranch %q, got %q", "main", got)
+	}
+}
+
+func TestHandleCreateBranch_BaseBranchExplicit(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("create_branch",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{
+		"run_id":      "abc456",
+		"base_branch": "eval-baseline",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := state.BaseBranch(); got != "eval-baseline" {
+		t.Errorf("expected baseBranch %q, got %q", "eval-baseline", got)
+	}
 }

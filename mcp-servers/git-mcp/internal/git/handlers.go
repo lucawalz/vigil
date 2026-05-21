@@ -30,6 +30,8 @@ type SessionState interface {
 	BeginSession(runID, cloneDir string)
 	Branch() (branch string, cloneDir string)
 	SetBranch(branch string)
+	BaseBranch() string
+	SetBaseBranch(branch string)
 	SetLastCommit(sha string)
 	RunID() string
 	CloneDir() string
@@ -51,6 +53,11 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
 		}
 
+		base, _ := args["base_branch"].(string)
+		if base == "" {
+			base = defaultBaseBranch
+		}
+
 		branch := branchPrefix + runID
 		if err := client.CreateBranch(ctx, cloneDir, branch); err != nil {
 			_ = os.RemoveAll(cloneDir)
@@ -58,6 +65,7 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 		}
 		state.BeginSession(runID, cloneDir)
 		state.SetBranch(branch)
+		state.SetBaseBranch(base)
 
 		return mcp.NewToolResultText(truncateOutput("branch created: "+branch, maxBytes)), nil
 	}
