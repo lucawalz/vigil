@@ -8,6 +8,8 @@ expected_resolution_path: "diagnosis -> git_commit_k8s (fix image in manifest) -
 
 inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
+  deployment: vigil-app
+  namespace: default
   bad_image: "nginx:bad-tag-v9"
   good_image: "nginx:stable"
 

@@ -8,6 +8,8 @@ expected_resolution_path: "diagnosis -> git_commit_k8s (remove crash env from ma
 
 inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
+  deployment: vigil-app
+  namespace: default
   env_name: "APP_CRASH_MODE"
   env_value: "1"
 
