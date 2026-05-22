@@ -1,0 +1,21 @@
+{
+  "run_id": "k8s-3g_1_claude-sonnet-4-6_c4964ea",
+  "scenario": "k8s-3g",
+  "seed": 1,
+  "model": "claude-sonnet-4-6",
+  "outcome": "setup_error",
+  "success_rate": false,
+  "diagnosis_accuracy": null,
+  "MTTR_s": null,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "total_tool_calls": 0,
+  "iteration_count": 0,
+  "autonomy_level": "full",
+  "actions_taken": [],
+  "started_at": "2026-05-22T19:57:32Z",
+  "ended_at": "2026-05-22T19:57:32Z",
+  "error_message": "/root/vigil/eval/scenarios/k8s-3g/inject.sh exited 1: "
+}
