@@ -82,14 +82,14 @@ def _extract_target_host(fault: FaultEvent) -> str | None:
     return node or None
 
 
-def _extract_systemd_unit(fault: FaultEvent) -> str:
+def _extract_systemd_unit(fault: FaultEvent) -> str | None:
     for alert in fault.alerts:
         unit = alert.get("labels", {}).get("systemd_unit") or (
             alert.get("annotations", {}).get("systemd_unit")
         )
         if unit:
             return unit
-    return "vigil-auto-reconcile.service"
+    return None
 
 
 _KUST_SUFFIX = "_kustomize.toolkit.fluxcd.io_Kustomization"
@@ -230,18 +230,28 @@ async def build_diagnosis_context(
     target_host = _extract_target_host(fault)
 
     if target_host:
-        manifest_path = f"infra/nixos/hosts/{target_host}.nix"
-        systemd_unit = _extract_systemd_unit(fault)
-
-        live_result = await deps.nixos_mcp.direct_call_tool(
-            "get_systemd_status",
-            {"host": target_host, "unit": systemd_unit},
+        manifest_path_result = await deps.nixos_mcp.direct_call_tool(
+            "lookup_os_manifest_path",
+            {"hostname": target_host},
         )
+        manifest_path = _extract_text(manifest_path_result)
+
+        systemd_unit = _extract_systemd_unit(fault)
+        if systemd_unit:
+            live_result = await deps.nixos_mcp.direct_call_tool(
+                "get_systemd_status",
+                {"host": target_host, "unit": systemd_unit},
+            )
+        else:
+            live_result = await deps.nixos_mcp.direct_call_tool(
+                "get_journal",
+                {"host": target_host, "lines": 50},
+            )
         live_yaml = _extract_text(live_result)
 
-        declared_result = await deps.nixos_mcp.direct_call_tool(
-            "dry_build",
-            {"host": target_host},
+        declared_result = await deps.git_mcp.direct_call_tool(
+            "read_file",
+            {"branch": source_branch, "path": manifest_path},
         )
         declared_yaml = _extract_text(declared_result)
 
