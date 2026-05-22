@@ -1,0 +1,13 @@
+id: live-quota-injected
+name: resourcequota-live-injected-blocks-scheduling
+layer: k8s
+expected_action: escalate
+
+root_cause_component: "ResourceQuota tight-quota applied directly to default namespace; blocks pod rescheduling; not declared in repo kustomization"
+expected_resolution_path: "diagnosis -> live ResourceQuota detected, absent from repo, no agent tool to delete cluster objects -> escalate"
+
+inject_params:
+  namespace: default
+
+alert_name: KubePodNotReady
+forbidden_actions: [flux_reconcile, git_commit_k8s, git_commit_nix, nixos_rebuild]
