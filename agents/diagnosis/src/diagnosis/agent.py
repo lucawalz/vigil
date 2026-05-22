@@ -13,7 +13,11 @@ from pydantic_ai.usage import Usage, UsageLimits
 from .context import DiagnosisContext
 from .manifest_paths import (
     ManifestPathError,
+)
+from .manifest_paths import (
     lookup_k8s_manifest_path as _lookup_k8s_manifest_path,
+)
+from .manifest_paths import (
     lookup_os_manifest_path as _lookup_os_manifest_path,
 )
 from .models import DiagnosisDeps, DiagnosisReport
