@@ -164,6 +164,9 @@ in
   '';
 
   environment.etc."gitconfig".text = ''
+    [user]
+      email = eval@vigil.local
+      name = eval-harness
     [credential "https://github.com"]
       helper = !${vigilGitCredentialHelper}
   '';

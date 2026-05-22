@@ -20,7 +20,7 @@ sed -i 's|image: nginx:stable|image: nginx:bad-tag-from-deceptive-2|' "$MANIFEST
 
 git -C "$VIGIL_REPO_ROOT" \
   -c user.name="eval-harness" \
-  -c user.email="eval@vigil" \
+  -c user.email="eval@vigil.local" \
   commit -am "deceptive-2: inject fault"
 
 (cd "$VIGIL_REPO_ROOT" && git push origin chore/eval-cluster-baseline)
