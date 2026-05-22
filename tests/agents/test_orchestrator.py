@@ -1768,6 +1768,41 @@ async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
     run_diagnosis_mock.assert_not_called()
 
 
+async def test_orchestrator_escalates_on_resource_kind_unresolvable(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.context import ResourceKindUnresolvable
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), Usage(), []))
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod,
+        "build_diagnosis_context",
+        AsyncMock(side_effect=ResourceKindUnresolvable("no recognised label")),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "escalated"
+    assert record.setup_error == "no recognised label"
+    run_diagnosis_mock.assert_not_called()
+
+
 async def test_orchestrator_passes_base_branch_to_create_branch(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,

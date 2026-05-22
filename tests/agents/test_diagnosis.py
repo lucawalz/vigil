@@ -727,3 +727,54 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     )
     assert systemd_call is not None
     assert systemd_call[1].get("unit") == "vigil-auto-reconcile.service"
+
+
+def _make_fault(labels: dict) -> "FaultEvent":
+    from orchestrator.models import FaultEvent
+    return FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": labels,
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={},
+        commonLabels={k: v for k, v in labels.items()},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey="{}:{}",
+    )
+
+
+def test_extract_kind_pvc() -> None:
+    from diagnosis.context import _extract_k8s_kind_namespace_name
+
+    fault = _make_fault({"persistentvolumeclaim": "data-pvc", "namespace": "storage"})
+    kind, ns, name = _extract_k8s_kind_namespace_name(fault)
+    assert kind == "PersistentVolumeClaim"
+    assert ns == "storage"
+    assert name == "data-pvc"
+
+
+def test_extract_kind_daemonset() -> None:
+    from diagnosis.context import _extract_k8s_kind_namespace_name
+
+    fault = _make_fault({"daemonset": "node-exporter", "namespace": "monitoring"})
+    kind, ns, name = _extract_k8s_kind_namespace_name(fault)
+    assert kind == "DaemonSet"
+    assert ns == "monitoring"
+    assert name == "node-exporter"
+
+
+def test_extract_kind_unknown_raises() -> None:
+    from diagnosis.context import ResourceKindUnresolvable, _extract_k8s_kind_namespace_name
+
+    fault = _make_fault({"alertname": "WeirdAlert", "namespace": "default"})
+    with pytest.raises(ResourceKindUnresolvable):
+        _extract_k8s_kind_namespace_name(fault)

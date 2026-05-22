@@ -12,7 +12,7 @@ from common import trace
 from common.constants import GIT_COMMIT_BUDGET
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
-from diagnosis.context import ManifestPathUnresolvable, build_diagnosis_context
+from diagnosis.context import ManifestPathUnresolvable, ResourceKindUnresolvable, build_diagnosis_context
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
@@ -302,7 +302,7 @@ async def run_orchestration(
         async with asyncio.timeout(ORCHESTRATOR_RUN_TIMEOUT_S):
             try:
                 diagnosis_context = await build_diagnosis_context(diagnosis_deps, event)
-            except ManifestPathUnresolvable as exc:
+            except (ManifestPathUnresolvable, ResourceKindUnresolvable) as exc:
                 log.warning("run %s: manifest path unresolvable: %s", run_id, exc)
                 mttr_s = asyncio.get_event_loop().time() - t0
                 ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

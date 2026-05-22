@@ -27,6 +27,19 @@ class ManifestPathUnresolvable(RuntimeError):
     """Raised when Flux annotations are absent and no fallback path applies."""
 
 
+class ResourceKindUnresolvable(RuntimeError):
+    """Raised when no recognised resource label is present in the alert."""
+
+
+_LABEL_TO_KIND: tuple[tuple[str, str], ...] = (
+    ("deployment", "Deployment"),
+    ("statefulset", "StatefulSet"),
+    ("daemonset", "DaemonSet"),
+    ("pod", "Pod"),
+    ("persistentvolumeclaim", "PersistentVolumeClaim"),
+)
+
+
 def _compute_diff(live: str, declared: str) -> str:
     return "\n".join(
         difflib.unified_diff(
@@ -182,10 +195,12 @@ async def _resolve_manifest_path_k8s(
 def _extract_resource_name(fault: FaultEvent) -> str:
     for alert in fault.alerts:
         labels = alert.get("labels", {})
-        for key in ("deployment", "pod", "statefulset", "daemonset", "name"):
-            if key in labels:
-                return labels[key]
-    return fault.commonLabels.get("deployment", "unknown")
+        for label, _ in _LABEL_TO_KIND:
+            if label in labels:
+                return labels[label]
+        if "name" in labels:
+            return labels["name"]
+    return fault.commonLabels.get("name", "unknown")
 
 
 def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
@@ -194,15 +209,12 @@ def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
         namespace = (
             labels.get("namespace") or fault.commonLabels.get("namespace") or "default"
         )
-        if "deployment" in labels:
-            return "Deployment", namespace, labels["deployment"]
-        if "pod" in labels:
-            return "Pod", namespace, labels["pod"]
-        if "statefulset" in labels:
-            return "StatefulSet", namespace, labels["statefulset"]
-    namespace = fault.commonLabels.get("namespace", "default")
-    name = fault.commonLabels.get("deployment", "unknown")
-    return "Deployment", namespace, name
+        for label, kind in _LABEL_TO_KIND:
+            if label in labels:
+                return kind, namespace, labels[label]
+    raise ResourceKindUnresolvable(
+        f"no recognised resource label in alert labels: {[a.get('labels', {}) for a in fault.alerts]}"
+    )
 
 
 async def build_diagnosis_context(
