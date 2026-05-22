@@ -22,7 +22,7 @@ const (
 
 const DefaultPollInterval = pollIntervalSeconds * time.Second
 
-var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 var commitSHAPattern = regexp.MustCompile(`^[a-f0-9]{7,40}$`)
 
@@ -45,7 +45,7 @@ func HandleCloneRepo(client GitClient, state SessionState, authURL string, maxBy
 			return mcp.NewToolResultError("run_id: missing or wrong type"), nil
 		}
 		if !runIDPattern.MatchString(runID) {
-			return mcp.NewToolResultError("run_id: must match ^[a-zA-Z0-9-]+$"), nil
+			return mcp.NewToolResultError("run_id: must match ^[a-zA-Z0-9_-]+$"), nil
 		}
 
 		if state.CloneDir() != "" {
@@ -76,7 +76,7 @@ func HandleCreateBranch(client GitClient, state SessionState, maxBytes int) serv
 			return mcp.NewToolResultError("run_id: missing or wrong type"), nil
 		}
 		if !runIDPattern.MatchString(runID) {
-			return mcp.NewToolResultError("run_id: must match ^[a-zA-Z0-9-]+$"), nil
+			return mcp.NewToolResultError("run_id: must match ^[a-zA-Z0-9_-]+$"), nil
 		}
 
 		cloneDir := state.CloneDir()
