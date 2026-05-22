@@ -12,7 +12,11 @@ from common import trace
 from common.constants import GIT_COMMIT_BUDGET
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
-from diagnosis.context import ManifestPathUnresolvable, ResourceKindUnresolvable, build_diagnosis_context
+from diagnosis.context import (
+    ManifestPathUnresolvable,
+    ResourceKindUnresolvable,
+    build_diagnosis_context,
+)
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
@@ -486,7 +490,10 @@ async def run_orchestration(
                 try:
                     async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
                         remediation_result, rem_usage, rem_msgs = await run_remediation(
-                            remediation_deps, report, source_branch=base_branch, model=model
+                            remediation_deps,
+                            report,
+                            source_branch=base_branch,
+                            model=model,
                         )
                 except asyncio.TimeoutError:
                     log.error(
@@ -508,7 +515,10 @@ async def run_orchestration(
                             async with asyncio.TaskGroup() as tg:
                                 rem_task = tg.create_task(
                                     run_remediation(
-                                        remediation_deps, report, source_branch=base_branch, model=model
+                                        remediation_deps,
+                                        report,
+                                        source_branch=base_branch,
+                                        model=model,
                                     )
                                 )
                                 wtch_task = tg.create_task(
@@ -582,6 +592,7 @@ async def run_orchestration(
             mttr_s = asyncio.get_event_loop().time() - t0
             ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+            forbidden_violations = _check_forbidden_actions(scenario, actions_taken)
             record = RunRecord(
                 run_id=run_id,
                 scenario=scenario,
@@ -592,7 +603,9 @@ async def run_orchestration(
                 ended_at=ended_at,
                 outcome=outcome,
                 success_rate=(
-                    remediation_result.success and not watchdog_result.degraded
+                    remediation_result.success
+                    and not watchdog_result.degraded
+                    and not forbidden_violations
                 ),
                 diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
                 MTTR_s=mttr_s,
@@ -609,9 +622,7 @@ async def run_orchestration(
                 agent_branch=remediation_result.agent_branch,
                 agent_commits=remediation_result.agent_commits,
                 gate_status=remediation_result.gate_status,
-                forbidden_action_violations=_check_forbidden_actions(
-                    scenario, actions_taken
-                ),
+                forbidden_action_violations=forbidden_violations,
             )
             log.info("run %s finished outcome=%s MTTR=%.1fs", run_id, outcome, mttr_s)
             _write_run_record(record)

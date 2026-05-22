@@ -573,6 +573,7 @@ def test_build_diagnosis_context_read_file_failure_degrades() -> None:
 
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+
     async def git_side_effect(tool, args):
         if tool == "clone_repo":
             return {"content": "ok"}
@@ -591,7 +592,10 @@ def test_build_diagnosis_context_read_file_failure_degrades() -> None:
         git_mcp=mock_git,
     )
 
-    with patch("diagnosis.context._resolve_manifest_path_k8s", return_value="apps/vigil-app.yaml"):
+    with patch(
+        "diagnosis.context._resolve_manifest_path_k8s",
+        return_value="apps/vigil-app.yaml",
+    ):
         ctx = asyncio.get_event_loop().run_until_complete(
             build_diagnosis_context(deps, fault)
         )
@@ -806,8 +810,9 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     assert systemd_call[1].get("unit") == "vigil-auto-reconcile.service"
 
 
-def _make_fault(labels: dict) -> "FaultEvent":
+def _make_fault(labels: dict):
     from orchestrator.models import FaultEvent
+
     return FaultEvent(
         receiver="vigil-webhook",
         status="firing",
@@ -850,7 +855,10 @@ def test_extract_kind_daemonset() -> None:
 
 
 def test_extract_kind_unknown_raises() -> None:
-    from diagnosis.context import ResourceKindUnresolvable, _extract_k8s_kind_namespace_name
+    from diagnosis.context import (
+        ResourceKindUnresolvable,
+        _extract_k8s_kind_namespace_name,
+    )
 
     fault = _make_fault({"alertname": "WeirdAlert", "namespace": "default"})
     with pytest.raises(ResourceKindUnresolvable):

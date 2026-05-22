@@ -52,7 +52,8 @@ If recommended_action == "git_commit_k8s":
     3. commit_files(message='fix(remediation): <short root cause summary>')
        -- record the SHA from 'commit: <sha>' into RemediationResult.agent_commits.
     4. push_branch()
-    5. create_pr(title='<short summary>', body='<root cause + evidence>', base=<source_branch>)
+    5. create_pr(title='<short summary>', body='<root cause + evidence>',
+       base=<source_branch>)
        -- auto-merge is already enabled by git-mcp.
     6. wait_for_gate(pr_number=<pr_number from create_pr response>)
        -- on success, the response is 'gate passed: merged sha=<sha>'.
@@ -96,7 +97,8 @@ If recommended_action == "git_commit_nix":
                      patch_body=DiagnosisReport.proposed_patch.patch_body)
     3. commit_files(message='fix(remediation): <short root cause summary>')
     4. push_branch()
-    5. create_pr(title='<short summary>', body='<root cause + evidence>', base=<source_branch>)
+    5. create_pr(title='<short summary>', body='<root cause + evidence>',
+       base=<source_branch>)
     6. wait_for_gate(pr_number=<pr_number from create_pr response>)
        -- on gate failure: call close_pr, delete_branch, return success=False and STOP.
        -- on gate passed: extract merge sha, record merge_commit_sha and gate_status.

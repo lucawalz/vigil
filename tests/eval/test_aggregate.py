@@ -438,7 +438,7 @@ def test_write_report_includes_per_row_outcome_literal_and_rollup(
     assert "gate-uncertain" in report
 
     rollup_pattern = (
-        r"\d+/\d+ passed,\s*\d+/\d+ agent-failed,"
+        r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
         r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
     )
     assert re.search(rollup_pattern, report), (
@@ -493,9 +493,39 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
     assert "setup_error" in summary_text
 
     rollup_pattern = (
-        r"\d+/\d+ passed,\s*\d+/\d+ agent-failed,"
+        r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
         r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
     )
     assert re.search(rollup_pattern, summary_text), (
         f"expected 4-bucket rollup line in step_summary.md; got:\n{summary_text}"
     )
+
+
+def test_count_buckets_out_of_scope_for_success_with_false_success_rate(
+    tmp_path: Path,
+) -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {"outcome": "success", "success_rate": False},
+        {"outcome": "success", "success_rate": True},
+        {"outcome": "flux_degraded", "success_rate": False},
+    ]
+    counts = _count_buckets(records)
+    assert counts["out-of-scope"] == 1
+    assert counts["passed"] == 1
+    assert counts["agent-failed"] == 1
+
+
+def test_count_buckets_out_of_scope_absent_when_no_forbidden_violations(
+    tmp_path: Path,
+) -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {"outcome": "success", "success_rate": True},
+        {"outcome": "success", "success_rate": True},
+    ]
+    counts = _count_buckets(records)
+    assert counts["out-of-scope"] == 0
+    assert counts["passed"] == 2

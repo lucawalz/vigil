@@ -213,8 +213,9 @@ def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
         for label, kind in _LABEL_TO_KIND:
             if label in labels:
                 return kind, namespace, labels[label]
+    label_dump = [a.get("labels", {}) for a in fault.alerts]
     raise ResourceKindUnresolvable(
-        f"no recognised resource label in alert labels: {[a.get('labels', {}) for a in fault.alerts]}"
+        f"no recognised resource label in alert labels: {label_dump}"
     )
 
 

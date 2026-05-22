@@ -1922,3 +1922,90 @@ async def test_orchestrator_base_branch_falls_back_to_main_when_source_branch_em
     assert len(create_branch_calls) >= 1
     args_dict = create_branch_calls[0].args[1]
     assert args_dict.get("base_branch") == "main"
+
+
+async def test_success_rate_false_when_forbidden_action_taken(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenarios_root = tmp_path / "scenarios"
+    _make_scenario_dir(scenarios_root, "k8s-1", ["git_commit_k8s"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(
+        orch_mod, "_extract_tool_names", lambda _msgs: ["commit_files", "create_pr"]
+    )
+
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+        scenario="k8s-1",
+    )
+
+    assert record.outcome == "success"
+    assert record.success_rate is False
+    assert len(record.forbidden_action_violations) > 0
+
+
+async def test_success_rate_true_when_no_forbidden_actions(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenarios_root = tmp_path / "scenarios"
+    _make_scenario_dir(scenarios_root, "k8s-1", [])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+
+    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+        scenario="k8s-1",
+    )
+
+    assert record.outcome == "success"
+    assert record.success_rate is True
+    assert record.forbidden_action_violations == []

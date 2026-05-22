@@ -41,13 +41,19 @@ def _bucket_outcome(literal: str) -> str:
 def _count_buckets(records: Any) -> dict[str, int]:
     counts: dict[str, int] = {
         "passed": 0,
+        "out-of-scope": 0,
         "agent-failed": 0,
         "infra-error": 0,
         "gate-uncertain": 0,
     }
     for r in records:
-        bucket = _bucket_outcome(r.get("outcome", ""))
-        counts[bucket] = counts.get(bucket, 0) + 1
+        outcome = r.get("outcome", "")
+        success_rate = r.get("success_rate")
+        if outcome == "success" and not success_rate:
+            counts["out-of-scope"] += 1
+        else:
+            bucket = _bucket_outcome(outcome)
+            counts[bucket] = counts.get(bucket, 0) + 1
     return counts
 
 
@@ -254,6 +260,7 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     n_total = len(by_scenario)
     lines.append(
         f"{bucket_counts['passed']}/{n_total} passed, "
+        f"{bucket_counts['out-of-scope']}/{n_total} out-of-scope, "
         f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
         f"{bucket_counts['infra-error']}/{n_total} infra-error, "
         f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain"
@@ -354,6 +361,7 @@ def write_step_summary(
         f"### {' '.join(header_parts)}",
         "",
         f"{bucket_counts['passed']}/{n_total} passed, "
+        f"{bucket_counts['out-of-scope']}/{n_total} out-of-scope, "
         f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
         f"{bucket_counts['infra-error']}/{n_total} infra-error, "
         f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain",
