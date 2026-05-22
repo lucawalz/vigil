@@ -14,6 +14,7 @@ in
   config = lib.mkIf cfg.enable {
     systemd.services.vigil-auto-reconcile = {
       description = "Vigil NixOS auto-reconciler";
+      path = [ pkgs.git pkgs.nixos-rebuild ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = false;
