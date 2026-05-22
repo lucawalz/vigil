@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -259,26 +260,36 @@ async def build_diagnosis_context(
     )
     live_yaml = _extract_text(live_result)
 
-    manifest_path = await _resolve_manifest_path_k8s(
-        deps, fault, live_yaml, source_branch
-    )
-
     try:
-        declared_result = await deps.git_mcp.direct_call_tool(
-            "read_file",
-            {"branch": source_branch, "path": manifest_path},
+        manifest_path: str | None = await _resolve_manifest_path_k8s(
+            deps, fault, live_yaml, source_branch
         )
-        declared_yaml = _extract_text(declared_result)
-    except Exception as exc:
-        raise ManifestPathUnresolvable(
-            f"declared manifest unreadable at {manifest_path}: {exc}"
-        ) from exc
 
-    diff = _compute_diff(live_yaml, declared_yaml)
-    return DiagnosisContext(
-        source_branch=source_branch,
-        manifest_path=manifest_path,
-        live_yaml=live_yaml,
-        declared_yaml=declared_yaml,
-        diff=diff,
-    )
+        try:
+            declared_result = await deps.git_mcp.direct_call_tool(
+                "read_file",
+                {"branch": source_branch, "path": manifest_path},
+            )
+            declared_yaml = _extract_text(declared_result)
+        except Exception as exc:
+            raise ManifestPathUnresolvable(
+                f"declared manifest unreadable at {manifest_path}: {exc}"
+            ) from exc
+
+        diff = _compute_diff(live_yaml, declared_yaml)
+        return DiagnosisContext(
+            source_branch=source_branch,
+            manifest_path=manifest_path,
+            live_yaml=live_yaml,
+            declared_yaml=declared_yaml,
+            diff=diff,
+        )
+    except ManifestPathUnresolvable as exc:
+        logging.getLogger(__name__).warning("manifest path unresolvable: %s", exc)
+        return DiagnosisContext(
+            source_branch=source_branch,
+            manifest_path=None,
+            live_yaml=live_yaml,
+            declared_yaml="",
+            diff="",
+        )

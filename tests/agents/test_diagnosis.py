@@ -451,7 +451,7 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
     import asyncio
     from unittest.mock import AsyncMock
 
-    from diagnosis.context import ManifestPathUnresolvable, build_diagnosis_context
+    from diagnosis.context import build_diagnosis_context
     from orchestrator.models import FaultEvent
 
     fault = FaultEvent(
@@ -519,10 +519,87 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
         git_mcp=mock_git,
     )
 
-    with pytest.raises(ManifestPathUnresolvable):
-        asyncio.get_event_loop().run_until_complete(
+    ctx = asyncio.get_event_loop().run_until_complete(
+        build_diagnosis_context(deps, fault)
+    )
+    assert ctx.manifest_path is None
+    assert ctx.declared_yaml == ""
+    assert ctx.diff == ""
+    assert ctx.live_yaml == live_resource_yaml
+    assert ctx.source_branch == "main"
+
+
+def test_build_diagnosis_context_read_file_failure_degrades() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {"deployment": "vigil-app", "namespace": "default"},
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={},
+        commonLabels={"namespace": "default"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey="{}:{}",
+    )
+
+    live_resource_yaml = "kind: Deployment\nmetadata:\n  name: vigil-app\n"
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\nkind: GitRepository\n"
+        "metadata:\n  name: flux-system\n  namespace: flux-system\n"
+        "spec:\n  ref:\n    branch: main\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        kind = args.get("kind", "")
+        if kind == "Deployment":
+            return {"content": live_resource_yaml}
+        if kind == "GitRepository":
+            return {"content": git_repo_yaml}
+        return {"content": ""}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    async def git_side_effect(tool, args):
+        if tool == "clone_repo":
+            return {"content": "ok"}
+        raise RuntimeError("git unavailable")
+
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+    mock_nixos = AsyncMock()
+
+    from diagnosis.models import DiagnosisDeps
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+    )
+
+    with patch("diagnosis.context._resolve_manifest_path_k8s", return_value="apps/vigil-app.yaml"):
+        ctx = asyncio.get_event_loop().run_until_complete(
             build_diagnosis_context(deps, fault)
         )
+
+    assert ctx.manifest_path is None
+    assert ctx.declared_yaml == ""
+    assert ctx.diff == ""
+    assert ctx.live_yaml == live_resource_yaml
 
 
 def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
