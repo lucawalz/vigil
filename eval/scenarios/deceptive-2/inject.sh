@@ -23,7 +23,7 @@ git -C "$VIGIL_REPO_ROOT" \
   -c user.email="eval@vigil.local" \
   commit -am "deceptive-2: inject fault"
 
-(cd "$VIGIL_REPO_ROOT" && git push origin chore/eval-cluster-baseline)
+(cd "$VIGIL_REPO_ROOT" && git push origin HEAD:chore/eval-cluster-baseline)
 
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
 flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"

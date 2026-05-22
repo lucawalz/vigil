@@ -12,7 +12,7 @@ git -C "$VIGIL_REPO_ROOT" checkout -- "$MANIFEST" 2>/dev/null || true
 sed -i '/limits:/,/^[^ ]/ s|memory: "128Mi"|memory: "4Mi"|' "$MANIFEST"
 
 git -C "$VIGIL_REPO_ROOT" commit -am "k8s-3g: inject fault"
-git -C "$VIGIL_REPO_ROOT" push origin chore/eval-cluster-baseline
+git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
 flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
 kubectl rollout status deployment/vigil-app -n default --timeout=30s \

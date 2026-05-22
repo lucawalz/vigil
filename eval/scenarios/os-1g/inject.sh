@@ -23,7 +23,7 @@ open(path, 'w').writelines(lines)
 PYEOF
 
 git -C "$VIGIL_REPO_ROOT" commit -am "os-1g: inject fault"
-git -C "$VIGIL_REPO_ROOT" push origin chore/eval-cluster-baseline
+git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
 
 ssh "${SSH_OPTS[@]}" "root@${TARGET_HOST}" \
   "systemctl start --no-block vigil-auto-reconcile.service"
