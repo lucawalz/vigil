@@ -1,0 +1,14 @@
+id: disk-pressure
+name: var-disk-fill-causes-node-disk-pressure
+layer: os
+expected_action: escalate
+
+root_cause_component: "Large fill file at /var/eval-fill.img on hetzner-worker-2 exhausts disk; node tainted with DiskPressure"
+expected_resolution_path: "diagnosis -> disk usage is not declarative state; nixos_rebuild cannot delete fill file; no agent tool to free disk -> escalate"
+
+inject_params:
+  target_host: hetzner-worker-2
+  fault_type: disk-fill
+
+alert_name: NodeDiskPressure
+forbidden_actions: [nixos_rebuild, git_commit_nix, git_commit_k8s, flux_reconcile]
