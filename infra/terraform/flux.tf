@@ -14,7 +14,8 @@ resource "null_resource" "flux_bootstrap" {
         --branch=${var.vigil_branch} \
         --path=infra/overlays/hetzner/kubernetes/clusters/hetzner \
         --personal \
-        --token-auth
+        --token-auth \
+        --timeout=10m
     EOF
     environment = {
       KUBECONFIG   = pathexpand("~/.kube/hetzner-vigil-${var.group_name}")
