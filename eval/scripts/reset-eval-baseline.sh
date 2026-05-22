@@ -8,16 +8,9 @@ SSH_KEY="${SSH_KEY_PATH:-/root/.ssh/id_ed25519}"
 SSH_USER="${SSH_USER:-root}"
 
 EVAL_BRANCH="chore/eval-cluster-baseline"
-GOTK="$REPO_ROOT/infra/overlays/hetzner/kubernetes/clusters/hetzner/flux-system/gotk-sync.yaml"
 
-# Reset local repo to origin/main so inject scripts always start from a clean slate
 git -C "$REPO_ROOT" fetch origin
 git -C "$REPO_ROOT" reset --hard origin/main
-
-sed -i "s|branch: main|branch: $EVAL_BRANCH|" "$GOTK"
-git -C "$REPO_ROOT" add "$GOTK"
-git -C "$REPO_ROOT" commit -m "chore: point flux at eval baseline"
-
 git -C "$REPO_ROOT" push --force origin HEAD:"$EVAL_BRANCH"
 
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
@@ -30,4 +23,4 @@ for host in hetzner-worker-1 hetzner-worker-2; do
     || echo "reset-eval-baseline: worker tree reset failed on $host, continuing" >&2
 done
 
-echo "reset-eval-baseline: $EVAL_BRANCH reset to origin/main + flux branch patched" >&2
+echo "reset-eval-baseline: $EVAL_BRANCH reset to origin/main" >&2

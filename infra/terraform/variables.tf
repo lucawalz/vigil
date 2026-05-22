@@ -16,7 +16,7 @@ variable "ssh_private_key_path" {
 
 variable "vigil_branch" {
   type    = string
-  default = "feat/agent-observability-prod-ready"
+  default = "chore/eval-cluster-baseline"
 }
 
 variable "github_token" {
