@@ -12,9 +12,8 @@ from pydantic_ai.usage import Usage, UsageLimits
 
 from .context import DiagnosisContext
 from .manifest_paths import (
+    ManifestPathError,
     lookup_k8s_manifest_path as _lookup_k8s_manifest_path,
-)
-from .manifest_paths import (
     lookup_os_manifest_path as _lookup_os_manifest_path,
 )
 from .models import DiagnosisDeps, DiagnosisReport
@@ -168,13 +167,19 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 @diagnosis_agent.tool_plain
 def lookup_k8s_manifest_path(kustomization_yaml: str, resource_name: str) -> str:
     """Resolve a Kustomization YAML to the repo-relative manifest path."""
-    return _lookup_k8s_manifest_path(kustomization_yaml, resource_name)
+    try:
+        return _lookup_k8s_manifest_path(kustomization_yaml, resource_name)
+    except ManifestPathError as exc:
+        return f"manifest path not resolvable: {exc}"
 
 
 @diagnosis_agent.tool_plain
 def lookup_os_manifest_path(hostname: str) -> str:
     """Return the repo-relative NixOS config path for the given hostname."""
-    return _lookup_os_manifest_path(hostname)
+    try:
+        return _lookup_os_manifest_path(hostname)
+    except ManifestPathError as exc:
+        return f"manifest path not resolvable: {exc}"
 
 
 async def run_diagnosis(
