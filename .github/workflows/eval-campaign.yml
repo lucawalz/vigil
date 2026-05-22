@@ -3,10 +3,6 @@ name: Eval Campaign
 on:
   workflow_dispatch:
     inputs:
-      vigil_branch:
-        description: "Branch to evaluate"
-        required: false
-        default: ""
       seed:
         description: "Seed integer for scenario runs"
         required: false
@@ -48,11 +44,8 @@ jobs:
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}
       TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
       TF_VAR_vigil_branch: chore/eval-cluster-baseline
-      VIGIL_BRANCH: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ env.VIGIL_BRANCH }}
 
       - uses: DeterminateSystems/nix-installer-action@v22
 
@@ -289,8 +282,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
