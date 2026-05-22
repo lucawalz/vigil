@@ -84,6 +84,21 @@ jobs:
         working-directory: infra/terraform
         run: terraform apply -auto-approve -input=false
 
+      - name: Diagnose flux bootstrap failure
+        if: failure()
+        run: |
+          KC=~/.kube/hetzner-vigil-${{ matrix.group }}
+          if [ ! -s "$KC" ]; then
+            echo "kubeconfig not present — bootstrap did not reach flux stage"
+            exit 0
+          fi
+          echo "=== kustomization flux-system ==="
+          kubectl --kubeconfig "$KC" get kustomization flux-system -n flux-system -o yaml 2>&1 || true
+          echo "=== flux-system events ==="
+          kubectl --kubeconfig "$KC" get events -n flux-system --sort-by='.lastTimestamp' 2>&1 || true
+          echo "=== gitrepository flux-system ==="
+          kubectl --kubeconfig "$KC" get gitrepository flux-system -n flux-system -o yaml 2>&1 || true
+
       - name: Wait for kubeconfig
         run: |
           KUBECONFIG=~/.kube/hetzner-vigil-${{ matrix.group }}
