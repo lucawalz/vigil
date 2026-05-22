@@ -47,6 +47,7 @@ jobs:
       TF_VAR_group_name: ${{ matrix.group }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}
       TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
+      TF_VAR_vigil_branch: chore/eval-cluster-baseline
       VIGIL_BRANCH: ${{ github.event.inputs.vigil_branch != '' && github.event.inputs.vigil_branch || github.ref_name }}
     steps:
       - uses: actions/checkout@v6
@@ -88,8 +89,6 @@ jobs:
 
       - name: Terraform apply
         working-directory: infra/terraform
-        env:
-          TF_VAR_vigil_branch: ${{ env.VIGIL_BRANCH }}
         run: terraform apply -auto-approve -input=false
 
       - name: Wait for kubeconfig
@@ -280,8 +279,6 @@ jobs:
       - name: Terraform destroy
         if: always() && !inputs.skip_destroy
         working-directory: infra/terraform
-        env:
-          TF_VAR_vigil_branch: ${{ env.VIGIL_BRANCH }}
         run: terraform destroy -auto-approve -input=false
 
   aggregate:
