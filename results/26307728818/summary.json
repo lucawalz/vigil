@@ -1,0 +1,77 @@
+{
+  "by_model": {
+    "claude-sonnet-4-6": {
+      "n_runs": 3,
+      "n_attempts": 3,
+      "success_rate": 0.0,
+      "success_rate_given_attempt": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "diagnosis_accuracy": null,
+      "diag_n": 0,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.0,
+      "n_eligible": 3,
+      "mean_input_tokens": 0,
+      "mean_output_tokens": 0,
+      "mean_tool_calls": 0,
+      "mean_iteration_count": 0
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 3,
+    "n_models": 1,
+    "n_scenarios": 3
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
