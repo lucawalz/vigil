@@ -37,7 +37,7 @@ type SessionState interface {
 	CloneDir() string
 }
 
-func HandleCreateBranch(client GitClient, state SessionState, authURL string, maxBytes int) server.ToolHandlerFunc {
+func HandleCloneRepo(client GitClient, state SessionState, authURL string, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		runID, ok := args["run_id"].(string)
@@ -48,9 +48,8 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 			return mcp.NewToolResultError("run_id: must match ^[a-zA-Z0-9-]+$"), nil
 		}
 
-		cloneDir, err := client.Clone(ctx, authURL)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
+		if state.CloneDir() != "" {
+			return mcp.NewToolResultText(truncateOutput("already initialised", maxBytes)), nil
 		}
 
 		base, _ := args["base_branch"].(string)
@@ -58,14 +57,42 @@ func HandleCreateBranch(client GitClient, state SessionState, authURL string, ma
 			base = defaultBaseBranch
 		}
 
-		branch := branchPrefix + runID
-		if err := client.CreateBranch(ctx, cloneDir, branch); err != nil {
-			_ = os.RemoveAll(cloneDir)
-			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
+		cloneDir, err := client.Clone(ctx, authURL)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("HandleCloneRepo: %v", err)), nil
 		}
 		state.BeginSession(runID, cloneDir)
-		state.SetBranch(branch)
 		state.SetBaseBranch(base)
+
+		return mcp.NewToolResultText(truncateOutput("cloned: "+base, maxBytes)), nil
+	}
+}
+
+func HandleCreateBranch(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		runID, ok := args["run_id"].(string)
+		if !ok || runID == "" {
+			return mcp.NewToolResultError("run_id: missing or wrong type"), nil
+		}
+		if !runIDPattern.MatchString(runID) {
+			return mcp.NewToolResultError("run_id: must match ^[a-zA-Z0-9-]+$"), nil
+		}
+
+		cloneDir := state.CloneDir()
+		if cloneDir == "" {
+			return mcp.NewToolResultError("HandleCreateBranch: session not initialised; call clone_repo first"), nil
+		}
+
+		branch := branchPrefix + runID
+		if err := client.CreateBranch(ctx, cloneDir, branch); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
+		}
+		state.SetBranch(branch)
+
+		if base, _ := args["base_branch"].(string); base != "" {
+			state.SetBaseBranch(base)
+		}
 
 		return mcp.NewToolResultText(truncateOutput("branch created: "+branch, maxBytes)), nil
 	}
@@ -343,7 +370,7 @@ func HandleReadFile(client GitClient, state SessionState, maxBytes int) server.T
 		}
 		cloneDir := state.CloneDir()
 		if cloneDir == "" {
-			return mcp.NewToolResultError("HandleReadFile: session not initialised; call create_branch first"), nil
+			return mcp.NewToolResultError("HandleReadFile: session not initialised; call clone_repo first"), nil
 		}
 		contents, err := client.ReadFile(ctx, cloneDir, branch, path)
 		if err != nil {

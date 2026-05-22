@@ -186,11 +186,182 @@ func preloadedState(cloneDir, branch string) *fakeSessionState {
 	return s
 }
 
-func TestCreateBranchHandler_Success(t *testing.T) {
+func TestCloneRepoHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{cloneDir: t.TempDir()}
 	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "abc123"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if state.CloneDir() == "" {
+		t.Error("expected cloneDir to be set after clone_repo")
+	}
+}
+
+func TestCloneRepoHandler_Idempotent(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{cloneDir: cloneDir}
+	state := preloadedState(cloneDir, "")
+	state.SetBaseBranch("main")
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "abc123"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success on second call, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "already initialised") {
+		t.Errorf("expected 'already initialised', got: %s", text)
+	}
+}
+
+func TestCloneRepoHandler_DomainError(t *testing.T) {
+	fake := &fakeGitClient{err: fmt.Errorf("clone failed")}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "abc123"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for clone failure")
+	}
+}
+
+func TestCloneRepoHandler_MissingRunID(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo", mcp.WithString("run_id", mcp.Required()))
+	handler := git.HandleCloneRepo(fake, state, "", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for missing run_id")
+	}
+}
+
+func TestCloneRepoHandler_RejectsInvalidRunID(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo", mcp.WithString("run_id", mcp.Required()))
+	handler := git.HandleCloneRepo(fake, state, "", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "bad;id"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for invalid run_id")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "run_id") {
+		t.Errorf("expected 'run_id' in error message, got: %s", text)
+	}
+}
+
+func TestCloneRepoHandler_NoTokenInOutput(t *testing.T) {
+	const sentinelToken = "SECRET_TOKEN_FIXTURE"
+	cfg := &config.Config{
+		GitHubToken:    sentinelToken,
+		RepoURL:        "https://github.com/x/y.git",
+		MaxOutputBytes: testMaxBytes,
+	}
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, cfg.AuthURL(), testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "run-001"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if strings.Contains(text, sentinelToken) {
+		t.Errorf("token sentinel leaked into response: %s", text)
+	}
+}
+
+func TestCloneRepoHandler_SetsBaseBranchDefault(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, "", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "abc123"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := state.BaseBranch(); got != "main" {
+		t.Errorf("expected baseBranch %q, got %q", "main", got)
+	}
+}
+
+func TestCloneRepoHandler_SetsBaseBranchExplicit(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, "", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{
+		"run_id":      "abc123",
+		"base_branch": "chore/eval-cluster-baseline",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if got := state.BaseBranch(); got != "chore/eval-cluster-baseline" {
+		t.Errorf("expected baseBranch %q, got %q", "chore/eval-cluster-baseline", got)
+	}
+}
+
+func TestCreateBranchHandler_Success(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "")
 	tool := mcp.NewTool("create_branch", mcp.WithString("run_id", mcp.Required()))
-	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+	handler := git.HandleCreateBranch(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "abc123"})
 	if err != nil {
@@ -205,11 +376,31 @@ func TestCreateBranchHandler_Success(t *testing.T) {
 	}
 }
 
-func TestCreateBranchHandler_DomainError(t *testing.T) {
-	fake := &fakeGitClient{err: fmt.Errorf("clone failed")}
+func TestCreateBranchHandler_NoSession(t *testing.T) {
+	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("create_branch", mcp.WithString("run_id", mcp.Required()))
-	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+	handler := git.HandleCreateBranch(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "abc123"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true when session not initialised")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "clone_repo") {
+		t.Errorf("expected 'clone_repo' in error, got: %s", text)
+	}
+}
+
+func TestCreateBranchHandler_DomainError(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{err: fmt.Errorf("branch create failed")}
+	state := preloadedState(cloneDir, "")
+	tool := mcp.NewTool("create_branch", mcp.WithString("run_id", mcp.Required()))
+	handler := git.HandleCreateBranch(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "abc123"})
 	if err != nil {
@@ -221,10 +412,10 @@ func TestCreateBranchHandler_DomainError(t *testing.T) {
 }
 
 func TestCreateBranchHandler_MissingArgument(t *testing.T) {
-	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("create_branch", mcp.WithString("run_id", mcp.Required()))
-	handler := git.HandleCreateBranch(fake, state, "", testMaxBytes)
+	handler := git.HandleCreateBranch(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{})
 	if err != nil {
@@ -236,10 +427,10 @@ func TestCreateBranchHandler_MissingArgument(t *testing.T) {
 }
 
 func TestCreateBranchHandler_RejectsInvalidRunID(t *testing.T) {
-	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("create_branch", mcp.WithString("run_id", mcp.Required()))
-	handler := git.HandleCreateBranch(fake, state, "", testMaxBytes)
+	handler := git.HandleCreateBranch(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "bad;branch"})
 	if err != nil {
@@ -251,31 +442,6 @@ func TestCreateBranchHandler_RejectsInvalidRunID(t *testing.T) {
 	text := result.Content[0].(mcp.TextContent).Text
 	if !strings.Contains(text, "run_id") {
 		t.Errorf("expected 'run_id' in error message, got: %s", text)
-	}
-}
-
-func TestCreateBranchHandler_NoTokenInOutput(t *testing.T) {
-	const sentinelToken = "SECRET_TOKEN_FIXTURE"
-	cfg := &config.Config{
-		GitHubToken:    sentinelToken,
-		RepoURL:        "https://github.com/x/y.git",
-		MaxOutputBytes: testMaxBytes,
-	}
-	fake := &fakeGitClient{cloneDir: t.TempDir()}
-	state := &fakeSessionState{}
-	tool := mcp.NewTool("create_branch", mcp.WithString("run_id", mcp.Required()))
-	handler := git.HandleCreateBranch(fake, state, cfg.AuthURL(), testMaxBytes)
-
-	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "run-001"})
-	if err != nil {
-		t.Fatalf("CallTool error: %v", err)
-	}
-	if result.IsError {
-		t.Errorf("expected success, got error: %v", result.Content)
-	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if strings.Contains(text, sentinelToken) {
-		t.Errorf("token sentinel leaked into response: %s", text)
 	}
 }
 
@@ -1174,8 +1340,8 @@ func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
 		t.Error("expected IsError=true when session not initialised")
 	}
 	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "session not initialised") {
-		t.Errorf("expected 'session not initialised' in error, got: %s", text)
+	if !strings.Contains(text, "clone_repo") {
+		t.Errorf("expected 'clone_repo' in error, got: %s", text)
 	}
 }
 
@@ -1333,14 +1499,16 @@ func TestGitServer_BaseBranchConcurrent(t *testing.T) {
 	wg.Wait()
 }
 
-func TestHandleCreateBranch_BaseBranchDefault(t *testing.T) {
-	fake := &fakeGitClient{cloneDir: t.TempDir()}
-	state := &fakeSessionState{}
+func TestHandleCreateBranch_PreservesBaseBranchFromCloneRepo(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "")
+	state.SetBaseBranch("chore/eval-cluster-baseline")
 	tool := mcp.NewTool("create_branch",
 		mcp.WithString("run_id", mcp.Required()),
 		mcp.WithString("base_branch"),
 	)
-	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+	handler := git.HandleCreateBranch(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{"run_id": "abc123"})
 	if err != nil {
@@ -1349,19 +1517,21 @@ func TestHandleCreateBranch_BaseBranchDefault(t *testing.T) {
 	if result.IsError {
 		t.Errorf("expected success, got error: %v", result.Content)
 	}
-	if got := state.BaseBranch(); got != "main" {
-		t.Errorf("expected baseBranch %q, got %q", "main", got)
+	if got := state.BaseBranch(); got != "chore/eval-cluster-baseline" {
+		t.Errorf("expected baseBranch preserved as %q, got %q", "chore/eval-cluster-baseline", got)
 	}
 }
 
-func TestHandleCreateBranch_BaseBranchExplicit(t *testing.T) {
-	fake := &fakeGitClient{cloneDir: t.TempDir()}
-	state := &fakeSessionState{}
+func TestHandleCreateBranch_BaseBranchExplicitOverride(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "")
+	state.SetBaseBranch("main")
 	tool := mcp.NewTool("create_branch",
 		mcp.WithString("run_id", mcp.Required()),
 		mcp.WithString("base_branch"),
 	)
-	handler := git.HandleCreateBranch(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+	handler := git.HandleCreateBranch(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_branch", tool, handler, map[string]any{
 		"run_id":      "abc456",

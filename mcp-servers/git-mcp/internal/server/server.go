@@ -78,14 +78,31 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 	)
 
 	mcpServer.AddTool(
-		mcp.NewTool("create_branch",
-			mcp.WithDescription("Create a remediation branch for the given run"),
+		mcp.NewTool("clone_repo",
+			mcp.WithDescription("Clone the repository and initialise the git-mcp session; idempotent"),
 			mcp.WithString("run_id",
 				mcp.Required(),
 				mcp.Description("Run identifier; must match ^[a-zA-Z0-9-]+$"),
 			),
+			mcp.WithString("base_branch",
+				mcp.Description("Branch to clone from (default: main)"),
+			),
 		),
-		git.HandleCreateBranch(client, s, cfg.AuthURL(), cfg.MaxOutputBytes),
+		git.HandleCloneRepo(client, s, cfg.AuthURL(), cfg.MaxOutputBytes),
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("create_branch",
+			mcp.WithDescription("Create a remediation branch; requires a prior clone_repo call"),
+			mcp.WithString("run_id",
+				mcp.Required(),
+				mcp.Description("Run identifier; must match ^[a-zA-Z0-9-]+$"),
+			),
+			mcp.WithString("base_branch",
+				mcp.Description("Override the base branch set by clone_repo"),
+			),
+		),
+		git.HandleCreateBranch(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(

@@ -31,7 +31,7 @@ func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, err
 
 var _ git.GitClient = &fakeGitClient{}
 
-func TestServerRegisters11Tools(t *testing.T) {
+func TestServerRegisters12Tools(t *testing.T) {
 	cfg := &config.Config{
 		GitHubToken:    "tok",
 		RepoURL:        "https://github.com/lucawalz/vigil.git",
@@ -45,6 +45,7 @@ func TestServerRegisters11Tools(t *testing.T) {
 
 	tools := mcpSrv.ListTools()
 	want := map[string]bool{
+		"clone_repo":     true,
 		"create_branch":  true,
 		"write_manifest": true,
 		"commit_files":   true,
