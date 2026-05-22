@@ -382,7 +382,7 @@ async def run_one(
         _run_script(reset_baseline_sh, seed, verbose=verbose)
 
     if wait_flux_ready_sh.is_file():
-        log.info("waiting for flux kustomizations and helmreleases before %s", scenario_id)
+        log.info("waiting for flux ready before %s", scenario_id)
         result = subprocess.run(
             [str(wait_flux_ready_sh)],
             capture_output=not verbose,
