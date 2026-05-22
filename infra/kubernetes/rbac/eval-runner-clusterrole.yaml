@@ -23,4 +23,4 @@ rules:
     verbs: ["get", "list", "patch"]
   - apiGroups: ["source.toolkit.fluxcd.io"]
     resources: ["gitrepositories"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "patch"]
