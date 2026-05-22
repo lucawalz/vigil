@@ -24,23 +24,23 @@ let
 
   kubectl-mcp = mkMcpServer {
     name = "kubectl-mcp";
-    vendorHash = "sha256-AKbV8OSZXeyhSabRTL7SJKs4pYs/3htJ48QABmwXIXg=";
+    vendorHash = "sha256-eNathH9o3xL9/TD6Jq86jHNG5+ONkV9AejX8G7CsZWo=";
   };
   flux-mcp = mkMcpServer {
     name = "flux-mcp";
-    vendorHash = "sha256-9yuAhtz7gA1iw9Yykn2sfo95UBVXSCqUMIY9ag373cM=";
+    vendorHash = "sha256-oN7RL+ajrVCOSaRcrVBKfRcziNA7zfwxVn64EEcf8Ew=";
   };
   ssh-mcp = mkMcpServer {
     name = "ssh-mcp";
-    vendorHash = "sha256-iogbVzChp1tWovncVTVrD90HmFyVGYsaOii+iCVFsXE=";
+    vendorHash = "sha256-i1ly56wybIRV+GN7JzBWIJrC4bHppMHXEKrwq2JlfdY=";
   };
   nixos-mcp = mkMcpServer {
     name = "nixos-mcp";
-    vendorHash = "sha256-iogbVzChp1tWovncVTVrD90HmFyVGYsaOii+iCVFsXE=";
+    vendorHash = "sha256-i1ly56wybIRV+GN7JzBWIJrC4bHppMHXEKrwq2JlfdY=";
   };
   git-mcp = mkMcpServer {
     name = "git-mcp";
-    vendorHash = "sha256-tq7OmbnjzeqL8xu3tbY5gi4IPEenYTR4fegGYvutpCE=";
+    vendorHash = "sha256-wdtHGcZRX8c0sy5Ot63xYG9nEB28R6Ct9hQN3tnSnvI=";
     nativeBuildInputs = [ pkgs.git ];
   };
 in
