@@ -486,7 +486,7 @@ async def run_orchestration(
                 try:
                     async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
                         remediation_result, rem_usage, rem_msgs = await run_remediation(
-                            remediation_deps, report, model=model
+                            remediation_deps, report, source_branch=base_branch, model=model
                         )
                 except asyncio.TimeoutError:
                     log.error(
@@ -508,7 +508,7 @@ async def run_orchestration(
                             async with asyncio.TaskGroup() as tg:
                                 rem_task = tg.create_task(
                                     run_remediation(
-                                        remediation_deps, report, model=model
+                                        remediation_deps, report, source_branch=base_branch, model=model
                                     )
                                 )
                                 wtch_task = tg.create_task(

@@ -1860,6 +1860,11 @@ async def test_orchestrator_passes_base_branch_to_create_branch(
     args_dict = create_branch_calls[0].args[1]
     assert args_dict.get("base_branch") == "eval-baseline"
 
+    run_remediation_mock = orch_mod.run_remediation
+    assert run_remediation_mock.called
+    _, kwargs = run_remediation_mock.call_args
+    assert kwargs.get("source_branch") == "eval-baseline"
+
 
 async def test_orchestrator_base_branch_falls_back_to_main_when_source_branch_empty(
     sample_fault_event: FaultEvent,
