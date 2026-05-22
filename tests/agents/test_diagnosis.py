@@ -649,8 +649,13 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
 
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
+    async def nixos_side_effect(tool_name, args=None):
+        if tool_name == "lookup_os_manifest_path":
+            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+        return {"content": "nixos-state"}
+
     mock_nixos = AsyncMock()
-    mock_nixos.direct_call_tool = AsyncMock(return_value={"content": "nixos-state"})
+    mock_nixos.direct_call_tool = AsyncMock(side_effect=nixos_side_effect)
     mock_git = AsyncMock()
     mock_git.direct_call_tool = AsyncMock(return_value={"content": "declared-config"})
 
