@@ -209,6 +209,10 @@ async def build_diagnosis_context(
     deps: DiagnosisDeps, fault: FaultEvent
 ) -> DiagnosisContext:
     source_branch = await _resolve_source_branch(deps)
+    await deps.git_mcp.direct_call_tool(
+        "clone_repo",
+        {"run_id": deps.run_id, "base_branch": source_branch},
+    )
     target_host = _extract_target_host(fault)
 
     if target_host:
@@ -247,11 +251,16 @@ async def build_diagnosis_context(
         deps, fault, live_yaml, source_branch
     )
 
-    declared_result = await deps.git_mcp.direct_call_tool(
-        "read_file",
-        {"branch": source_branch, "path": manifest_path},
-    )
-    declared_yaml = _extract_text(declared_result)
+    try:
+        declared_result = await deps.git_mcp.direct_call_tool(
+            "read_file",
+            {"branch": source_branch, "path": manifest_path},
+        )
+        declared_yaml = _extract_text(declared_result)
+    except Exception as exc:
+        raise ManifestPathUnresolvable(
+            f"declared manifest unreadable at {manifest_path}: {exc}"
+        ) from exc
 
     diff = _compute_diff(live_yaml, declared_yaml)
     return DiagnosisContext(

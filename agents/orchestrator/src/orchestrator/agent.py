@@ -254,7 +254,7 @@ async def run_orchestration(
     model = build_model(model_name)
 
     diagnosis_deps = DiagnosisDeps(
-        kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp, git_mcp=git_mcp
+        kubectl_mcp=kubectl_mcp, nixos_mcp=nixos_mcp, git_mcp=git_mcp, run_id=run_id
     )
     remediation_deps = RemediationDeps(
         git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
