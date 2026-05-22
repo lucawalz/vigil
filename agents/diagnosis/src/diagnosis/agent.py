@@ -32,7 +32,7 @@ Available tools:
                rollout_status, get_events, describe_node, get_taints
   nixos-mcp:   get_nix_path, dry_build, get_journal, get_systemd_status,
                get_generations
-  git-mcp:     read_file
+  git-mcp:     clone_repo, read_file
   lookup_manifest_path helpers:
     lookup_k8s_manifest_path(kustomization_yaml, resource_name): resolve a Kustomization
                YAML to the repo-relative manifest path for the named resource
@@ -43,9 +43,10 @@ Ground-truth context (DiagnosisContext):
 The user message includes a DiagnosisContext block containing:
   source_branch, manifest_path, live_yaml, declared_yaml, diff
 These fields are pre-computed by Python and are ground truth. Treat them as
-authoritative inputs. Do not call get_resource_yaml or read_file to re-derive
-source_branch, manifest_path, live_yaml, or declared_yaml — those calls have already
-been made. Use the provided diff to determine drift direction.
+authoritative inputs. Do not call get_resource_yaml to re-derive live_yaml; that
+call has already been made. Use the provided diff to determine drift direction.
+The git-mcp session is pre-warmed; use read_file(branch, path) to inspect related
+manifests (parent Kustomizations, ConfigMap sources, Helm values) when needed.
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and

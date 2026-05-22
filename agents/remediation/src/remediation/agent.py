@@ -38,12 +38,14 @@ If recommended_action == "git_commit_k8s":
     - affected_resources -- list of affected Kubernetes resources
 
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
+    0. clone_repo(run_id=<run_id>, base_branch=<source_branch>)
+       -- initialises the git-mcp session; idempotent if diagnosis already ran.
     1. create_branch(run_id=<run_id>)
        -- git-mcp returns 'branch created: remediation/run-<run_id>'.
        -- record the branch name into RemediationResult.agent_branch.
     1b. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
         the current declared content. If the returned content is identical to
-        DiagnosisReport.proposed_patch.patch_body, the fix is already in git — escalate
+        DiagnosisReport.proposed_patch.patch_body, the fix is already in git; escalate
         rather than opening a no-op PR.
     2. write_manifest(manifest_path=DiagnosisReport.manifest_path,
                      patch_body=DiagnosisReport.proposed_patch.patch_body)
@@ -84,6 +86,8 @@ If recommended_action == "git_commit_nix":
     - DiagnosisReport.target_host -- NixOS hostname for nixos-mcp calls
 
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
+    0. clone_repo(run_id=<run_id>, base_branch=<source_branch>)
+       -- idempotent if diagnosis already ran.
     1. create_branch(run_id=<run_id>)
     1b. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
         the current declared content. If identical to proposed_patch.patch_body,
