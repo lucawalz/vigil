@@ -102,7 +102,10 @@ jobs:
         env:
           HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
         run: |
-          CURRENT_HASH=$(git rev-parse HEAD:infra/nixos)
+          CURRENT_HASH=$(printf '%s\n' \
+            $(git rev-parse HEAD:infra/nixos) \
+            $(git rev-parse HEAD:mcp-servers) \
+            | sha256sum | cut -c1-40)
           for ROLE in master worker-1 worker-2 agent; do
             OLD_IDS=$(curl -sf -G \
               -H "Authorization: Bearer $HCLOUD_TOKEN" \
