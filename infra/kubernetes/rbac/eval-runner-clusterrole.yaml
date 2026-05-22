@@ -24,3 +24,6 @@ rules:
   - apiGroups: ["source.toolkit.fluxcd.io"]
     resources: ["gitrepositories"]
     verbs: ["get", "list", "patch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list"]

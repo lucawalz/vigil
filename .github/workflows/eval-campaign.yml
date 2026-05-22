@@ -119,38 +119,7 @@ jobs:
           done
 
       - name: Wait for Flux kustomizations ready
-        run: |
-          KC="--kubeconfig $HOME/.kube/hetzner-vigil-${{ matrix.group }}"
-          DEADLINE=$(($(date +%s) + 900))
-          while [ $(date +%s) -lt $DEADLINE ]; do
-            echo "--- $(date -u +%H:%M:%SZ) ---"
-            kubectl $KC get kustomization cluster-infrastructure cluster-apps \
-              -n flux-system \
-              --request-timeout=15s \
-              -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason' \
-              --no-headers 2>&1 || echo "(kubectl error — cluster not reachable yet)"
-            kubectl $KC get helmrelease -A \
-              --request-timeout=15s \
-              -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason' \
-              --no-headers 2>/dev/null || true
-            KS_READY=$(kubectl $KC get kustomization cluster-infrastructure cluster-apps \
-              -n flux-system \
-              --request-timeout=15s \
-              -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-            KS_COUNT=$(echo "$KS_READY" | tr ' ' '\n' | grep -c '^True$' || true)
-            HR_READY=$(kubectl $KC get helmrelease postgresql redis \
-              -n default \
-              --request-timeout=15s \
-              -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-            HR_COUNT=$(echo "$HR_READY" | tr ' ' '\n' | grep -c '^True$' || true)
-            if [ "$KS_COUNT" -eq 2 ] && [ "$HR_COUNT" -eq 2 ]; then
-              echo "all flux kustomizations and storage helmreleases ready"
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "timeout: flux kustomizations not ready after 900s"
-          exit 1
+        run: eval/scripts/wait-flux-ready.sh "$HOME/.kube/hetzner-vigil-${{ matrix.group }}"
 
       - name: Resolve agent host IP
         id: agent

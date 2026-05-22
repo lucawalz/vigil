@@ -17,8 +17,6 @@ from orchestrator.models import RunRecord
 
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
-BASELINE_RETRY_COUNT = 2
-BASELINE_RETRY_SLEEP_S = 30
 BASELINE_KUSTOMIZATIONS = ("cluster-apps", "cluster-infrastructure")
 CIRCUIT_BREAKER_THRESHOLD = 3
 CIRCUIT_BREAKER_EXIT_CODE = 10
@@ -86,28 +84,22 @@ def _capture_kust_condition(name: str) -> dict:
 
 async def capture_flux_baseline() -> tuple[dict, bool]:
     baseline: dict = {}
-    for attempt in range(BASELINE_RETRY_COUNT + 1):
-        baseline["cluster_apps"] = _capture_kust_condition(BASELINE_KUSTOMIZATIONS[0])
-        baseline["cluster_infra"] = _capture_kust_condition(BASELINE_KUSTOMIZATIONS[1])
-        all_ready = (
-            baseline["cluster_apps"]["ready"] == "True"
-            and baseline["cluster_infra"]["ready"] == "True"
-        )
-        if all_ready:
-            return baseline, True
+    baseline["cluster_apps"] = _capture_kust_condition(BASELINE_KUSTOMIZATIONS[0])
+    baseline["cluster_infra"] = _capture_kust_condition(BASELINE_KUSTOMIZATIONS[1])
+    all_ready = (
+        baseline["cluster_apps"]["ready"] == "True"
+        and baseline["cluster_infra"]["ready"] == "True"
+    )
+    if not all_ready:
         log.warning(
-            "cluster baseline not ready (attempt %d/%d):"
+            "cluster baseline not ready:"
             " cluster-apps=%s(reason=%s) cluster-infra=%s(reason=%s)",
-            attempt + 1,
-            BASELINE_RETRY_COUNT + 1,
             baseline["cluster_apps"]["ready"],
             baseline["cluster_apps"]["reason"],
             baseline["cluster_infra"]["ready"],
             baseline["cluster_infra"]["reason"],
         )
-        if attempt < BASELINE_RETRY_COUNT:
-            await asyncio.sleep(BASELINE_RETRY_SLEEP_S)
-    return baseline, False
+    return baseline, all_ready
 
 
 def _emit_baseline_degraded_record(
@@ -381,12 +373,29 @@ async def run_one(
         runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
 
     reset_baseline_sh = scenarios_dir.parent / "scripts" / "reset-eval-baseline.sh"
+    wait_flux_ready_sh = scenarios_dir.parent / "scripts" / "wait-flux-ready.sh"
     reset_sh = _script_path(scenarios_dir, scenario_id, "reset.sh")
     inject_sh = _script_path(scenarios_dir, scenario_id, "inject.sh")
 
     if reset_baseline_sh.is_file():
         log.info("resetting chore/eval-cluster-baseline before %s", scenario_id)
         _run_script(reset_baseline_sh, seed, verbose=verbose)
+
+    if wait_flux_ready_sh.is_file():
+        log.info("waiting for flux kustomizations and helmreleases before %s", scenario_id)
+        result = subprocess.run(
+            [str(wait_flux_ready_sh)],
+            capture_output=not verbose,
+            text=True,
+            check=False,
+        )
+        if verbose and result.stdout:
+            log.debug("wait-flux-ready stdout:\n%s", result.stdout.rstrip())
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"wait-flux-ready.sh exited {result.returncode}: "
+                + (result.stderr.strip() if result.stderr else "")
+            )
 
     log.info("running reset.sh for %s", scenario_id)
     _run_script(reset_sh, seed, verbose=verbose)
