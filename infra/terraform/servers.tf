@@ -297,6 +297,7 @@ resource "local_sensitive_file" "vigil_env" {
     VIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099
     EVAL_RUNS_DIR=/root/vigil/eval/runs
     VIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios
+    VIGIL_REPO_ROOT=/root/vigil
     SSH_HOSTS=hetzner-worker-1,hetzner-worker-2
     SSH_USER=root
     SSH_KEY_PATH=/root/.ssh/id_ed25519
