@@ -149,6 +149,15 @@ async def run_remediation(
     source_branch: str = "main",
     model: OpenAIChatModel | None = None,
 ) -> tuple[RemediationResult, Usage, list[ModelMessage]]:
+    if source_branch == "main":
+        refused = RemediationResult(
+            success=False,
+            actions_taken=["refused_main_branch"],
+            tool_calls_count=0,
+            destructive_repair=False,
+        )
+        return refused, Usage(), []
+
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
         f"{report.model_dump_json()}. "
