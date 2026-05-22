@@ -649,6 +649,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
 
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
+
     async def nixos_side_effect(tool_name, args=None):
         if tool_name == "lookup_os_manifest_path":
             return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
@@ -720,12 +721,14 @@ def test_build_diagnosis_context_os_happy_path() -> None:
     mock_nixos = AsyncMock()
     mock_nixos.direct_call_tool = AsyncMock(
         side_effect=[
+            {"content": "infra/nixos/hosts/hetzner-worker-1.nix"},
             {"content": "live-systemd-status"},
-            {"content": "declared-dry-build"},
         ]
     )
     mock_git = AsyncMock()
-    mock_git.direct_call_tool = AsyncMock(return_value={"content": "declared-config"})
+    mock_git.direct_call_tool = AsyncMock(
+        return_value={"content": "declared-dry-build"}
+    )
 
     from diagnosis.models import DiagnosisDeps
 
@@ -808,11 +811,9 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     )
 
     asyncio.get_event_loop().run_until_complete(build_diagnosis_context(deps, fault))
-    systemd_call = next(
-        (c for c in captured_calls if c[0] == "get_systemd_status"), None
-    )
-    assert systemd_call is not None
-    assert systemd_call[1].get("unit") == "vigil-auto-reconcile.service"
+    journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
+    assert journal_call is not None
+    assert journal_call[1].get("host") == "hetzner-worker-1"
 
 
 def _make_fault(labels: dict):

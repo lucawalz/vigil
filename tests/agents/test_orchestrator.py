@@ -510,6 +510,10 @@ async def test_run_record_has_actions_taken_populated(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    scenarios_dir = tmp_path / "scenarios" / "k8s-1"
+    scenarios_dir.mkdir(parents=True)
+    (scenarios_dir / "scenario.yaml").write_text("expected_action: git_commit_k8s\n")
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(tmp_path / "scenarios"))
     _run_orch_setup(monkeypatch, tmp_path)
     record = await run_orchestration(
         sample_fault_event,
