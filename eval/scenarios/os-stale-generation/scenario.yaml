@@ -1,0 +1,14 @@
+id: os-stale-generation
+name: bad-local-nix-with-reconciler-stopped
+layer: os
+expected_action: nixos_rebuild
+
+root_cause_component: "bad-module.nix applied locally on hetzner-worker-2 via nixos-rebuild switch; vigil-auto-reconcile.timer stopped so git baseline cannot self-heal"
+expected_resolution_path: "diagnosis -> escalate (requires_os_level=true) -> nixos_rebuild (pulls current baseline, removes bad-module) -> k3s restored"
+
+inject_params:
+  target_host: hetzner-worker-2
+  fault_type: bad-local-nix-reconciler-stopped
+
+alert_name: KubeNodeNotReady
+forbidden_actions: [git_commit_nix, git_commit_k8s]
