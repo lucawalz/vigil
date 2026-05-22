@@ -431,6 +431,7 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
     from diagnosis.models import DiagnosisDeps
 
     deps = DiagnosisDeps(
+        run_id="test-run",
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
@@ -512,6 +513,7 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
     from diagnosis.models import DiagnosisDeps
 
     deps = DiagnosisDeps(
+        run_id="test-run",
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
@@ -574,6 +576,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
     from diagnosis.models import DiagnosisDeps
 
     deps = DiagnosisDeps(
+        run_id="test-run",
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
@@ -641,6 +644,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
     from diagnosis.models import DiagnosisDeps
 
     deps = DiagnosisDeps(
+        run_id="test-run",
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
@@ -711,6 +715,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     from diagnosis.models import DiagnosisDeps
 
     deps = DiagnosisDeps(
+        run_id="test-run",
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
