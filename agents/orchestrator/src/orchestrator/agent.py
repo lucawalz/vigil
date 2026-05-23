@@ -40,6 +40,10 @@ WATCHDOG_RECONCILE_GRACE_S: float = float(
     os.environ.get("WATCHDOG_RECONCILE_GRACE_S", "90")
 )
 
+_TRANSIENT_FLUX_REASONS: frozenset[str] = frozenset(
+    {"DependencyNotReady", "Progressing", "HealthCheckFailed"}
+)
+
 
 class _CircuitBreaker:
     """Counts consecutive MCP tool errors; trips at 3."""
@@ -437,17 +441,26 @@ async def run_orchestration(
                             current.get("cluster_apps", {}).get("ready") == "True"
                         )
                         if was_ready and not now_ready:
-                            log.error(
-                                "run %s aborted: flux degraded since injection "
-                                "(cluster-apps reason=%s)",
-                                run_id,
-                                current["cluster_apps"].get("reason"),
-                            )
-                            record = _abort_record(
-                                "flux_degraded_since_injection", "flux_degraded"
-                            )
-                            _write_run_record(record)
-                            return record
+                            reason = current["cluster_apps"].get("reason", "")
+                            if reason in _TRANSIENT_FLUX_REASONS:
+                                log.info(
+                                    "run %s: cluster-apps Not-Ready reason=%s "
+                                    "(transient cascade, proceeding)",
+                                    run_id,
+                                    reason,
+                                )
+                            else:
+                                log.error(
+                                    "run %s aborted: flux degraded since injection "
+                                    "(cluster-apps reason=%s)",
+                                    run_id,
+                                    reason,
+                                )
+                                record = _abort_record(
+                                    "flux_degraded_since_injection", "flux_degraded"
+                                )
+                                _write_run_record(record)
+                                return record
                         if not was_ready:
                             log.info(
                                 "run %s: cluster-apps was already Not-Ready before "
@@ -457,16 +470,18 @@ async def run_orchestration(
                             )
                     else:
                         if current.get("cluster_apps", {}).get("ready") == "False":
-                            log.error(
-                                "run %s aborted: flux_degraded "
-                                "(no baseline; snapshot-only check)",
-                                run_id,
-                            )
-                            record = _abort_record(
-                                "flux_degraded_snapshot_fallback", "flux_degraded"
-                            )
-                            _write_run_record(record)
-                            return record
+                            reason = current.get("cluster_apps", {}).get("reason", "")
+                            if reason not in _TRANSIENT_FLUX_REASONS:
+                                log.error(
+                                    "run %s aborted: flux_degraded "
+                                    "(no baseline; snapshot-only check)",
+                                    run_id,
+                                )
+                                record = _abort_record(
+                                    "flux_degraded_snapshot_fallback", "flux_degraded"
+                                )
+                                _write_run_record(record)
+                                return record
                 except Exception:
                     log.exception(
                         "run %s: flux pre-check failed; emitting flux_degraded", run_id
