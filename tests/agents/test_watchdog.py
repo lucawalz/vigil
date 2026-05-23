@@ -139,12 +139,18 @@ async def test_capture_health_snapshot_propagates_flux_ready() -> None:
 
 async def test_health_degraded_detects_flux_not_ready() -> None:
     baseline = HealthSnapshot(
-        ready_pods=2, total_pods=2, endpoints_healthy=True,
-        flux_ready=True, captured_at="2026-05-24T10:00:00Z",
+        ready_pods=2,
+        total_pods=2,
+        endpoints_healthy=True,
+        flux_ready=True,
+        captured_at="2026-05-24T10:00:00Z",
     )
     current = HealthSnapshot(
-        ready_pods=2, total_pods=2, endpoints_healthy=True,
-        flux_ready=False, captured_at="2026-05-24T10:01:00Z",
+        ready_pods=2,
+        total_pods=2,
+        endpoints_healthy=True,
+        flux_ready=False,
+        captured_at="2026-05-24T10:01:00Z",
     )
     assert _health_degraded(baseline, current) is True
 
@@ -160,7 +166,10 @@ async def test_health_degraded_flux_none_does_not_flag() -> None:
 
     assert snap.flux_ready is None
     baseline = HealthSnapshot(
-        ready_pods=1, total_pods=1, endpoints_healthy=True,
-        flux_ready=True, captured_at="2026-05-24T10:00:00Z",
+        ready_pods=1,
+        total_pods=1,
+        endpoints_healthy=True,
+        flux_ready=True,
+        captured_at="2026-05-24T10:00:00Z",
     )
     assert _health_degraded(baseline, snap) is False
