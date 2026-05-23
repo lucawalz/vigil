@@ -9,8 +9,6 @@ from pathlib import Path
 
 from common import trace
 from common.constants import GIT_COMMIT_BUDGET
-from common.flux_status import extract_mcp_text as _extract_mcp_text
-from common.flux_status import parse_kust_text as _parse_kust_text
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.context import (
@@ -40,8 +38,6 @@ REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "60
 WATCHDOG_RECONCILE_GRACE_S: float = float(
     os.environ.get("WATCHDOG_RECONCILE_GRACE_S", "90")
 )
-FLUX_PRECHECK_GRACE_S: float = float(os.environ.get("FLUX_PRECHECK_GRACE_S", "30"))
-FLUX_PRECHECK_POLL_S: float = float(os.environ.get("FLUX_PRECHECK_POLL_S", "5"))
 
 
 class _CircuitBreaker:
@@ -161,38 +157,6 @@ def _write_run_record(record: RunRecord) -> None:
     index_path = runs_dir.parent / "runs_index.jsonl"
     with index_path.open("a") as f:
         f.write(record.model_dump_json() + "\n")
-
-
-async def _fetch_flux_snapshot(flux_mcp: MCPServerStdio) -> dict:
-    kust_result = await flux_mcp.direct_call_tool(
-        "get_kustomization_status", {"namespace": "flux-system", "name": "cluster-apps"}
-    )
-    infra_result = await flux_mcp.direct_call_tool(
-        "get_kustomization_status",
-        {"namespace": "flux-system", "name": "cluster-infrastructure"},
-    )
-    return {
-        "cluster_apps": _parse_kust_text(_extract_mcp_text(kust_result)),
-        "cluster_infra": _parse_kust_text(_extract_mcp_text(infra_result)),
-    }
-
-
-async def _wait_flux_stable(
-    flux_mcp: MCPServerStdio, loop: asyncio.AbstractEventLoop
-) -> bool:
-    """Poll cluster-apps until Ready=True or FLUX_PRECHECK_GRACE_S expires.
-
-    Returns True when cluster-apps is Ready, False when grace exhausts with
-    cluster-apps still Not-Ready.
-    """
-    deadline = loop.time() + FLUX_PRECHECK_GRACE_S
-    while True:
-        snapshot = await _fetch_flux_snapshot(flux_mcp)
-        if snapshot.get("cluster_apps", {}).get("ready") == "True":
-            return True
-        if loop.time() >= deadline:
-            return False
-        await asyncio.sleep(FLUX_PRECHECK_POLL_S)
 
 
 async def _issue_rollback(
@@ -432,55 +396,6 @@ async def run_orchestration(
                 log.info("run %s finished outcome=escalated", run_id)
                 _write_run_record(record)
                 return record
-
-            if report.recommended_action == "git_commit_k8s":
-                try:
-                    loop = asyncio.get_event_loop()
-                    flux_baseline = event.flux_baseline
-                    if flux_baseline is not None:
-                        was_ready = (
-                            flux_baseline.get("cluster_apps", {}).get("ready") == "True"
-                        )
-                        if not was_ready:
-                            log.info(
-                                "run %s: cluster-apps was already Not-Ready before "
-                                "injection — proceeding with diagnosis",
-                                run_id,
-                            )
-                        else:
-                            now_stable = await _wait_flux_stable(flux_mcp, loop)
-                            if not now_stable:
-                                log.error(
-                                    "run %s aborted: flux degraded since injection "
-                                    "(cluster-apps Not-Ready after %ss grace)",
-                                    run_id,
-                                    FLUX_PRECHECK_GRACE_S,
-                                )
-                                record = _abort_record(
-                                    "flux_degraded_since_injection", "flux_degraded"
-                                )
-                                _write_run_record(record)
-                                return record
-                    else:
-                        now_stable = await _wait_flux_stable(flux_mcp, loop)
-                        if not now_stable:
-                            log.error(
-                                "run %s aborted: flux_degraded "
-                                "(no baseline; snapshot-only check)",
-                                run_id,
-                            )
-                            record = _abort_record(
-                                "flux_degraded_snapshot_fallback", "flux_degraded"
-                            )
-                            _write_run_record(record)
-                            return record
-                except Exception:
-                    log.exception(
-                        "run %s: flux pre-check failed; emitting flux_degraded", run_id
-                    )
-                    record = _abort_record("flux_precheck_exception", "flux_degraded")
-                    _write_run_record(record)
-                    return record
 
             baseline = await capture_health_snapshot(watchdog_deps)
 

@@ -707,65 +707,6 @@ async def test_circuit_breaker_exits_with_code_10_after_three_consecutive(
     assert exc_info.value.code == 10
 
 
-async def test_flux_baseline_included_in_webhook_post_body(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "test-secret")
-
-    captured: dict = {}
-    run_id = "k8s-3_1_test-model_abc1234"
-    result_file = tmp_path / f"{run_id}.json"
-
-    class FakeClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def get(self, url, **kwargs):
-            resp = MagicMock()
-            resp.raise_for_status = MagicMock()
-            return resp
-
-        async def post(self, url, **kwargs):
-            captured.update(kwargs)
-            resp = MagicMock()
-            resp.raise_for_status = MagicMock()
-            resp.json = MagicMock(return_value={"run_id": run_id, "outcome": "success"})
-            return resp
-
-    monkeypatch.setattr(harness_mod.httpx, "AsyncClient", FakeClient)
-
-    async def fake_sleep(t):
-        result_file.write_text("{}")
-
-    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
-
-    monkeypatch.setattr(
-        harness_mod,
-        "_capture_kust_condition",
-        lambda name, kubeconfig=None: {
-            "ready": "True",
-            "reason": "ReconciliationSucceeded",
-            "message": "",
-        },
-    )
-
-    await trigger_and_wait(
-        scenario_id="k8s-3",
-        seed=1,
-        orchestrator_url="http://localhost:9099",
-        runs_dir=tmp_path,
-        model="test-model",
-        timeout_s=5,
-    )
-
-    flux_baseline = captured.get("json", {}).get("flux_baseline")
-    assert flux_baseline is not None, "flux_baseline must be present in POST body"
-    assert flux_baseline["cluster_apps"]["ready"] == "True"
-
-
 def _write_k8s1_scenario(
     scenarios_dir: Path, alert_name: str = "KubeDeploymentReplicasMismatch"
 ) -> None:

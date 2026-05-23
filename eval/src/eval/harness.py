@@ -301,15 +301,11 @@ async def trigger_and_wait(
     timeout_s: int = DEFAULT_TIMEOUT_S,
     verbose: bool = False,
     target_host: str | None = None,
-    flux_baseline: dict | None = None,
 ) -> Path:
     webhook_secret = os.environ.get("VIGIL_WEBHOOK_SECRET", "")
     if not webhook_secret:
         raise ValueError("VIGIL_WEBHOOK_SECRET is not set")
-    if flux_baseline is None:
-        flux_baseline, _ = await capture_flux_baseline()
     fault_event = _build_fault_event(scenario_id, target_host=target_host)
-    fault_event["flux_baseline"] = flux_baseline
     async with httpx.AsyncClient() as client:
         await _healthz_check(client, orchestrator_url)
         log.info("triggering orchestrator webhook for %s", scenario_id)
@@ -441,5 +437,4 @@ async def run_one(
         timeout_s=timeout_s,
         verbose=verbose,
         target_host=target_host,
-        flux_baseline=baseline,
     )

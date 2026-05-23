@@ -96,14 +96,6 @@ def mock_diagnosis_context() -> DiagnosisContext:
 
 
 @pytest.fixture(autouse=True)
-def _fast_flux_precheck(monkeypatch: pytest.MonkeyPatch) -> None:
-    import orchestrator.agent as orch_mod
-
-    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_GRACE_S", 0.0)
-    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_POLL_S", 0.01)
-
-
-@pytest.fixture(autouse=True)
 def _default_build_diagnosis_context(monkeypatch: pytest.MonkeyPatch) -> None:
     import orchestrator.agent as orch_mod
 
