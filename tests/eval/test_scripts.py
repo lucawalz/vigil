@@ -159,16 +159,9 @@ def test_health_gate_targets_cluster_apps_kustomization() -> None:
 
 def test_health_gate_checks_cluster_infrastructure_precondition() -> None:
     script = Path("eval/scripts/health-gate.sh").read_text()
-    assert "check_cluster_infrastructure_ready()" in script
-    loop_guard = next(
-        (
-            line
-            for line in script.splitlines()
-            if "check_nodes_ready" in line and "check_flux_kustomization_ready" in line
-        ),
-        None,
-    )
-    assert loop_guard is not None, "while-loop guard line not found"
-    infra_idx = loop_guard.index("check_cluster_infrastructure_ready")
-    flux_idx = loop_guard.index("check_flux_kustomization_ready")
-    assert infra_idx < flux_idx
+    assert "check_cluster_infrastructure_ready" in script
+    assert "check_nodes_ready" in script
+    assert "check_flux_kustomization_ready" in script
+    infra_idx = script.index("check_cluster_infrastructure_ready")
+    flux_idx = script.index("check_flux_kustomization_ready")
+    assert infra_idx < flux_idx, "cluster-infrastructure must be checked before cluster-apps"

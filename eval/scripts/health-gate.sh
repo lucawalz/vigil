@@ -53,12 +53,18 @@ check_vigil_app_ready() {
 
 while [ "$(date +%s)" -lt "$deadline" ]; do
   iteration=$((iteration + 1))
-  if check_nodes_ready && check_cluster_infrastructure_ready && check_flux_kustomization_ready && check_vigil_app_ready && check_orchestrator_ready; then
+  failed=()
+  check_nodes_ready                  || failed+=("nodes")
+  check_cluster_infrastructure_ready || failed+=("cluster-infrastructure")
+  check_flux_kustomization_ready     || failed+=("cluster-apps")
+  check_vigil_app_ready              || failed+=("vigil-app")
+  check_orchestrator_ready           || failed+=("orchestrator")
+  if [ ${#failed[@]} -eq 0 ]; then
     echo "HEALTH_GATE: ok (iteration=$iteration)" >&2
     echo "HEALTH_GATE: ok"
     exit 0
   fi
-  echo "health-gate: iteration=$iteration, retrying in ${POLL_INTERVAL_S}s" >&2
+  echo "health-gate: iteration=$iteration, waiting on: ${failed[*]}" >&2
   sleep "$POLL_INTERVAL_S"
 done
 
