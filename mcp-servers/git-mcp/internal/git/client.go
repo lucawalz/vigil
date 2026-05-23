@@ -198,6 +198,17 @@ func (c *realGitClient) CreatePR(ctx context.Context, title, head, base, body st
 		Body:  &body,
 	})
 	if err != nil {
+		var ghErr *gogithub.ErrorResponse
+		if errors.As(err, &ghErr) && ghErr.Response != nil && ghErr.Response.StatusCode == 422 {
+			existing, _, listErr := c.gh.PullRequests.List(ctx, c.owner, c.repo, &gogithub.PullRequestListOptions{
+				State: "open",
+				Head:  c.owner + ":" + head,
+				Base:  base,
+			})
+			if listErr == nil && len(existing) > 0 {
+				return existing[0].GetNumber(), nil
+			}
+		}
 		return 0, fmt.Errorf("create_pr: %w", err)
 	}
 	return pr.GetNumber(), nil
