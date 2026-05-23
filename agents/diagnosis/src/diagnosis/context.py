@@ -110,10 +110,41 @@ def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
         return None, None
 
 
+async def _walk_pod_to_deployment(
+    deps: DiagnosisDeps, pod_yaml: str, namespace: str
+) -> tuple[str, str]:
+    """Walk Pod ownerReferences → ReplicaSet → Deployment; return (name, yaml)."""
+    try:
+        pod_data = yaml.safe_load(pod_yaml)
+        owner_refs = (pod_data.get("metadata") or {}).get("ownerReferences") or []
+        rs_ref = next((r for r in owner_refs if r.get("kind") == "ReplicaSet"), None)
+        if not rs_ref:
+            raise ManifestPathUnresolvable("Pod has no ReplicaSet ownerReference")
+        rs_result = await deps.kubectl_mcp.direct_call_tool(
+            "get_resource_yaml",
+            {"kind": "ReplicaSet", "namespace": namespace, "name": rs_ref["name"]},
+        )
+        rs_data = yaml.safe_load(_extract_text(rs_result))
+        rs_owners = (rs_data.get("metadata") or {}).get("ownerReferences") or []
+        dep_ref = next((r for r in rs_owners if r.get("kind") == "Deployment"), None)
+        if not dep_ref:
+            raise ManifestPathUnresolvable("ReplicaSet has no Deployment ownerReference")
+        dep_result = await deps.kubectl_mcp.direct_call_tool(
+            "get_resource_yaml",
+            {"kind": "Deployment", "namespace": namespace, "name": dep_ref["name"]},
+        )
+        return dep_ref["name"], _extract_text(dep_result)
+    except ManifestPathUnresolvable:
+        raise
+    except Exception as exc:
+        raise ManifestPathUnresolvable(f"Pod owner-walk failed: {exc}") from exc
+
+
 async def _resolve_manifest_path_k8s(
     deps: DiagnosisDeps,
     fault: FaultEvent,
     live_text: str,
+    resource_name_override: str | None = None,
 ) -> str:
     kust_name, kust_ns = _extract_flux_annotations(live_text)
     if not kust_name or not kust_ns:
@@ -136,7 +167,7 @@ async def _resolve_manifest_path_k8s(
             f"Kustomization YAML parse error: {exc}"
         ) from exc
 
-    resource_name = _extract_resource_name(fault)
+    resource_name = resource_name_override if resource_name_override is not None else _extract_resource_name(fault)
     return f"{spec_path}/{resource_name}.yaml"
 
 
@@ -218,9 +249,18 @@ async def build_diagnosis_context(
     )
     live_yaml = _extract_text(live_result)
 
+    resource_name_override: str | None = None
+    if kind == "Pod":
+        try:
+            dep_name, dep_yaml = await _walk_pod_to_deployment(deps, live_yaml, namespace)
+            live_yaml = dep_yaml
+            resource_name_override = dep_name
+        except ManifestPathUnresolvable:
+            pass
+
     try:
         manifest_path: str | None = await _resolve_manifest_path_k8s(
-            deps, fault, live_yaml
+            deps, fault, live_yaml, resource_name_override
         )
 
         try:

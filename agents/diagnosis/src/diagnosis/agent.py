@@ -50,6 +50,11 @@ authoritative inputs. Do not call get_resource_yaml to re-derive live_yaml; that
 call has already been made. Use the provided diff to determine drift direction.
 The git-mcp session is pre-warmed; use read_file(branch, path) to inspect related
 manifests (parent Kustomizations, ConfigMap sources, Helm values) when needed.
+If read_file returns a path-not-found error for manifest_path, do not guess
+alternative paths. Instead, fetch the Kustomization YAML via get_resource_yaml,
+then call lookup_k8s_manifest_path(kustomization_yaml, resource_name) to recover
+the correct path and retry read_file once. If that also fails, set
+recommended_action=escalate.
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
