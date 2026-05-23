@@ -1,0 +1,55 @@
+{
+  "by_model": {
+    "claude-sonnet-4-6": {
+      "n_runs": 1,
+      "n_attempts": 1,
+      "success_rate": 0.0,
+      "success_rate_given_attempt": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "diagnosis_accuracy": 1.0,
+      "diag_n": 1,
+      "destructive_repair_rate": 1.0,
+      "rollback_triggered_rate": 0.0,
+      "n_eligible": 1,
+      "mean_input_tokens": 179675,
+      "mean_output_tokens": 3519,
+      "mean_tool_calls": 26,
+      "mean_iteration_count": 17
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "gate_failed",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 509.765575654,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 1,
+    "n_models": 1,
+    "n_scenarios": 1
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
