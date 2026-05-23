@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: vigil-app
-          image: nginx:bad-tag-from-deceptive-2
+          image: nginx:stable
           resources:
             requests:
               memory: "64Mi"
