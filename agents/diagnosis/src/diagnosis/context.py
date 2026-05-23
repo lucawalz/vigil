@@ -128,7 +128,9 @@ async def _walk_pod_to_deployment(
         rs_owners = (rs_data.get("metadata") or {}).get("ownerReferences") or []
         dep_ref = next((r for r in rs_owners if r.get("kind") == "Deployment"), None)
         if not dep_ref:
-            raise ManifestPathUnresolvable("ReplicaSet has no Deployment ownerReference")
+            raise ManifestPathUnresolvable(
+                "ReplicaSet has no Deployment ownerReference"
+            )
         dep_result = await deps.kubectl_mcp.direct_call_tool(
             "get_resource_yaml",
             {"kind": "Deployment", "namespace": namespace, "name": dep_ref["name"]},
@@ -167,7 +169,11 @@ async def _resolve_manifest_path_k8s(
             f"Kustomization YAML parse error: {exc}"
         ) from exc
 
-    resource_name = resource_name_override if resource_name_override is not None else _extract_resource_name(fault)
+    resource_name = (
+        resource_name_override
+        if resource_name_override is not None
+        else _extract_resource_name(fault)
+    )
     return f"{spec_path}/{resource_name}.yaml"
 
 
@@ -269,7 +275,9 @@ async def build_diagnosis_context(
     resource_name_override: str | None = None
     if kind == "Pod":
         try:
-            dep_name, dep_yaml = await _walk_pod_to_deployment(deps, live_yaml, namespace)
+            dep_name, dep_yaml = await _walk_pod_to_deployment(
+                deps, live_yaml, namespace
+            )
             live_yaml = dep_yaml
             resource_name_override = dep_name
         except ManifestPathUnresolvable:

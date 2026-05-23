@@ -111,8 +111,14 @@ def _expected_action_for_scenario(scenarios_dir: Path, scenario_id: str) -> str 
 def _correct_escalation_success(records: list[dict], scenarios_dir: Path) -> None:
     """Score agent-driven escalations against expected_action from scenario.yaml."""
     for r in records:
-        if r.get("outcome") == "escalated" and r.get("success_rate") is None and not r.get("setup_error"):
-            expected = _expected_action_for_scenario(scenarios_dir, r.get("scenario", ""))
+        if (
+            r.get("outcome") == "escalated"
+            and r.get("success_rate") is None
+            and not r.get("setup_error")
+        ):
+            expected = _expected_action_for_scenario(
+                scenarios_dir, r.get("scenario", "")
+            )
             r["success_rate"] = expected == "escalate"
 
 

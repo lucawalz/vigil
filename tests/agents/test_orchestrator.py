@@ -1467,7 +1467,7 @@ async def test_escalate_action_returns_escalated_record(
     )
 
     assert record.outcome == "escalated"
-    assert record.success_rate is False
+    assert record.success_rate is None
     fetch_snapshot_mock.assert_not_called()
     run_remediation_mock.assert_not_called()
     run_watchdog_mock.assert_not_called()

@@ -860,12 +860,22 @@ def test_extract_kind_daemonset() -> None:
     assert name == "node-exporter"
 
 
+def test_extract_kind_namespace_only_returns_namespace() -> None:
+    from diagnosis.context import _extract_k8s_kind_namespace_name
+
+    fault = _make_fault({"alertname": "KubePodNotReady", "namespace": "default"})
+    kind, ns, name = _extract_k8s_kind_namespace_name(fault)
+    assert kind == "Namespace"
+    assert ns == "default"
+    assert name == "default"
+
+
 def test_extract_kind_unknown_raises() -> None:
     from diagnosis.context import (
         ResourceKindUnresolvable,
         _extract_k8s_kind_namespace_name,
     )
 
-    fault = _make_fault({"alertname": "WeirdAlert", "namespace": "default"})
+    fault = _make_fault({"alertname": "WeirdAlert"})
     with pytest.raises(ResourceKindUnresolvable):
         _extract_k8s_kind_namespace_name(fault)
