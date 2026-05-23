@@ -374,7 +374,11 @@ func HandleReadFile(client GitClient, state SessionState, maxBytes int) server.T
 		}
 		contents, err := client.ReadFile(ctx, cloneDir, branch, path)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleReadFile: %v", err)), nil
+			msg := fmt.Sprintf("HandleReadFile: %v", err)
+			if strings.HasPrefix(err.Error(), "path not found:") {
+				msg += ". Call lookup_k8s_manifest_path with the resource's Kustomization YAML to resolve the correct path under spec.path."
+			}
+			return mcp.NewToolResultError(msg), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(contents, maxBytes)), nil
 	}
