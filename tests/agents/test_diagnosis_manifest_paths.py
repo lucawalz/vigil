@@ -20,6 +20,12 @@ def test_lookup_k8s_manifest_path_strips_leading_slash() -> None:
     assert result == "kubernetes/apps/vigil-app.yaml"
 
 
+def test_lookup_k8s_manifest_path_strips_dot_slash_prefix() -> None:
+    kust_yaml = "kind: Kustomization\nspec:\n  path: ./infra/overlays/hetzner/apps\n"
+    result = lookup_k8s_manifest_path(kust_yaml, "vigil-app")
+    assert result == "infra/overlays/hetzner/apps/vigil-app.yaml"
+
+
 def test_lookup_k8s_manifest_path_raises_for_non_kustomization() -> None:
     yaml_str = "kind: Deployment\nmetadata:\n  name: vigil-app\n"
     with pytest.raises(ManifestPathError):

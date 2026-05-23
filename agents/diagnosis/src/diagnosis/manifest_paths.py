@@ -22,7 +22,8 @@ def lookup_k8s_manifest_path(kustomization_yaml: str, resource_name: str) -> str
     if not spec_path:
         raise ManifestPathError("Kustomization spec.path is absent or empty")
 
-    return f"{spec_path.lstrip('/')}/{resource_name}.yaml"
+    spec_path = spec_path.removeprefix("./").lstrip("/")
+    return f"{spec_path}/{resource_name}.yaml"
 
 
 def lookup_os_manifest_path(hostname: str) -> str:
