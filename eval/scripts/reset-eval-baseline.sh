@@ -13,6 +13,9 @@ git -C "$REPO_ROOT" fetch origin
 git -C "$REPO_ROOT" reset --hard origin/main
 git -C "$REPO_ROOT" push --force origin HEAD:"$EVAL_BRANCH"
 
+flux resume kustomization cluster-apps -n flux-system --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
+  || echo "reset-eval-baseline: flux resume cluster-apps failed, continuing" >&2
+
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
   || echo "reset-eval-baseline: flux source reconcile failed, continuing" >&2
 

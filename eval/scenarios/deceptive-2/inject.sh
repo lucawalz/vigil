@@ -10,6 +10,8 @@ NAMESPACE="default"
 DEPLOYMENT="vigil-app"
 MANIFEST="$VIGIL_REPO_ROOT/infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml"
 
+flux suspend kustomization cluster-apps -n flux-system --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
+
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" scale deployment "${DEPLOYMENT}" \
   --replicas=0 \
   -n "${NAMESPACE}"
@@ -25,10 +27,6 @@ git -C "$VIGIL_REPO_ROOT" \
 
 (cd "$VIGIL_REPO_ROOT" && git push origin HEAD:chore/eval-cluster-baseline)
 
-flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
-flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
-
-kubectl rollout status "deployment/${DEPLOYMENT}" -n "${NAMESPACE}" --timeout=30s \
-  --kubeconfig "$EVAL_RUNNER_KUBECONFIG" 2>&1 || true
+flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" || true
 
 echo "inject.sh: deceptive-2 seed=${SEED} complete"
