@@ -28,6 +28,7 @@ const (
 
 type fakeGitClient struct {
 	cloneDir          string
+	gotBaseBranch     string
 	commitSHA         string
 	prNumber          int
 	prState           string
@@ -49,7 +50,8 @@ type fakeGitClient struct {
 
 var _ git.GitClient = &fakeGitClient{}
 
-func (f *fakeGitClient) Clone(_ context.Context, _ string) (string, error) {
+func (f *fakeGitClient) Clone(_ context.Context, _, baseBranch string) (string, error) {
+	f.gotBaseBranch = baseBranch
 	return f.cloneDir, f.err
 }
 
@@ -353,6 +355,27 @@ func TestCloneRepoHandler_SetsBaseBranchExplicit(t *testing.T) {
 	}
 	if got := state.BaseBranch(); got != "chore/eval-cluster-baseline" {
 		t.Errorf("expected baseBranch %q, got %q", "chore/eval-cluster-baseline", got)
+	}
+}
+
+func TestCloneRepoHandler_PassesBaseBranchToClone(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir()}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, "", testMaxBytes)
+
+	_, err := callHandler(t, "clone_repo", tool, handler, map[string]any{
+		"run_id":      "abc123",
+		"base_branch": "chore/eval-cluster-baseline",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if got := fake.gotBaseBranch; got != "chore/eval-cluster-baseline" {
+		t.Errorf("Clone received baseBranch %q, want %q", got, "chore/eval-cluster-baseline")
 	}
 }
 

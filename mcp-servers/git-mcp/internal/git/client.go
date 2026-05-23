@@ -34,7 +34,7 @@ const (
 )
 
 type GitClient interface {
-	Clone(ctx context.Context, authURL string) (cloneDir string, err error)
+	Clone(ctx context.Context, authURL, baseBranch string) (cloneDir string, err error)
 	CreateBranch(ctx context.Context, cloneDir, branch string) error
 	WriteFile(ctx context.Context, cloneDir, manifestPath, content string) error
 	CommitFiles(ctx context.Context, cloneDir, branch, message string) (sha string, err error)
@@ -88,7 +88,7 @@ func sanitiseAuthError(err error, authURL string) error {
 	return fmt.Errorf("%s", msg) //nolint:err113
 }
 
-func (c *realGitClient) Clone(ctx context.Context, authURL string) (string, error) {
+func (c *realGitClient) Clone(ctx context.Context, authURL, baseBranch string) (string, error) {
 	dir, err := os.MkdirTemp("", "git-mcp-*")
 	if err != nil {
 		return "", fmt.Errorf("clone: create temp dir: %w", err)
@@ -98,11 +98,15 @@ func (c *realGitClient) Clone(ctx context.Context, authURL string) (string, erro
 		return "", fmt.Errorf("clone: chmod temp dir: %w", err)
 	}
 
-	_, err = git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
+	opts := &git.CloneOptions{
 		URL:          authURL,
 		Depth:        1,
 		SingleBranch: false,
-	})
+	}
+	if baseBranch != "" {
+		opts.ReferenceName = plumbing.NewBranchReferenceName(baseBranch)
+	}
+	_, err = git.PlainCloneContext(ctx, dir, false, opts)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		return "", sanitiseAuthError(fmt.Errorf("clone: %w", err), authURL)

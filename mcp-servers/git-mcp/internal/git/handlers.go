@@ -57,7 +57,7 @@ func HandleCloneRepo(client GitClient, state SessionState, authURL string, maxBy
 			base = defaultBaseBranch
 		}
 
-		cloneDir, err := client.Clone(ctx, authURL)
+		cloneDir, err := client.Clone(ctx, authURL, base)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("HandleCloneRepo: %v", err)), nil
 		}

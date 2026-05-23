@@ -26,7 +26,7 @@ func TestRealGitClient_errorPathsSanitiseURL(t *testing.T) {
 
 	authURL := cfg.AuthURL()
 
-	_, err := c.Clone(ctx, authURL)
+	_, err := c.Clone(ctx, authURL, "")
 	if err == nil {
 		t.Fatal("Clone: expected error, got nil")
 	}
