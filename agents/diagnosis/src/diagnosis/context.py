@@ -183,6 +183,7 @@ def _extract_resource_name(fault: FaultEvent) -> str:
 
 
 def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
+    namespace_fallback: str | None = None
     for alert in fault.alerts:
         labels = alert.get("labels", {})
         namespace = (
@@ -191,6 +192,10 @@ def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
         for label, kind in _LABEL_TO_KIND:
             if label in labels:
                 return kind, namespace, labels[label]
+        if "namespace" in labels and namespace_fallback is None:
+            namespace_fallback = namespace
+    if namespace_fallback is not None:
+        return "Namespace", namespace_fallback, namespace_fallback
     label_dump = [a.get("labels", {}) for a in fault.alerts]
     raise ResourceKindUnresolvable(
         f"no recognised resource label in alert labels: {label_dump}"
@@ -243,6 +248,18 @@ async def build_diagnosis_context(
         )
 
     kind, namespace, name = _extract_k8s_kind_namespace_name(fault)
+
+    if kind == "Namespace":
+        alert_labels = [a.get("labels", {}) for a in fault.alerts]
+        live_yaml = f"namespace: {namespace}\nalert_labels: {alert_labels}"
+        return DiagnosisContext(
+            source_branch=source_branch,
+            manifest_path=None,
+            live_yaml=live_yaml,
+            declared_yaml="",
+            diff="",
+        )
+
     live_result = await deps.kubectl_mcp.direct_call_tool(
         "get_resource_yaml",
         {"kind": kind, "namespace": namespace, "name": name},
