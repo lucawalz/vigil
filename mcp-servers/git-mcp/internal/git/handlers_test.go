@@ -29,6 +29,7 @@ const (
 type fakeGitClient struct {
 	cloneDir          string
 	gotBaseBranch     string
+	gotBase           string
 	commitSHA         string
 	prNumber          int
 	prState           string
@@ -71,7 +72,8 @@ func (f *fakeGitClient) Push(_ context.Context, _, _ string) error {
 	return f.err
 }
 
-func (f *fakeGitClient) CreatePR(_ context.Context, _, _, _, _ string) (int, error) {
+func (f *fakeGitClient) CreatePR(_ context.Context, _, _, base, _ string) (int, error) {
+	f.gotBase = base
 	return f.prNumber, f.err
 }
 
@@ -806,17 +808,16 @@ func TestCreatePRHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{prNumber: 42}
 	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
 	tool := mcp.NewTool("create_pr",
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
-		mcp.WithString("base", mcp.Required()),
 	)
 	handler := git.HandleCreatePR(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: reduce OOMKilled replicas",
 		"body":  "Automated remediation",
-		"base":  "main",
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -833,21 +834,65 @@ func TestCreatePRHandler_Success(t *testing.T) {
 	}
 }
 
-func TestCreatePRHandler_DomainError(t *testing.T) {
+func TestCreatePRHandler_UsesSessionBaseBranch(t *testing.T) {
 	cloneDir := t.TempDir()
-	fake := &fakeGitClient{err: fmt.Errorf("API error")}
+	fake := &fakeGitClient{prNumber: 7}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("chore/eval-cluster-baseline")
+	tool := mcp.NewTool("create_pr",
+		mcp.WithString("title", mcp.Required()),
+		mcp.WithString("body", mcp.Required()),
+	)
+	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+
+	_, err := callHandler(t, "create_pr", tool, handler, map[string]any{
+		"title": "fix: bad image tag",
+		"body":  "Automated remediation",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if got := fake.gotBase; got != "chore/eval-cluster-baseline" {
+		t.Errorf("CreatePR received base %q, want %q", got, "chore/eval-cluster-baseline")
+	}
+}
+
+func TestCreatePRHandler_FailsWhenBaseBranchUnset(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{prNumber: 1}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("create_pr",
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
-		mcp.WithString("base", mcp.Required()),
+	)
+	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
+		"title": "fix: bad image tag",
+		"body":  "Automated remediation",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true when base branch is unset in session")
+	}
+}
+
+func TestCreatePRHandler_DomainError(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{err: fmt.Errorf("API error")}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
+	tool := mcp.NewTool("create_pr",
+		mcp.WithString("title", mcp.Required()),
+		mcp.WithString("body", mcp.Required()),
 	)
 	handler := git.HandleCreatePR(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: reduce replicas",
 		"body":  "Remediation",
-		"base":  "main",
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -861,17 +906,16 @@ func TestCreatePRHandler_AutoMergeError(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{prNumber: 42, autoMergeErr: fmt.Errorf("gh: authentication required")}
 	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
 	tool := mcp.NewTool("create_pr",
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
-		mcp.WithString("base", mcp.Required()),
 	)
 	handler := git.HandleCreatePR(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: reduce OOMKilled replicas",
 		"body":  "Automated remediation",
-		"base":  "main",
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -885,10 +929,10 @@ func TestCreatePRHandler_MissingArgument(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
 	tool := mcp.NewTool("create_pr",
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
-		mcp.WithString("base", mcp.Required()),
 	)
 	handler := git.HandleCreatePR(fake, state, testMaxBytes)
 
@@ -897,7 +941,7 @@ func TestCreatePRHandler_MissingArgument(t *testing.T) {
 		t.Fatalf("CallTool error: %v", err)
 	}
 	if !result.IsError {
-		t.Error("expected IsError=true for missing body and base")
+		t.Error("expected IsError=true for missing body")
 	}
 }
 
@@ -1044,6 +1088,7 @@ func TestRevertCommitHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{revertSHA: "cafebabe"}
 	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
 	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
 
@@ -1598,7 +1643,7 @@ func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
 	}
 }
 
-func TestHandleRevertCommit_FallsBackToMainWhenBaseUnset(t *testing.T) {
+func TestHandleRevertCommit_FailsWhenBaseBranchUnset(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{revertSHA: "cafebabe"}
 	state := preloadedState(cloneDir, "remediation/run-001")
@@ -1612,11 +1657,8 @@ func TestHandleRevertCommit_FallsBackToMainWhenBaseUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
 	}
-	if result.IsError {
-		t.Errorf("expected success, got error: %v", result.Content)
-	}
-	if got := fake.lastRevertBranch; got != "main" {
-		t.Errorf("expected lastRevertBranch %q, got %q", "main", got)
+	if !result.IsError {
+		t.Error("expected IsError=true when base branch is unset in session")
 	}
 }
 

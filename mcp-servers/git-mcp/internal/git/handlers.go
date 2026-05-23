@@ -242,9 +242,9 @@ func HandleCreatePR(client GitClient, state SessionState, maxBytes int) server.T
 		if !ok || body == "" {
 			return mcp.NewToolResultError("body: missing or wrong type"), nil
 		}
-		base, ok := args["base"].(string)
-		if !ok || base == "" {
-			return mcp.NewToolResultError("base: missing or wrong type"), nil
+		base := state.BaseBranch()
+		if base == "" {
+			return mcp.NewToolResultError("HandleCreatePR: base branch not set; call clone_repo first"), nil
 		}
 
 		branch, _ := state.Branch()
@@ -402,7 +402,7 @@ func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) serv
 
 		baseBranch := state.BaseBranch()
 		if baseBranch == "" {
-			baseBranch = defaultBaseBranch
+			return mcp.NewToolResultError("HandleRevertCommit: base branch not set; call clone_repo first"), nil
 		}
 		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA, baseBranch)
 		if err != nil {

@@ -140,7 +140,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 
 	mcpServer.AddTool(
 		mcp.NewTool("create_pr",
-			mcp.WithDescription("Open a pull request from the remediation branch"),
+			mcp.WithDescription("Open a pull request from the remediation branch into the cloned base branch"),
 			mcp.WithString("title",
 				mcp.Required(),
 				mcp.Description("Pull request title"),
@@ -148,10 +148,6 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithString("body",
 				mcp.Required(),
 				mcp.Description("Pull request description"),
-			),
-			mcp.WithString("base",
-				mcp.Required(),
-				mcp.Description("Base branch (default: main)"),
 			),
 		),
 		git.HandleCreatePR(client, s, cfg.MaxOutputBytes),
