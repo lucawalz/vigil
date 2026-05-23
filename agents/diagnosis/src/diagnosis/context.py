@@ -146,6 +146,7 @@ async def _resolve_manifest_path_k8s(
     deps: DiagnosisDeps,
     fault: FaultEvent,
     live_text: str,
+    source_branch: str,
     resource_name_override: str | None = None,
 ) -> str:
     kust_name, kust_ns = _extract_flux_annotations(live_text)
@@ -174,7 +175,18 @@ async def _resolve_manifest_path_k8s(
         if resource_name_override is not None
         else _extract_resource_name(fault)
     )
-    return f"{spec_path}/{resource_name}.yaml"
+    path = f"{spec_path}/{resource_name}.yaml"
+    try:
+        await deps.git_mcp.direct_call_tool(
+            "read_file",
+            {"branch": source_branch, "path": path},
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "constructed manifest path %s not found in repo: %s", path, exc
+        )
+        raise ManifestPathUnresolvable(f"constructed path {path} not in repo") from exc
+    return path
 
 
 def _extract_resource_name(fault: FaultEvent) -> str:
@@ -285,7 +297,7 @@ async def build_diagnosis_context(
 
     try:
         manifest_path: str | None = await _resolve_manifest_path_k8s(
-            deps, fault, live_yaml, resource_name_override
+            deps, fault, live_yaml, source_branch, resource_name_override
         )
 
         try:

@@ -879,3 +879,94 @@ def test_extract_kind_unknown_raises() -> None:
     fault = _make_fault({"alertname": "WeirdAlert"})
     with pytest.raises(ResourceKindUnresolvable):
         _extract_k8s_kind_namespace_name(fault)
+
+
+def test_build_diagnosis_context_constructed_path_missing_falls_back_to_none() -> None:
+    """Flux nested topology stamps root Kustomization on all resources.
+
+    The constructed path will point at the wrong location and validation
+    via read_file must raise ManifestPathUnresolvable so manifest_path=None
+    and the agent self-resolves via lookup_k8s_manifest_path.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {"deployment": "vigil-app", "namespace": "default"},
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={},
+        commonLabels={"namespace": "default"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey="{}:{}",
+    )
+
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\nkind: GitRepository\n"
+        "metadata:\n  name: flux-system\n  namespace: flux-system\n"
+        "spec:\n  ref:\n    branch: chore/eval-cluster-baseline\n"
+    )
+    live_resource_yaml = (
+        "apiVersion: apps/v1\nkind: Deployment\n"
+        "metadata:\n  name: vigil-app\n  namespace: default\n"
+        "  labels:\n"
+        "    kustomize.toolkit.fluxcd.io/name: flux-system\n"
+        "    kustomize.toolkit.fluxcd.io/namespace: flux-system\n"
+    )
+    kust_yaml = (
+        "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\n"
+        "metadata:\n  name: flux-system\n  namespace: flux-system\n"
+        "spec:\n  path: clusters/hetzner-eval\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        kind = args.get("kind", "")
+        if kind == "Deployment":
+            return {"content": live_resource_yaml}
+        if kind == "Kustomization":
+            return {"content": kust_yaml}
+        if kind == "GitRepository":
+            return {"content": git_repo_yaml}
+        return {"content": ""}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+
+    async def git_side_effect(tool, args):
+        if tool == "clone_repo":
+            return {"content": "ok"}
+        raise RuntimeError("path not found in repository")
+
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+    mock_nixos = AsyncMock()
+
+    from diagnosis.models import DiagnosisDeps
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+    )
+
+    ctx = asyncio.get_event_loop().run_until_complete(
+        build_diagnosis_context(deps, fault)
+    )
+    assert ctx.manifest_path is None
+    assert ctx.declared_yaml == ""
+    assert ctx.diff == ""
+    assert ctx.live_yaml == live_resource_yaml
