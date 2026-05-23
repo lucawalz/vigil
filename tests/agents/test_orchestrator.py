@@ -198,7 +198,13 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     mock_git_mcp.direct_call_tool = AsyncMock(
         return_value={"content": "reverted: cafebabe"}
     )
-    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {"content": "Ready: True"}
+            if tool == "get_kustomization_status"
+            else {"content": "reconciled"}
+        )
+    )
 
     record = await run_orchestration(
         sample_fault_event,
@@ -777,9 +783,14 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
 
 
 def test_orchestrator_constants_have_correct_defaults() -> None:
+    import inspect
+
     assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 750.0
     assert orch_mod.REMEDIATION_TIMEOUT_S == 600.0
     assert orch_mod.WATCHDOG_RECONCILE_GRACE_S == 90.0
+    src = inspect.getsource(orch_mod)
+    assert '"FLUX_PRECHECK_GRACE_S", "30"' in src
+    assert '"FLUX_PRECHECK_POLL_S", "5"' in src
 
 
 async def test_flux_degraded_precheck_kustomization(
@@ -793,6 +804,8 @@ async def test_flux_degraded_precheck_kustomization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_POLL_S", 0.01)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
@@ -807,7 +820,7 @@ async def test_flux_degraded_precheck_kustomization(
                     "Kustomization: flux-system/cluster-apps\n"
                     "Suspended: false\n"
                     "Conditions:\n"
-                    "  Ready: False — Stalled"
+                    "  Ready: False - Stalled"
                 )
             }
             if tool == "get_kustomization_status"
@@ -857,7 +870,13 @@ async def test_outcome_rollback_succeeded(
     mock_git_mcp.direct_call_tool = AsyncMock(
         return_value={"content": "reverted: cafebabe"}
     )
-    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {"content": "Ready: True"}
+            if tool == "get_kustomization_status"
+            else {"content": "ok"}
+        )
+    )
 
     record = await run_orchestration(
         sample_fault_event,
@@ -1312,6 +1331,8 @@ async def test_precheck_aborts_when_cluster_apps_transitions_ready_to_not_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_POLL_S", 0.01)
     event = sample_fault_event.model_copy(
         update={"flux_baseline": _FLUX_BASELINE_READY}
     )
@@ -1341,7 +1362,7 @@ async def test_precheck_aborts_when_cluster_apps_transitions_ready_to_not_ready(
     assert record.setup_error == "flux_degraded_since_injection"
 
 
-async def test_precheck_skips_abort_for_transient_dependency_not_ready(
+async def test_precheck_proceeds_when_flux_recovers_within_grace(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
@@ -1352,6 +1373,8 @@ async def test_precheck_skips_abort_for_transient_dependency_not_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_GRACE_S", 1.0)
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_POLL_S", 0.01)
     event = sample_fault_event.model_copy(
         update={"flux_baseline": _FLUX_BASELINE_READY}
     )
@@ -1368,13 +1391,18 @@ async def test_precheck_skips_abort_for_transient_dependency_not_ready(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
     )
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
-    mock_flux_mcp.direct_call_tool = AsyncMock(
-        side_effect=lambda tool, args: (
-            {"content": "Ready: False — DependencyNotReady"}
-            if tool == "get_kustomization_status"
-            else {"content": "ok"}
-        )
-    )
+    # First call returns Not-Ready (transient), second call returns Ready=True
+    call_count = {"n": 0}
+
+    def _flux_side_effect(tool: str, args: dict) -> dict:
+        if tool == "get_kustomization_status":
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return {"content": "Ready: False - dependency is not ready"}
+            return {"content": "Ready: True"}
+        return {"content": "ok"}
+
+    mock_flux_mcp.direct_call_tool = AsyncMock(side_effect=_flux_side_effect)
     record = await run_orchestration(
         event,
         kubectl_mcp=mock_kubectl_mcp,
@@ -1386,7 +1414,7 @@ async def test_precheck_skips_abort_for_transient_dependency_not_ready(
     assert record.outcome != "flux_degraded"
 
 
-async def test_precheck_aborts_for_reconciliation_failed(
+async def test_precheck_aborts_when_flux_stays_not_ready_past_grace(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
@@ -1397,6 +1425,8 @@ async def test_precheck_aborts_for_reconciliation_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_POLL_S", 0.01)
     event = sample_fault_event.model_copy(
         update={"flux_baseline": _FLUX_BASELINE_READY}
     )
@@ -1407,9 +1437,12 @@ async def test_precheck_aborts_for_reconciliation_failed(
         "capture_health_snapshot",
         AsyncMock(return_value=_canned_baseline()),
     )
+    not_ready_msg = (
+        "Ready: False - dependency 'flux-system/cluster-infrastructure' is not ready"
+    )
     mock_flux_mcp.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": "Ready: False — ReconciliationFailed"}
+            {"content": not_ready_msg}
             if tool == "get_kustomization_status"
             else {"content": "ok"}
         )
@@ -1437,6 +1470,8 @@ async def test_precheck_falls_back_to_snapshot_when_flux_baseline_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_POLL_S", 0.01)
     diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(

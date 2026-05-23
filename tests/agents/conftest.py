@@ -52,7 +52,13 @@ def mock_kubectl_mcp() -> AsyncMock:
 def mock_flux_mcp() -> AsyncMock:
     m = AsyncMock()
     m.call_tool = AsyncMock(return_value={"content": "kustomization ok"})
-    m.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    m.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {"content": "Ready: True"}
+            if tool == "get_kustomization_status"
+            else {"content": "ok"}
+        )
+    )
     return m
 
 
@@ -87,6 +93,14 @@ def mock_diagnosis_context() -> DiagnosisContext:
         declared_yaml="declared: yaml",
         diff="",
     )
+
+
+@pytest.fixture(autouse=True)
+def _fast_flux_precheck(monkeypatch: pytest.MonkeyPatch) -> None:
+    import orchestrator.agent as orch_mod
+
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "FLUX_PRECHECK_POLL_S", 0.01)
 
 
 @pytest.fixture(autouse=True)
