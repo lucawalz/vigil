@@ -21,7 +21,7 @@ with open('$MANIFEST', 'w') as f:
 git -C "$VIGIL_REPO_ROOT" commit -am "k8s-2g: inject fault"
 git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
-flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
+flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" || true
 kubectl rollout status deployment/vigil-app -n default --timeout=30s \
   --kubeconfig "$EVAL_RUNNER_KUBECONFIG" 2>&1 || true
 
