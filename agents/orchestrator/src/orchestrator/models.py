@@ -45,7 +45,7 @@ class RunRecord(BaseModel):
         "baseline_degraded",
         "escalated",
     ]
-    success_rate: bool
+    success_rate: bool | None
     diagnosis_accuracy: bool | None
     MTTR_s: float | None
     destructive_repair: bool

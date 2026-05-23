@@ -407,7 +407,7 @@ async def run_orchestration(
                     started_at=started_at,
                     ended_at=ended_at,
                     outcome="escalated",
-                    success_rate=False,
+                    success_rate=None,
                     diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
                     MTTR_s=mttr_s,
                     destructive_repair=False,
