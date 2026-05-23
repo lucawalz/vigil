@@ -1,0 +1,21 @@
+{
+  "run_id": "deceptive-2_1_claude-sonnet-4-6_eae2146",
+  "scenario": "deceptive-2",
+  "seed": 1,
+  "model": "claude-sonnet-4-6",
+  "outcome": "setup_error",
+  "success_rate": false,
+  "diagnosis_accuracy": null,
+  "MTTR_s": null,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "total_tool_calls": 0,
+  "iteration_count": 0,
+  "autonomy_level": "full",
+  "actions_taken": [],
+  "started_at": "2026-05-23T13:06:15Z",
+  "ended_at": "2026-05-23T13:06:15Z",
+  "error_message": "/root/vigil/eval/scripts/reset-eval-baseline.sh exited 1: remote: error: GH006: Protected branch update failed for refs/heads/chore/eval-cluster-baseline.        \nremote: \nremote: - Cannot force-push to this branch        \nTo https://github.com/lucawalz/vigil\n ! [remote rejected] HEAD -> chore/eval-cluster-baseline (protected branch hook declined)\nerror: failed to push some refs to 'https://github.com/lucawalz/vigil'"
+}
