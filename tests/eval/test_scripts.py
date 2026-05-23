@@ -164,4 +164,4 @@ def test_health_gate_checks_cluster_infrastructure_precondition() -> None:
     assert "check_flux_kustomization_ready" in script
     infra_idx = script.index("check_cluster_infrastructure_ready")
     flux_idx = script.index("check_flux_kustomization_ready")
-    assert infra_idx < flux_idx, "cluster-infrastructure must be checked before cluster-apps"
+    assert infra_idx < flux_idx
