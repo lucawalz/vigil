@@ -58,7 +58,9 @@ async def test_capture_health_snapshot_builds_snapshot() -> None:
     mock.direct_call_tool = AsyncMock(
         return_value={"content": "pod/a Running\npod/b Running\npod/c Running"}
     )
-    deps = WatchdogDeps(kubectl_mcp=mock)
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    deps = WatchdogDeps(kubectl_mcp=mock, flux_mcp=mock_flux)
     snap = await capture_health_snapshot(deps)
     assert isinstance(snap, HealthSnapshot)
     assert snap.total_pods == 3
@@ -76,7 +78,9 @@ async def test_run_watchdog_returns_degraded_when_pods_drop(
 
     mock = AsyncMock()
     mock.direct_call_tool = AsyncMock(return_value={"content": ""})  # zero ready pods
-    deps = WatchdogDeps(kubectl_mcp=mock)
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    deps = WatchdogDeps(kubectl_mcp=mock, flux_mcp=mock_flux)
     baseline = _snap(3, 3, True)
 
     result = await run_watchdog(deps, baseline)
@@ -96,7 +100,9 @@ async def test_run_watchdog_returns_not_degraded_when_stable(
     mock.direct_call_tool = AsyncMock(
         return_value={"content": "pod/a Running\npod/b Running\npod/c Running"}
     )
-    deps = WatchdogDeps(kubectl_mcp=mock)
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    deps = WatchdogDeps(kubectl_mcp=mock, flux_mcp=mock_flux)
     baseline = _snap(3, 3, True)
 
     result = await run_watchdog(deps, baseline)
@@ -115,3 +121,46 @@ def test_watchdog_source_has_no_mutation_tool_names() -> None:
     src = inspect.getsource(watchdog_agent_mod)
     for forbidden in ("apply_patch", "rollout_undo", "suspend_kustomization"):
         assert forbidden not in src, f"Watchdog must not reference {forbidden}"
+
+
+async def test_capture_health_snapshot_propagates_flux_ready() -> None:
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(
+        return_value={"content": "pod/a Running\npod/b Running"}
+    )
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    deps = WatchdogDeps(kubectl_mcp=mock_kubectl, flux_mcp=mock_flux)
+
+    snap = await capture_health_snapshot(deps)
+
+    assert snap.flux_ready is True
+
+
+async def test_health_degraded_detects_flux_not_ready() -> None:
+    baseline = HealthSnapshot(
+        ready_pods=2, total_pods=2, endpoints_healthy=True,
+        flux_ready=True, captured_at="2026-05-24T10:00:00Z",
+    )
+    current = HealthSnapshot(
+        ready_pods=2, total_pods=2, endpoints_healthy=True,
+        flux_ready=False, captured_at="2026-05-24T10:01:00Z",
+    )
+    assert _health_degraded(baseline, current) is True
+
+
+async def test_health_degraded_flux_none_does_not_flag() -> None:
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": "pod/a Running"})
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(side_effect=RuntimeError("mcp blip"))
+    deps = WatchdogDeps(kubectl_mcp=mock_kubectl, flux_mcp=mock_flux)
+
+    snap = await capture_health_snapshot(deps)
+
+    assert snap.flux_ready is None
+    baseline = HealthSnapshot(
+        ready_pods=1, total_pods=1, endpoints_healthy=True,
+        flux_ready=True, captured_at="2026-05-24T10:00:00Z",
+    )
+    assert _health_degraded(baseline, snap) is False

@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 from common import trace
 from common.constants import GIT_COMMIT_BUDGET
+from common.flux_status import extract_mcp_text as _extract_mcp_text
+from common.flux_status import parse_kust_text as _parse_kust_text
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.context import (
@@ -162,23 +163,6 @@ def _write_run_record(record: RunRecord) -> None:
         f.write(record.model_dump_json() + "\n")
 
 
-def _parse_kust_text(text: str) -> dict:
-    m = re.search(r"^\s*Ready:\s*([A-Za-z]+)(?:\s*[—-]\s*(.*))?$", text, re.MULTILINE)
-    if m:
-        return {
-            "ready": m.group(1),
-            "reason": (m.group(2) or "").strip(),
-            "message": "",
-        }
-    return {"ready": "Unknown", "reason": "parse_error", "message": text[:200]}
-
-
-def _extract_mcp_text(result: object) -> str:
-    if isinstance(result, dict) and "content" in result:
-        return str(result["content"])
-    return str(result)
-
-
 async def _fetch_flux_snapshot(flux_mcp: MCPServerStdio) -> dict:
     kust_result = await flux_mcp.direct_call_tool(
         "get_kustomization_status", {"namespace": "flux-system", "name": "cluster-apps"}
@@ -287,7 +271,7 @@ async def run_orchestration(
     remediation_deps = RemediationDeps(
         git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
     )
-    watchdog_deps = WatchdogDeps(kubectl_mcp=kubectl_mcp)
+    watchdog_deps = WatchdogDeps(kubectl_mcp=kubectl_mcp, flux_mcp=flux_mcp)
 
     destructive_repair = False
     rollback_triggered = False

@@ -19,6 +19,8 @@ import asyncio
 import os
 from datetime import datetime, timezone
 
+from common.flux_status import extract_mcp_text, parse_kust_text
+
 from .models import HealthSnapshot, WatchdogDeps, WatchdogResult
 
 WATCHDOG_POLL_INTERVAL_S: float = float(
@@ -66,7 +68,7 @@ def _parse_pod_counts(tool_output: object) -> tuple[int, int]:
 
 
 async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
-    """Single-shot health probe via kubectl-mcp.
+    """Single-shot health probe via kubectl-mcp and flux-mcp.
 
     Called once to capture the pre-remediation baseline, then repeatedly
     inside run_watchdog's poll loop.
@@ -76,10 +78,23 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
     )
     ready, total = _parse_pod_counts(pods_result)
     endpoints_healthy = ready > 0
+
+    flux_ready: bool | None = None
+    try:
+        kust_result = await deps.flux_mcp.direct_call_tool(
+            "get_kustomization_status",
+            {"namespace": "flux-system", "name": "cluster-apps"},
+        )
+        kust_data = parse_kust_text(extract_mcp_text(kust_result))
+        flux_ready = kust_data.get("ready") == "True"
+    except Exception:
+        pass
+
     return HealthSnapshot(
         ready_pods=ready,
         total_pods=total,
         endpoints_healthy=endpoints_healthy,
+        flux_ready=flux_ready,
         captured_at=_now_iso(),
     )
 
@@ -87,14 +102,17 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
 def _health_degraded(baseline: HealthSnapshot, current: HealthSnapshot) -> bool:
     """Return True when cluster health deteriorates relative to baseline.
 
-    Two rules:
+    Three rules:
       1. Ready pod count dropped below baseline.
       2. Endpoints were healthy at baseline but are now unhealthy.
-    Improvement (more pods) is not considered degradation.
+      3. Flux cluster-apps was Ready at baseline but is now Not-Ready.
+    Improvement is not degradation. Missing flux data (None) is not degradation.
     """
     if current.ready_pods < baseline.ready_pods:
         return True
     if baseline.endpoints_healthy and not current.endpoints_healthy:
+        return True
+    if baseline.flux_ready is True and current.flux_ready is False:
         return True
     return False
 

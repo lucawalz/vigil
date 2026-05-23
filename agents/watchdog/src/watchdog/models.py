@@ -12,6 +12,7 @@ class HealthSnapshot(BaseModel):
     ready_pods: int
     total_pods: int
     endpoints_healthy: bool
+    flux_ready: bool | None = None
     captured_at: str
 
 
@@ -24,6 +25,7 @@ class WatchdogResult(BaseModel):
 
 @dataclass(frozen=True)
 class WatchdogDeps:
-    """kubectl scope only."""
+    """kubectl and flux-mcp read scope."""
 
     kubectl_mcp: MCPServerStdio
+    flux_mcp: MCPServerStdio
