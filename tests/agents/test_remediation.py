@@ -135,10 +135,11 @@ def test_remediation_deps_has_git_mcp() -> None:
     assert "kubectl_mcp" not in RemediationDeps.__dataclass_fields__
 
 
-def test_remediation_prompt_uses_source_branch_not_main() -> None:
+def test_remediation_prompt_create_pr_has_no_base_arg() -> None:
     mod_source = inspect.getsource(_rem_agent_mod)
     assert "base='main'" not in mod_source
-    assert "base=<source_branch>" in mod_source
+    assert "base=<source_branch>" not in mod_source
+    assert "create_pr" in mod_source
 
 
 def test_run_remediation_accepts_source_branch_param() -> None:
