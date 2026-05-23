@@ -282,6 +282,13 @@ def test_kubectl_write_tools_resolved() -> None:
     )
 
 
+def test_flux_write_tools_blocks_reconcile_kustomization() -> None:
+    source = inspect.getsource(_diag_module)
+    assert "_flux_write_tools" in source
+    assert '"reconcile_kustomization"' in source
+    assert "flux_readonly" in source
+
+
 def test_diagnosis_context_is_frozen() -> None:
     import dataclasses
 
@@ -427,6 +434,7 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
         return_value={"content": declared_yaml_content}
     )
     mock_nixos = AsyncMock()
+    mock_flux = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
 
@@ -435,6 +443,7 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
+        flux_mcp=mock_flux,
     )
 
     ctx = asyncio.get_event_loop().run_until_complete(
@@ -509,6 +518,7 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
     mock_git = AsyncMock()
     mock_git.direct_call_tool = AsyncMock(return_value={"content": ""})
     mock_nixos = AsyncMock()
+    mock_flux = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
 
@@ -517,6 +527,7 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
+        flux_mcp=mock_flux,
     )
 
     ctx = asyncio.get_event_loop().run_until_complete(
@@ -582,6 +593,7 @@ def test_build_diagnosis_context_read_file_failure_degrades() -> None:
     mock_git = AsyncMock()
     mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
     mock_nixos = AsyncMock()
+    mock_flux = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
 
@@ -590,6 +602,7 @@ def test_build_diagnosis_context_read_file_failure_degrades() -> None:
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
+        flux_mcp=mock_flux,
     )
 
     with patch(
@@ -659,6 +672,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
     mock_nixos.direct_call_tool = AsyncMock(side_effect=nixos_side_effect)
     mock_git = AsyncMock()
     mock_git.direct_call_tool = AsyncMock(return_value={"content": "declared-config"})
+    mock_flux = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
 
@@ -667,6 +681,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
+        flux_mcp=mock_flux,
     )
 
     ctx = asyncio.get_event_loop().run_until_complete(
@@ -729,6 +744,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
     mock_git.direct_call_tool = AsyncMock(
         return_value={"content": "declared-dry-build"}
     )
+    mock_flux = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
 
@@ -737,6 +753,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
+        flux_mcp=mock_flux,
     )
 
     ctx = asyncio.get_event_loop().run_until_complete(
@@ -800,6 +817,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     mock_nixos.direct_call_tool = AsyncMock(side_effect=nixos_side_effect)
     mock_git = AsyncMock()
     mock_git.direct_call_tool = AsyncMock(return_value={"content": "config"})
+    mock_flux = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
 
@@ -808,6 +826,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
+        flux_mcp=mock_flux,
     )
 
     asyncio.get_event_loop().run_until_complete(build_diagnosis_context(deps, fault))
@@ -953,6 +972,7 @@ def test_build_diagnosis_context_constructed_path_missing_falls_back_to_none() -
     mock_git = AsyncMock()
     mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
     mock_nixos = AsyncMock()
+    mock_flux = AsyncMock()
 
     from diagnosis.models import DiagnosisDeps
 
@@ -961,6 +981,7 @@ def test_build_diagnosis_context_constructed_path_missing_falls_back_to_none() -
         kubectl_mcp=mock_kubectl,
         nixos_mcp=mock_nixos,
         git_mcp=mock_git,
+        flux_mcp=mock_flux,
     )
 
     ctx = asyncio.get_event_loop().run_until_complete(

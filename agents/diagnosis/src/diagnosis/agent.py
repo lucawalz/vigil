@@ -36,6 +36,7 @@ Available tools:
   nixos-mcp:   get_nix_path, dry_build, get_journal, get_systemd_status,
                get_generations
   git-mcp:     clone_repo, read_file
+  flux-mcp:    get_kustomization_status, get_gitrepository_status
   lookup_manifest_path helpers:
     lookup_k8s_manifest_path(kustomization_yaml, resource_name): resolve a Kustomization
                YAML to the repo-relative manifest path for the named resource
@@ -201,6 +202,7 @@ async def run_diagnosis(
     # Blocks delete_resource; expand if kubectl-mcp gains additional write tools.
     _kubectl_write_tools = frozenset({"delete_resource"})
     _git_write_tools: frozenset[str] = frozenset()
+    _flux_write_tools = frozenset({"reconcile_kustomization"})
     kubectl_readonly = FilteredToolset(
         deps.kubectl_mcp,
         filter_func=lambda _ctx, tool_def: tool_def.name not in _kubectl_write_tools,
@@ -212,6 +214,10 @@ async def run_diagnosis(
     git_readonly = FilteredToolset(
         deps.git_mcp,
         filter_func=lambda _ctx, tool_def: tool_def.name not in _git_write_tools,
+    )
+    flux_readonly = FilteredToolset(
+        deps.flux_mcp,
+        filter_func=lambda _ctx, tool_def: tool_def.name not in _flux_write_tools,
     )
     user_message = (
         f"Diagnose fault.\n\n"
@@ -226,7 +232,7 @@ async def run_diagnosis(
     result = await diagnosis_agent.run(
         user_message,
         deps=deps,
-        toolsets=[kubectl_readonly, nixos_readonly, git_readonly],
+        toolsets=[kubectl_readonly, nixos_readonly, git_readonly, flux_readonly],
         usage_limits=UsageLimits(
             request_limit=int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
         ),
