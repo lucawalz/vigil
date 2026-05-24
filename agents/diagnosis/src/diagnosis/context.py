@@ -190,7 +190,10 @@ async def _resolve_manifest_path_k8s(
     except Exception as exc:
         logging.getLogger(__name__).warning(
             "resolve_manifest_path failed for %s/%s under %s: %s",
-            kind, name, spec_path, exc,
+            kind,
+            name,
+            spec_path,
+            exc,
         )
         raise ManifestPathUnresolvable(
             f"{kind}/{name} not found under {spec_path}"
