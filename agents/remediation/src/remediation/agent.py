@@ -13,7 +13,7 @@ from common import trace
 from common.provider import build_model
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.usage import Usage, UsageLimits
@@ -177,7 +177,7 @@ async def run_remediation(
         try:
             async for _ in agent_run:
                 pass
-        except UnexpectedModelBehavior:
+        except (UnexpectedModelBehavior, UsageLimitExceeded):
             if run_id:
                 partial_msgs = agent_run.all_messages()
                 if partial_msgs:

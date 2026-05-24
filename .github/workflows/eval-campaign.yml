@@ -162,6 +162,22 @@ jobs:
             sleep 10
           done
 
+      - name: Initialize eval baseline
+        env:
+          AGENT_IP: ${{ steps.agent.outputs.ip }}
+        run: |
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+          ssh $SSH_OPTS root@$AGENT_IP \
+            "set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 bash /root/vigil/eval/scripts/reset-eval-baseline.sh"
+          ssh $SSH_OPTS root@$AGENT_IP "systemctl restart vigil-orchestrator.service"
+          DEADLINE=$(($(date +%s) + 120))
+          until ssh $SSH_OPTS root@$AGENT_IP "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
+            [ $(date +%s) -gt $DEADLINE ] && { echo "orchestrator did not recover after baseline reset"; exit 1; }
+            sleep 5
+          done
+          ssh $SSH_OPTS root@$AGENT_IP \
+            "set -a; . /etc/vigil/env; set +a; bash /root/vigil/eval/scripts/health-gate.sh /etc/vigil/kubeconfig-eval-runner"
+
       - name: Run scenarios in group
         env:
           SCENARIOS: ${{ matrix.scenarios }}

@@ -53,9 +53,17 @@ def _compute_diff(live: str, declared: str) -> str:
     )
 
 
+_TYPED_RESULT_KEYS = ("content", "path", "sha", "pr_number", "merge_commit_sha")
+
+
 def _extract_text(result: object) -> str:
-    if isinstance(result, dict) and "content" in result:
-        return str(result["content"])
+    if isinstance(result, dict):
+        for key in _TYPED_RESULT_KEYS:
+            if key in result and len(result) <= 4:
+                return str(result[key])
+        raise TypeError(
+            f"structured MCP result requires explicit handling: {sorted(result)}"
+        )
     return str(result)
 
 

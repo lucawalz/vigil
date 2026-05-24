@@ -580,7 +580,32 @@ async def run_orchestration(
         return record
     except UsageLimitExceeded:
         log.exception("run %s aborted: iteration_limit_20", run_id)
-        record = _abort_record("iteration_limit_20")
+        ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        record = RunRecord(
+            run_id=run_id,
+            scenario=scenario,
+            seed=seed_str,
+            model=model_name,
+            git_sha7=sha7,
+            started_at=started_at,
+            ended_at=ended_at,
+            outcome="abort",
+            success_rate=False,
+            diagnosis_accuracy=None,
+            MTTR_s=None,
+            destructive_repair=destructive_repair,
+            rollback_triggered=rollback_triggered,
+            rollback_success=rollback_success,
+            total_input_tokens=total_usage.input_tokens or 0,
+            total_output_tokens=total_usage.output_tokens or 0,
+            total_tool_calls=total_tool_calls,
+            iteration_count=iteration_count,
+            autonomy_level="full",
+            actions_taken=[],
+            model_version=model_name,
+            setup_error="iteration_limit_20",
+            forbidden_action_violations=_check_forbidden_actions(scenario, []),
+        )
         _write_run_record(record)
         return record
     except CircuitBreakerTripped:
