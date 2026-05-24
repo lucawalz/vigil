@@ -83,17 +83,30 @@ class DiagnosisReport(BaseModel):
         action = self.recommended_action
         if dc == "live_only_drift" and action not in _LIVE_ONLY:
             raise ValueError(
-                f"drift_classification='live_only_drift' requires flux_reconcile or"
-                f" nixos_rebuild, not '{action}'"
+                f"Inconsistent: drift_classification='live_only_drift' with"
+                f" recommended_action='{action}'. Either change"
+                f" drift_classification to 'declared_drift' / 'both_drift' /"
+                f" 'no_drift' to match the action, or change recommended_action"
+                f" to 'flux_reconcile' / 'nixos_rebuild' to match the"
+                f" classification. Re-examine the diff before deciding."
             )
         if dc == "declared_drift" and action not in _DECLARED:
             raise ValueError(
-                f"drift_classification='declared_drift' requires git_commit_k8s or"
-                f" git_commit_nix, not '{action}'"
+                f"Inconsistent: drift_classification='declared_drift' with"
+                f" recommended_action='{action}'. Either change"
+                f" drift_classification to 'live_only_drift' / 'both_drift' /"
+                f" 'no_drift' to match the action, or change recommended_action"
+                f" to 'git_commit_k8s' / 'git_commit_nix' to match the"
+                f" classification. Re-examine the diff before deciding."
             )
         if dc in {"both_drift", "no_drift"} and action != "escalate":
             raise ValueError(
-                f"drift_classification='{dc}' requires escalate, not '{action}'"
+                f"Inconsistent: drift_classification='{dc}' with"
+                f" recommended_action='{action}'. Either change"
+                f" drift_classification to 'live_only_drift' or 'declared_drift'"
+                f" to match the action, or change recommended_action to"
+                f" 'escalate' to match the classification."
+                f" Re-examine the diff before deciding."
             )
         return self
 
