@@ -106,6 +106,10 @@ func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, err
 	return f.readFileOut, f.readFileErr
 }
 
+func (f *fakeGitClient) ResolveManifestPath(_ context.Context, _, _, _, _, _ string) (string, string, error) {
+	return f.readFileOut, "", f.readFileErr
+}
+
 type fakeSessionState struct {
 	mu            sync.Mutex
 	runID         string

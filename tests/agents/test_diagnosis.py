@@ -174,7 +174,6 @@ def test_system_prompt_covers_rollout_regression_reconstruction() -> None:
 def test_lookup_manifest_path_helpers_registered_as_tools() -> None:
     source = inspect.getsource(_diag_module)
     assert "@diagnosis_agent.tool_plain" in source
-    assert "def lookup_k8s_manifest_path" in source
     assert "def lookup_os_manifest_path" in source
 
 
@@ -530,14 +529,12 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.get_event_loop().run_until_complete(
-        build_diagnosis_context(deps, fault)
-    )
-    assert ctx.manifest_path is None
-    assert ctx.declared_yaml == ""
-    assert ctx.diff == ""
-    assert ctx.live_yaml == live_resource_yaml
-    assert ctx.source_branch == "main"
+    from diagnosis.context import ManifestPathUnresolvable
+
+    with pytest.raises(ManifestPathUnresolvable):
+        asyncio.get_event_loop().run_until_complete(
+            build_diagnosis_context(deps, fault)
+        )
 
 
 def test_build_diagnosis_context_read_file_failure_degrades() -> None:
@@ -605,18 +602,16 @@ def test_build_diagnosis_context_read_file_failure_degrades() -> None:
         flux_mcp=mock_flux,
     )
 
+    from diagnosis.context import ManifestPathUnresolvable
+
     with patch(
         "diagnosis.context._resolve_manifest_path_k8s",
         return_value="apps/vigil-app.yaml",
     ):
-        ctx = asyncio.get_event_loop().run_until_complete(
-            build_diagnosis_context(deps, fault)
-        )
-
-    assert ctx.manifest_path is None
-    assert ctx.declared_yaml == ""
-    assert ctx.diff == ""
-    assert ctx.live_yaml == live_resource_yaml
+        with pytest.raises(ManifestPathUnresolvable):
+            asyncio.get_event_loop().run_until_complete(
+                build_diagnosis_context(deps, fault)
+            )
 
 
 def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
@@ -900,13 +895,8 @@ def test_extract_kind_unknown_raises() -> None:
         _extract_k8s_kind_namespace_name(fault)
 
 
-def test_build_diagnosis_context_constructed_path_missing_falls_back_to_none() -> None:
-    """Flux nested topology stamps root Kustomization on all resources.
-
-    The constructed path will point at the wrong location and validation
-    via read_file must raise ManifestPathUnresolvable so manifest_path=None
-    and the agent self-resolves via lookup_k8s_manifest_path.
-    """
+def test_build_diagnosis_context_constructed_path_missing_raises() -> None:
+    """Flux nested topology: resolve_manifest_path failure propagates."""
     import asyncio
     from unittest.mock import AsyncMock
 
@@ -984,10 +974,9 @@ def test_build_diagnosis_context_constructed_path_missing_falls_back_to_none() -
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.get_event_loop().run_until_complete(
-        build_diagnosis_context(deps, fault)
-    )
-    assert ctx.manifest_path is None
-    assert ctx.declared_yaml == ""
-    assert ctx.diff == ""
-    assert ctx.live_yaml == live_resource_yaml
+    from diagnosis.context import ManifestPathUnresolvable
+
+    with pytest.raises(ManifestPathUnresolvable):
+        asyncio.get_event_loop().run_until_complete(
+            build_diagnosis_context(deps, fault)
+        )

@@ -384,6 +384,37 @@ func HandleReadFile(client GitClient, state SessionState, maxBytes int) server.T
 	}
 }
 
+func HandleResolveManifestPath(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		kustomizePath, ok := args["kustomize_path"].(string)
+		if !ok || kustomizePath == "" {
+			return mcp.NewToolResultError("kustomize_path: missing or wrong type"), nil
+		}
+		kind, ok := args["kind"].(string)
+		if !ok || kind == "" {
+			return mcp.NewToolResultError("kind: missing or wrong type"), nil
+		}
+		name, ok := args["name"].(string)
+		if !ok || name == "" {
+			return mcp.NewToolResultError("name: missing or wrong type"), nil
+		}
+		namespace, _ := args["namespace"].(string)
+
+		cloneDir := state.CloneDir()
+		if cloneDir == "" {
+			return mcp.NewToolResultError("HandleResolveManifestPath: session not initialised; call clone_repo first"), nil
+		}
+
+		path, hint, err := client.ResolveManifestPath(ctx, cloneDir, kustomizePath, kind, namespace, name)
+		if err != nil {
+			msg := fmt.Sprintf("HandleResolveManifestPath: %s/%s not found under %s; %s", kind, name, kustomizePath, hint)
+			return mcp.NewToolResultError(msg), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(path, maxBytes)), nil
+	}
+}
+
 func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()

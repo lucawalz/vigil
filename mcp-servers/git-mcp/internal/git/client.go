@@ -46,6 +46,7 @@ type GitClient interface {
 	ClosePR(ctx context.Context, prNumber int) error
 	DeleteBranch(ctx context.Context, branch string) error
 	ReadFile(ctx context.Context, cloneDir, branch, path string) (string, error)
+	ResolveManifestPath(ctx context.Context, cloneDir, kustomizePath, kind, namespace, name string) (repoRelPath string, hint string, err error)
 }
 
 type realGitClient struct {
@@ -335,6 +336,10 @@ func (c *realGitClient) ReadFile(ctx context.Context, cloneDir, branch, path str
 		return "", fmt.Errorf("read_file: read contents: %w", err)
 	}
 	return contents, nil
+}
+
+func (c *realGitClient) ResolveManifestPath(_ context.Context, cloneDir, kustomizePath, kind, namespace, name string) (string, string, error) {
+	return resolveManifestPath(cloneDir, kustomizePath, kind, namespace, name)
 }
 
 // go-git v5 does not expose a native Revert; fall back to the git binary.

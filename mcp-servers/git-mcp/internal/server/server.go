@@ -220,5 +220,27 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 		git.HandleReadFile(client, s, cfg.MaxOutputBytes),
 	)
 
+	mcpServer.AddTool(
+		mcp.NewTool("resolve_manifest_path",
+			mcp.WithDescription("Walk the kustomize resource tree and return the repo-relative path to the manifest declaring the named resource"),
+			mcp.WithString("kustomize_path",
+				mcp.Required(),
+				mcp.Description("Kustomization spec.path value (repo-relative directory, e.g. infra/overlays/hetzner/kubernetes/clusters/hetzner)"),
+			),
+			mcp.WithString("kind",
+				mcp.Required(),
+				mcp.Description("Kubernetes resource kind, e.g. Deployment"),
+			),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("Resource name"),
+			),
+			mcp.WithString("namespace",
+				mcp.Description("Resource namespace (default: default)"),
+			),
+		),
+		git.HandleResolveManifestPath(client, s, cfg.MaxOutputBytes),
+	)
+
 	return mcpServer
 }
