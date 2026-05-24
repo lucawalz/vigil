@@ -9,7 +9,14 @@ MANIFEST="$VIGIL_REPO_ROOT/infra/overlays/hetzner/kubernetes/clusters/hetzner/ap
 
 git -C "$VIGIL_REPO_ROOT" checkout -- "$MANIFEST" 2>/dev/null || true
 
-sed -i 's|replicas: 1|replicas: 0|' "$MANIFEST"
+python3 -c "
+import yaml, sys
+with open('$MANIFEST') as f:
+    obj = yaml.safe_load(f)
+obj['spec']['template']['spec']['nodeSelector'] = {'kubernetes.io/hostname': 'nonexistent-bogus-node'}
+with open('$MANIFEST', 'w') as f:
+    yaml.dump(obj, f, default_flow_style=False, sort_keys=False)
+"
 
 git -C "$VIGIL_REPO_ROOT" commit -am "k8s-4g: inject fault"
 git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline

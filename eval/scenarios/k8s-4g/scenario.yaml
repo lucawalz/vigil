@@ -1,16 +1,15 @@
 id: k8s-4g
-name: zero-replicas-committed
+name: bogus-nodeselector-committed
 layer: k8s
 expected_action: git_commit_k8s
 
-root_cause_component: "vigil-app.yaml committed replicas: 0 on chore/eval-cluster-baseline; health-gate may pass (0 ready == 0 desired) so fault is detectable only via live-vs-in-repo diff (live: 0 pods; repo declares 1 replica)"
-expected_resolution_path: "diagnosis -> git_commit_k8s (restore replicas to 1 in manifest) -> gate_pass -> reconcile -> watchdog_confirm"
+root_cause_component: "vigil-app.yaml committed nodeSelector: {kubernetes.io/hostname: nonexistent-bogus-node} on chore/eval-cluster-baseline; pods enter Pending because no node matches the selector"
+expected_resolution_path: "diagnosis -> git_commit_k8s -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
   deployment: vigil-app
   namespace: default
-  bad_replicas: 0
-  good_replicas: 1
+  bad_node_selector: "nonexistent-bogus-node"
 
 alert_name: KubeDeploymentReplicasMismatch
