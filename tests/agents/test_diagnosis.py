@@ -58,7 +58,6 @@ def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:
 
 
 def test_run_diagnosis_signature_accepts_diagnosis_deps() -> None:
-    """run_diagnosis(deps, fault, context, model=None, blocked_tools=frozenset()) -> tuple."""
     sig = inspect.signature(run_diagnosis)
     params = list(sig.parameters.values())
     assert len(params) == 5

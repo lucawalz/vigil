@@ -282,7 +282,7 @@ async def run_orchestration(
             actions_taken=[],
             model_version=model_name,
             setup_error=_reason,
-            forbidden_action_violations=[],
+            forbidden_action_violations=None,
         )
 
     total_usage = Usage()
@@ -622,7 +622,7 @@ async def run_orchestration(
             actions_taken=[],
             model_version=model_name,
             setup_error="iteration_limit_20",
-            forbidden_action_violations=[],
+            forbidden_action_violations=None,
         )
         _write_run_record(record)
         return record
