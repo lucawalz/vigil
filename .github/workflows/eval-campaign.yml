@@ -333,14 +333,16 @@ jobs:
             || git branch "${RESULTS_BRANCH}" "$(git rev-parse HEAD)"
           git worktree add /tmp/eval-results "${RESULTS_BRANCH}"
           DEST="/tmp/eval-results/results/${RUN_ID}"
-          mkdir -p "${DEST}"
+          mkdir -p "${DEST}/traces"
           cp eval/results/REPORT.md eval/results/summary.json "${DEST}/"
           cp eval/runs/*.json "${DEST}/" 2>/dev/null || true
+          cp eval/runs/*_trace.jsonl "${DEST}/traces/" 2>/dev/null || true
           cd /tmp/eval-results
           git add "results/${RUN_ID}"
           if git diff --staged --quiet; then
             echo "No new results to record"
           else
-            git commit -m "docs(eval): record campaign ${RUN_ID}"
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            git commit -m "docs(eval): record campaign ${RUN_ID} (${TIMESTAMP})"
             git push origin "${RESULTS_BRANCH}"
           fi
