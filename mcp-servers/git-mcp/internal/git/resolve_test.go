@@ -63,14 +63,14 @@ func TestResolveManifestPath(t *testing.T) {
 	root := buildResolverFixture(t)
 
 	cases := []struct {
-		name     string
-		specPath string
-		kind     string
-		ns       string
-		resName  string
+		name       string
+		specPath   string
+		kind       string
+		ns         string
+		resName    string
 		wantSuffix string
-		wantErr  bool
-		wantHint bool
+		wantErr    bool
+		wantHint   bool
 	}{
 		{
 			name:       "regression: parent spec path without kustomization.yaml recurses into apps subdir",
