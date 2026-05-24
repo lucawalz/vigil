@@ -25,3 +25,9 @@ type GatePassedResult struct {
 type ManifestPathResult struct {
 	Path string `json:"path" jsonschema:"Repo-relative path to the manifest file"`
 }
+
+type ReadFileResult struct {
+	Branch  string `json:"branch" jsonschema:"Branch the file was read from"`
+	Path    string `json:"path" jsonschema:"Repo-relative file path"`
+	Content string `json:"content" jsonschema:"File content (may be truncated)"`
+}
