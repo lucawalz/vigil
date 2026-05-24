@@ -125,7 +125,14 @@ def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
     expected = data.get("expected_action")
     if expected is None:
         return None
-    return report.recommended_action == expected
+    if report.recommended_action != expected:
+        return False
+    keywords = data.get("root_cause_keywords")
+    if keywords:
+        text = (report.root_cause or "").lower()
+        if not any(kw.lower() in text for kw in keywords):
+            return False
+    return True
 
 
 _TOOL_TO_ACTION_CLASSES: dict[str, list[str]] = {
@@ -557,6 +564,7 @@ async def run_orchestration(
             ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             forbidden_violations = _check_forbidden_actions(scenario, actions_taken)
+            accuracy = _score_diagnosis_accuracy(scenario, report)
             record = RunRecord(
                 run_id=run_id,
                 scenario=scenario,
@@ -570,8 +578,9 @@ async def run_orchestration(
                     remediation_result.success
                     and not watchdog_result.degraded
                     and not forbidden_violations
+                    and accuracy is not False
                 ),
-                diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                diagnosis_accuracy=accuracy,
                 MTTR_s=mttr_s,
                 destructive_repair=destructive_repair,
                 rollback_triggered=rollback_triggered,
