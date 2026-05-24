@@ -281,6 +281,16 @@ jobs:
             eval/runs/
           if-no-files-found: warn
 
+      - name: Reset eval-cluster-baseline to main
+        if: always()
+        env:
+          AGENT_IP: ${{ steps.agent.outputs.ip }}
+        run: |
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+          ssh $SSH_OPTS root@$AGENT_IP \
+            "set -a; . /etc/vigil/env; set +a; bash /root/vigil/eval/scripts/reset-eval-baseline.sh" \
+            || echo "reset-eval-baseline returned non-zero; branch may need manual cleanup"
+
       - name: Terraform destroy
         if: always() && !inputs.skip_destroy
         working-directory: infra/terraform
