@@ -2,18 +2,30 @@ package k8s
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
+const (
+	hintGetNodes        = "verify the cluster is reachable and kubectl context is configured"
+	hintGetPods         = "check that the namespace exists; try get_nodes to verify cluster health"
+	hintDescribePod     = "try get_pods first to list available pod names in this namespace"
+	hintGetLogs         = "try get_pods to confirm the pod exists; the pod may have restarted or been replaced"
+	hintRolloutStatus   = "try get_pods to check deployment pod health, or describe_pod for crash details"
+	hintGetEvents       = "try get_pods or describe_pod to narrow the scope"
+	hintDescribeNode    = "try get_nodes to list available node names"
+	hintGetTaints       = "try get_nodes to list available nodes"
+	hintDeleteResource  = "try get_pods or get_resource_yaml to confirm the resource exists before deletion"
+	hintGetResourceYAML = "try get_pods to list available resources in this namespace"
+)
+
 func HandleGetNodes(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		output, err := client.GetNodes(ctx)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetNodes: %v", err)), nil
+			return toolError("GetNodes", err.Error(), hintGetNodes), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -28,7 +40,7 @@ func HandleGetPods(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		output, err := client.GetPods(ctx, ns)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetPods: %v", err)), nil
+			return toolError("GetPods", err.Error(), hintGetPods), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -47,7 +59,7 @@ func HandleDescribePod(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		output, err := client.DescribePod(ctx, ns, name)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("DescribePod: %v", err)), nil
+			return toolError("DescribePod", err.Error(), hintDescribePod), nil
 		}
 		prefix, events := splitEventsSection(output)
 		return mcp.NewToolResultText(truncateOutput(prefix, maxBytes) + events), nil
@@ -84,7 +96,7 @@ func HandleGetLogs(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		output, err := client.GetLogs(ctx, ns, name, container, tailLines)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetLogs: %v", err)), nil
+			return toolError("GetLogs", err.Error(), hintGetLogs), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -103,7 +115,7 @@ func HandleRolloutStatus(client K8sClient, maxBytes int) server.ToolHandlerFunc 
 		}
 		output, err := client.RolloutStatus(ctx, ns, deployment)
 		if err != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("RolloutStatus: %v", err)), nil
+			return toolError("RolloutStatus", err.Error(), hintRolloutStatus), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -119,7 +131,7 @@ func HandleGetEvents(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 		fs, _ := args["field_selector"].(string)
 		output, err := client.GetEvents(ctx, ns, fs)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetEvents: %v", err)), nil
+			return toolError("GetEvents", err.Error(), hintGetEvents), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -134,7 +146,7 @@ func HandleDescribeNode(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		output, err := client.DescribeNode(ctx, name)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("DescribeNode: %v", err)), nil
+			return toolError("DescribeNode", err.Error(), hintDescribeNode), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -149,7 +161,7 @@ func HandleGetTaints(client K8sClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		output, err := client.GetTaints(ctx, node)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetTaints: %v", err)), nil
+			return toolError("GetTaints", err.Error(), hintGetTaints), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -172,9 +184,9 @@ func HandleDeleteResource(client K8sClient, maxBytes int) server.ToolHandlerFunc
 		}
 		output, err := client.DeleteResource(ctx, kind, ns, name)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("DeleteResource: %v", err)), nil
+			return toolError("DeleteResource", err.Error(), hintDeleteResource), nil
 		}
-		return mcp.NewToolResultText(output), nil
+		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
 }
 
@@ -195,7 +207,7 @@ func HandleGetResourceYaml(client K8sClient, maxBytes int) server.ToolHandlerFun
 		}
 		output, err := client.GetResourceYAML(ctx, kind, ns, name)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetResourceYAML: %v", err)), nil
+			return toolError("GetResourceYAML", err.Error(), hintGetResourceYAML), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}

@@ -155,7 +155,7 @@ async def test_health_degraded_detects_flux_not_ready() -> None:
     assert _health_degraded(baseline, current) is True
 
 
-async def test_health_degraded_flux_none_does_not_flag() -> None:
+async def test_flux_mcp_error_sets_flux_ready_false() -> None:
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": "pod/a Running"})
     mock_flux = AsyncMock()
@@ -164,7 +164,7 @@ async def test_health_degraded_flux_none_does_not_flag() -> None:
 
     snap = await capture_health_snapshot(deps)
 
-    assert snap.flux_ready is None
+    assert snap.flux_ready is False
     baseline = HealthSnapshot(
         ready_pods=1,
         total_pods=1,
@@ -172,4 +172,4 @@ async def test_health_degraded_flux_none_does_not_flag() -> None:
         flux_ready=True,
         captured_at="2026-05-24T10:00:00Z",
     )
-    assert _health_degraded(baseline, snap) is False
+    assert _health_degraded(baseline, snap) is True

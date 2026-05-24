@@ -3,23 +3,17 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from common import trace
 from common.provider import build_model
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .context import DiagnosisContext
-from .manifest_paths import (
-    ManifestPathError,
-)
-from .manifest_paths import (
-    lookup_k8s_manifest_path as _lookup_k8s_manifest_path,
-)
-from .manifest_paths import (
-    lookup_os_manifest_path as _lookup_os_manifest_path,
-)
+from .manifest_paths import lookup_os_manifest_path as _lookup_os_manifest_path
 from .models import DiagnosisDeps, DiagnosisReport
 
 if TYPE_CHECKING:
@@ -35,11 +29,9 @@ Available tools:
                rollout_status, get_events, describe_node, get_taints
   nixos-mcp:   get_nix_path, dry_build, get_journal, get_systemd_status,
                get_generations
-  git-mcp:     clone_repo, read_file
+  git-mcp:     clone_repo, read_file, resolve_manifest_path
   flux-mcp:    get_kustomization_status, get_gitrepository_status
   lookup_manifest_path helpers:
-    lookup_k8s_manifest_path(kustomization_yaml, resource_name): resolve a Kustomization
-               YAML to the repo-relative manifest path for the named resource
     lookup_os_manifest_path(hostname): return the repo-relative NixOS config path for
                the given hostname
 
@@ -51,11 +43,10 @@ authoritative inputs. Do not call get_resource_yaml to re-derive live_yaml; that
 call has already been made. Use the provided diff to determine drift direction.
 The git-mcp session is pre-warmed; use read_file(branch, path) to inspect related
 manifests (parent Kustomizations, ConfigMap sources, Helm values) when needed.
-If read_file returns a path-not-found error for manifest_path, do not guess
-alternative paths. Instead, fetch the Kustomization YAML via get_resource_yaml,
-then call lookup_k8s_manifest_path(kustomization_yaml, resource_name) to recover
-the correct path and retry read_file once. If that also fails, set
-recommended_action=escalate.
+If read_file returns a path-not-found error for manifest_path, call
+resolve_manifest_path(kustomize_path, kind, name, namespace) with the
+Kustomization spec.path to recover the correct path, then retry read_file once.
+If that also fails, set recommended_action=escalate.
 
 Rules:
 - Never name a symptom as the root cause. CrashLoopBackOff, OOMKilled, and
@@ -72,7 +63,7 @@ Triage axes:
    capacity); primary tools: get_events with field_selector=reason=FailedScheduling,
    get_taints, describe_node.
 2. Runtime: pod runs but is unhealthy (CrashLoopBackOff, OOMKilled, ImagePullBackOff,
-   config error); primary tools: describe_pod, get_logs, lookup_k8s_manifest_path.
+   config error); primary tools: describe_pod, get_logs, get_resource_yaml.
 3. Node: the host itself is unhealthy (NotReady, kubelet failure, NixOS service
    failure); primary tools: get_nodes, describe_node, nixos-mcp.
 
@@ -147,8 +138,8 @@ recommended_action selection:
   NixOS config is required. Populate proposed_patch with patch_body (corrected config
   YAML derived from DiagnosisContext.declared_yaml). Set target_host to the affected
   hostname.
-- escalate: manifest path cannot be resolved (lookup_k8s_manifest_path raises
-  ManifestPathError), the resource is not Flux-managed, or the fault falls outside
+- escalate: resolve_manifest_path could not locate the manifest, the resource is not
+  Flux-managed, or the fault falls outside
   the four-quadrant model. Set proposed_patch=None.
 
 patch_body / target_host rules:
@@ -175,21 +166,9 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 
 
 @diagnosis_agent.tool_plain
-def lookup_k8s_manifest_path(kustomization_yaml: str, resource_name: str) -> str:
-    """Resolve a Kustomization YAML to the repo-relative manifest path."""
-    try:
-        return _lookup_k8s_manifest_path(kustomization_yaml, resource_name)
-    except ManifestPathError as exc:
-        return f"manifest path not resolvable: {exc}"
-
-
-@diagnosis_agent.tool_plain
 def lookup_os_manifest_path(hostname: str) -> str:
     """Return the repo-relative NixOS config path for the given hostname."""
-    try:
-        return _lookup_os_manifest_path(hostname)
-    except ManifestPathError as exc:
-        return f"manifest path not resolvable: {exc}"
+    return _lookup_os_manifest_path(hostname)
 
 
 async def run_diagnosis(
@@ -229,7 +208,7 @@ async def run_diagnosis(
         f"  declared_yaml:\n{context.declared_yaml}\n"
         f"  diff:\n{context.diff}"
     )
-    result = await diagnosis_agent.run(
+    async with diagnosis_agent.iter(
         user_message,
         deps=deps,
         toolsets=[kubectl_readonly, nixos_readonly, git_readonly, flux_readonly],
@@ -237,5 +216,13 @@ async def run_diagnosis(
             request_limit=int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
         ),
         model=model,
-    )
-    return result.output, result.usage, result.all_messages()
+    ) as agent_run:
+        try:
+            async for _ in agent_run:
+                pass
+        except UnexpectedModelBehavior:
+            partial_msgs = agent_run.all_messages()
+            if partial_msgs:
+                trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
+            raise
+    return agent_run.result.output, agent_run.usage, agent_run.all_messages()

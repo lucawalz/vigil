@@ -87,6 +87,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithString("base_branch",
 				mcp.Description("Branch to clone from (default: main)"),
 			),
+			mcp.WithOutputSchema[git.TextResult](),
 		),
 		git.HandleCloneRepo(client, s, cfg.AuthURL(), cfg.MaxOutputBytes),
 	)
@@ -101,6 +102,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithString("base_branch",
 				mcp.Description("Override the base branch set by clone_repo"),
 			),
+			mcp.WithOutputSchema[git.TextResult](),
 		),
 		git.HandleCreateBranch(client, s, cfg.MaxOutputBytes),
 	)
@@ -116,6 +118,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Full replacement manifest YAML"),
 			),
+			mcp.WithOutputSchema[git.TextResult](),
 		),
 		git.HandleWriteManifest(client, s, cfg.MaxOutputBytes),
 	)
@@ -127,6 +130,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Commit message"),
 			),
+			mcp.WithOutputSchema[git.CommitResult](),
 		),
 		git.HandleCommitFiles(client, s, cfg.MaxOutputBytes),
 	)
@@ -134,6 +138,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 	mcpServer.AddTool(
 		mcp.NewTool("push_branch",
 			mcp.WithDescription("Push the remediation branch to origin"),
+			mcp.WithOutputSchema[git.TextResult](),
 		),
 		git.HandlePushBranch(client, s, cfg.MaxOutputBytes),
 	)
@@ -149,6 +154,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Pull request description"),
 			),
+			mcp.WithOutputSchema[git.PRNumberResult](),
 		),
 		git.HandleCreatePR(client, s, cfg.MaxOutputBytes),
 	)
@@ -160,6 +166,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Pull request number"),
 			),
+			mcp.WithOutputSchema[git.PRStatusResult](),
 		),
 		git.HandleGetPRStatus(client, s, cfg.MaxOutputBytes),
 	)
@@ -172,8 +179,9 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Pull request number"),
 			),
 			mcp.WithNumber("timeout_seconds",
-				mcp.Description("Default 540"),
+				mcp.Description("Default 480"),
 			),
+			mcp.WithOutputSchema[git.GatePassedResult](),
 		),
 		git.HandleWaitForGate(client, s, cfg.MaxOutputBytes, git.DefaultPollInterval),
 	)
@@ -185,6 +193,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("SHA of the merge commit to revert"),
 			),
+			mcp.WithOutputSchema[git.CommitResult](),
 		),
 		git.HandleRevertCommit(client, s, cfg.MaxOutputBytes),
 	)
@@ -196,6 +205,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Pull request number"),
 			),
+			mcp.WithOutputSchema[git.PRNumberResult](),
 		),
 		git.HandleClosePR(client, s, cfg.MaxOutputBytes),
 	)
@@ -207,17 +217,42 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Branch name to delete"),
 			),
+			mcp.WithOutputSchema[git.TextResult](),
 		),
 		git.HandleDeleteBranch(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
 		mcp.NewTool("read_file",
-			mcp.WithDescription("Read a file from the repository at a given branch tip"),
+			mcp.WithDescription("Read a file from the repository at a given branch tip; auto-initialises the session if needed"),
 			mcp.WithString("branch", mcp.Required(), mcp.Description("Branch name to read from")),
 			mcp.WithString("path", mcp.Required(), mcp.Description("Repo-relative file path")),
+			mcp.WithOutputSchema[git.ReadFileResult](),
 		),
-		git.HandleReadFile(client, s, cfg.MaxOutputBytes),
+		git.HandleReadFile(client, s, cfg.AuthURL(), cfg.MaxOutputBytes),
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("resolve_manifest_path",
+			mcp.WithDescription("Walk the kustomize resource tree and return the repo-relative path to the manifest declaring the named resource"),
+			mcp.WithString("kustomize_path",
+				mcp.Required(),
+				mcp.Description("Kustomization spec.path value (repo-relative directory, e.g. infra/overlays/hetzner/kubernetes/clusters/hetzner)"),
+			),
+			mcp.WithString("kind",
+				mcp.Required(),
+				mcp.Description("Kubernetes resource kind, e.g. Deployment"),
+			),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("Resource name"),
+			),
+			mcp.WithString("namespace",
+				mcp.Description("Resource namespace (default: default)"),
+			),
+			mcp.WithOutputSchema[git.ManifestPathResult](),
+		),
+		git.HandleResolveManifestPath(client, s, cfg.MaxOutputBytes),
 	)
 
 	return mcpServer

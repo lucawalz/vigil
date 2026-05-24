@@ -59,11 +59,13 @@ def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
                     )
 
 
-def write_trace(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
+def write_trace(
+    run_id: str, phase: str, messages: list[ModelMessage], partial: bool = False
+) -> None:
     runs_dir = os.environ.get("EVAL_RUNS_DIR", "eval/runs")
     os.makedirs(runs_dir, exist_ok=True)
     path = Path(runs_dir) / f"{run_id}_trace.jsonl"
     serialized = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
     with path.open("a") as f:
         for item in serialized:
-            f.write(json.dumps({"phase": phase, **item}) + "\n")
+            f.write(json.dumps({"phase": phase, "partial": partial, **item}) + "\n")

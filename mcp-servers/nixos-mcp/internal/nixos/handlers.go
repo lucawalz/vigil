@@ -2,10 +2,21 @@ package nixos
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+)
+
+const (
+	hintGetGenerations   = "verify the host is reachable via SSH and NixOS is running"
+	hintSwitchGeneration = "try get_generations to list available generations first"
+	hintRebuildTest      = "check get_nix_path to verify the NixOS flake configuration is accessible"
+	hintGetJournal       = "verify the systemd unit name with get_systemd_status first"
+	hintGetSystemdStatus = "try get_journal for the unit to see recent log output"
+	hintEtcdSnapshotSave = "verify the dest_path directory is writable and etcd is running on the host"
+	hintGetNixPath       = "verify the hostname matches a NixOS configuration in the flake"
+	hintDryBuild         = "check get_nix_path to verify the configuration path, then fix Nix syntax errors"
+	hintTriggerReconcile = "verify the host is reachable and the NixOS agent service is running"
 )
 
 func HandleGetGenerations(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
@@ -16,7 +27,7 @@ func HandleGetGenerations(client NixOSClient, maxBytes int) server.ToolHandlerFu
 		}
 		out, err := client.GetGenerations(ctx, host)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetGenerations: %v", err)), nil
+			return toolError("GetGenerations", err.Error(), hintGetGenerations), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -35,7 +46,7 @@ func HandleSwitchGeneration(client NixOSClient, maxBytes int) server.ToolHandler
 		}
 		out, err := client.SwitchGeneration(ctx, host, int(genFloat))
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("SwitchGeneration: %v", err)), nil
+			return toolError("SwitchGeneration", err.Error(), hintSwitchGeneration), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -49,7 +60,7 @@ func HandleRebuildTest(client NixOSClient, maxBytes int) server.ToolHandlerFunc 
 		}
 		out, err := client.RebuildTest(ctx, host)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("RebuildTest: %v", err)), nil
+			return toolError("RebuildTest", err.Error(), hintRebuildTest), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -72,7 +83,7 @@ func HandleGetJournal(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		out, err := client.GetJournal(ctx, host, unit, lines)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetJournal: %v", err)), nil
+			return toolError("GetJournal", err.Error(), hintGetJournal), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -91,7 +102,7 @@ func HandleGetSystemdStatus(client NixOSClient, maxBytes int) server.ToolHandler
 		}
 		out, err := client.GetSystemdStatus(ctx, host, unit)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetSystemdStatus: %v", err)), nil
+			return toolError("GetSystemdStatus", err.Error(), hintGetSystemdStatus), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -110,7 +121,7 @@ func HandleEtcdSnapshotSave(client NixOSClient, maxBytes int) server.ToolHandler
 		}
 		out, err := client.EtcdSnapshotSave(ctx, host, destPath)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("EtcdSnapshotSave: %v", err)), nil
+			return toolError("EtcdSnapshotSave", err.Error(), hintEtcdSnapshotSave), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -125,7 +136,7 @@ func HandleGetNixPath(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		out, err := client.GetNixPath(ctx, hostname)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetNixPath: %v", err)), nil
+			return toolError("GetNixPath", err.Error(), hintGetNixPath), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -140,7 +151,7 @@ func HandleDryBuild(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
 		}
 		out, err := client.DryBuild(ctx, host)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("DryBuild: %v", err)), nil
+			return toolError("DryBuild", err.Error(), hintDryBuild), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}
@@ -155,7 +166,7 @@ func HandleTriggerReconcile(client NixOSClient, maxBytes int) server.ToolHandler
 		}
 		out, err := client.TriggerReconcile(ctx, host)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("TriggerReconcile: %v", err)), nil
+			return toolError("TriggerReconcile", err.Error(), hintTriggerReconcile), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}

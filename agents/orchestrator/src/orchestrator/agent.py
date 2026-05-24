@@ -323,6 +323,11 @@ async def run_orchestration(
                 record = _abort_record("diagnosis_timeout")
                 _write_run_record(record)
                 return record
+            except UnexpectedModelBehavior as exc:
+                log.error("run %s aborted: retry_exhausted:diagnosis: %s", run_id, exc)
+                record = _abort_record(f"retry_exhausted:diagnosis: {exc}")
+                _write_run_record(record)
+                return record
 
             total_usage = total_usage + diag_usage
 
@@ -416,6 +421,7 @@ async def run_orchestration(
                             report,
                             source_branch=base_branch,
                             model=model,
+                            run_id=run_id,
                         )
                 except asyncio.TimeoutError:
                     log.error(
@@ -424,6 +430,13 @@ async def run_orchestration(
                         REMEDIATION_TIMEOUT_S,
                     )
                     record = _abort_record("remediation_timeout")
+                    _write_run_record(record)
+                    return record
+                except UnexpectedModelBehavior as exc:
+                    log.error(
+                        "run %s aborted: retry_exhausted:remediation: %s", run_id, exc
+                    )
+                    record = _abort_record(f"retry_exhausted:remediation: {exc}")
                     _write_run_record(record)
                     return record
 
@@ -441,6 +454,7 @@ async def run_orchestration(
                                         report,
                                         source_branch=base_branch,
                                         model=model,
+                                        run_id=run_id,
                                     )
                                 )
                                 wtch_task = tg.create_task(
@@ -459,6 +473,13 @@ async def run_orchestration(
                         REMEDIATION_TIMEOUT_S,
                     )
                     record = _abort_record("remediation_timeout")
+                    _write_run_record(record)
+                    return record
+                except UnexpectedModelBehavior as exc:
+                    log.error(
+                        "run %s aborted: retry_exhausted:remediation: %s", run_id, exc
+                    )
+                    record = _abort_record(f"retry_exhausted:remediation: {exc}")
                     _write_run_record(record)
                     return record
 

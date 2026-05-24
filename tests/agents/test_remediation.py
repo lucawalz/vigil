@@ -82,18 +82,17 @@ def test_remediation_prompt_references_affected_resources() -> None:
 
 def test_run_remediation_signature() -> None:
     sig = inspect.signature(run_remediation)
-    params = list(sig.parameters.values())
-    assert len(params) == 4
-    assert params[0].name == "deps"
-    assert params[1].name == "report"
-    ann_report = params[1].annotation
+    params = {p.name: p for p in sig.parameters.values()}
+    assert "deps" in params
+    assert "report" in params
+    ann_report = params["report"].annotation
     assert ann_report is DiagnosisReport or (
         isinstance(ann_report, str) and "DiagnosisReport" in ann_report
     )
-    assert params[2].name == "source_branch"
-    assert params[2].default == "main"
-    assert params[3].name == "model"
-    assert params[3].default is None
+    assert params["source_branch"].default == "main"
+    assert params["model"].default is None
+    assert "run_id" in params
+    assert params["run_id"].default == ""
 
 
 def test_remediation_result_fields_stable() -> None:
@@ -114,9 +113,9 @@ def test_remediation_result_fields_stable() -> None:
 def test_run_remediation_returns_tuple_with_usage() -> None:
     """Orchestrator needs usage tuple for token aggregation."""
     source = inspect.getsource(run_remediation)
-    assert "result.usage" in source
-    assert "result.all_messages()" in source
-    assert "return result.output, result.usage, result.all_messages()" in source
+    assert "agent_run.usage" in source
+    assert "agent_run.all_messages()" in source
+    assert "agent_run.result.output" in source
 
 
 def test_remediation_prompt_dispatch_branches() -> None:

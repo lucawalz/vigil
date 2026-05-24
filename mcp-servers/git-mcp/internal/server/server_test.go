@@ -28,10 +28,13 @@ func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, _ string) (string,
 func (f *fakeGitClient) ClosePR(_ context.Context, _ int) error                     { return nil }
 func (f *fakeGitClient) DeleteBranch(_ context.Context, _ string) error             { return nil }
 func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, error) { return "", nil }
+func (f *fakeGitClient) ResolveManifestPath(_ context.Context, _, _, _, _, _ string) (string, string, error) {
+	return "", "", nil
+}
 
 var _ git.GitClient = &fakeGitClient{}
 
-func TestServerRegisters12Tools(t *testing.T) {
+func TestServerRegisters13Tools(t *testing.T) {
 	cfg := &config.Config{
 		GitHubToken:    "tok",
 		RepoURL:        "https://github.com/lucawalz/vigil.git",
@@ -45,18 +48,19 @@ func TestServerRegisters12Tools(t *testing.T) {
 
 	tools := mcpSrv.ListTools()
 	want := map[string]bool{
-		"clone_repo":     true,
-		"create_branch":  true,
-		"write_manifest": true,
-		"commit_files":   true,
-		"push_branch":    true,
-		"create_pr":      true,
-		"get_pr_status":  true,
-		"wait_for_gate":  true,
-		"revert_commit":  true,
-		"close_pr":       true,
-		"delete_branch":  true,
-		"read_file":      true,
+		"clone_repo":            true,
+		"create_branch":         true,
+		"write_manifest":        true,
+		"commit_files":          true,
+		"push_branch":           true,
+		"create_pr":             true,
+		"get_pr_status":         true,
+		"wait_for_gate":         true,
+		"revert_commit":         true,
+		"close_pr":              true,
+		"delete_branch":         true,
+		"read_file":             true,
+		"resolve_manifest_path": true,
 	}
 	if len(tools) != len(want) {
 		t.Errorf("expected %d tools, got %d", len(want), len(tools))

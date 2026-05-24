@@ -8,6 +8,10 @@ import (
 	"github.com/lucawalz/vigil/mcp-servers/kubectl-mcp/internal/k8s"
 )
 
+type TextResult struct {
+	Text string `json:"text" jsonschema:"Output text"`
+}
+
 func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 	s := server.NewMCPServer("kubectl-mcp", "1.0.0",
 		server.WithToolCapabilities(true),
@@ -16,6 +20,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 	s.AddTool(
 		mcp.NewTool("get_nodes",
 			mcp.WithDescription("List all nodes and their Ready status"),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleGetNodes(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -27,6 +32,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Kubernetes namespace"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleGetPods(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -42,6 +48,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Pod name"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleDescribePod(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -64,6 +71,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithNumber("tail_lines",
 				mcp.Description("Number of lines to tail (default 100)"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleGetLogs(client, cfg.MaxOutputBytesLogs),
 	)
@@ -79,6 +87,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Deployment name"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleRolloutStatus(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -93,6 +102,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithString("field_selector",
 				mcp.Description("Field selector e.g. reason=FailedScheduling"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleGetEvents(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -104,6 +114,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Node name"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleDescribeNode(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -115,6 +126,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Node name"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleGetTaints(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -134,6 +146,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Resource name"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleDeleteResource(client, cfg.MaxOutputBytesDescribe),
 	)
@@ -153,6 +166,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Required(),
 				mcp.Description("Resource name"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		k8s.HandleGetResourceYaml(client, cfg.MaxOutputBytesDescribe),
 	)

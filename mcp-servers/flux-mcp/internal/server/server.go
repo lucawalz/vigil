@@ -8,6 +8,10 @@ import (
 	"github.com/lucawalz/vigil/mcp-servers/flux-mcp/internal/flux"
 )
 
+type TextResult struct {
+	Text string `json:"text" jsonschema:"Output text"`
+}
+
 func NewFluxServer(client flux.FluxClient, cfg *config.Config) *server.MCPServer {
 	mcpServer := server.NewMCPServer("flux-mcp", "1.0.0",
 		server.WithToolCapabilities(true),
@@ -20,6 +24,7 @@ func NewFluxServer(client flux.FluxClient, cfg *config.Config) *server.MCPServer
 			mcp.WithDescription("Trigger reconciliation of a Flux Kustomization"),
 			mcp.WithString("namespace", mcp.Required(), mcp.Description("Kubernetes namespace")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Kustomization name")),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		flux.HandleReconcileKustomization(client, maxBytes),
 	)
@@ -29,6 +34,7 @@ func NewFluxServer(client flux.FluxClient, cfg *config.Config) *server.MCPServer
 			mcp.WithDescription("Get status of a Flux Kustomization"),
 			mcp.WithString("namespace", mcp.Required(), mcp.Description("Kubernetes namespace")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Kustomization name")),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		flux.HandleGetKustomizationStatus(client, maxBytes),
 	)
@@ -38,6 +44,7 @@ func NewFluxServer(client flux.FluxClient, cfg *config.Config) *server.MCPServer
 			mcp.WithDescription("Get status of a Flux GitRepository source"),
 			mcp.WithString("namespace", mcp.Required(), mcp.Description("Kubernetes namespace")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("GitRepository name")),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		flux.HandleGetGitRepositoryStatus(client, maxBytes),
 	)

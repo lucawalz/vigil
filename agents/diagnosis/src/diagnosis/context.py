@@ -69,7 +69,7 @@ async def _resolve_source_branch(deps: DiagnosisDeps) -> str:
         data = yaml.safe_load(text)
         branch = (data.get("spec") or {}).get("ref", {}).get("branch", "")
         return branch or "main"
-    except Exception:
+    except (yaml.YAMLError, AttributeError):
         return "main"
 
 
@@ -96,7 +96,6 @@ def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
     try:
         data = yaml.safe_load(live_text)
         metadata = data.get("metadata") or {}
-        # Flux v2 puts tracking identifiers in labels; check annotations as fallback
         labels = metadata.get("labels") or {}
         annotations = metadata.get("annotations") or {}
         kust_name = labels.get("kustomize.toolkit.fluxcd.io/name") or annotations.get(
@@ -106,7 +105,7 @@ def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
             "kustomize.toolkit.fluxcd.io/namespace"
         ) or annotations.get("kustomize.toolkit.fluxcd.io/namespace")
         return kust_name, kust_ns
-    except Exception:
+    except (yaml.YAMLError, AttributeError):
         return None, None
 
 
@@ -146,7 +145,8 @@ async def _resolve_manifest_path_k8s(
     deps: DiagnosisDeps,
     fault: FaultEvent,
     live_text: str,
-    source_branch: str,
+    kind: str,
+    namespace: str,
     resource_name_override: str | None = None,
 ) -> str:
     kust_name, kust_ns = _extract_flux_annotations(live_text)
@@ -162,7 +162,8 @@ async def _resolve_manifest_path_k8s(
     kust_text = _extract_text(kust_result)
     try:
         kust_data = yaml.safe_load(kust_text)
-        spec_path = (kust_data.get("spec") or {}).get("path", "").lstrip("./")
+        spec_path = (kust_data.get("spec") or {}).get("path", "")
+        spec_path = spec_path.lstrip("./")
         if not spec_path:
             raise ManifestPathUnresolvable("Kustomization spec.path is absent")
     except (yaml.YAMLError, AttributeError) as exc:
@@ -170,23 +171,33 @@ async def _resolve_manifest_path_k8s(
             f"Kustomization YAML parse error: {exc}"
         ) from exc
 
-    resource_name = (
+    name = (
         resource_name_override
         if resource_name_override is not None
         else _extract_resource_name(fault)
     )
-    path = f"{spec_path}/{resource_name}.yaml"
     try:
-        await deps.git_mcp.direct_call_tool(
-            "read_file",
-            {"branch": source_branch, "path": path},
+        result = await deps.git_mcp.direct_call_tool(
+            "resolve_manifest_path",
+            {
+                "kustomize_path": spec_path,
+                "kind": kind,
+                "name": name,
+                "namespace": namespace,
+            },
         )
+        return _extract_text(result)
     except Exception as exc:
         logging.getLogger(__name__).warning(
-            "constructed manifest path %s not found in repo: %s", path, exc
+            "resolve_manifest_path failed for %s/%s under %s: %s",
+            kind,
+            name,
+            spec_path,
+            exc,
         )
-        raise ManifestPathUnresolvable(f"constructed path {path} not in repo") from exc
-    return path
+        raise ManifestPathUnresolvable(
+            f"{kind}/{name} not found under {spec_path}"
+        ) from exc
 
 
 def _extract_resource_name(fault: FaultEvent) -> str:
@@ -285,46 +296,33 @@ async def build_diagnosis_context(
     live_yaml = _extract_text(live_result)
 
     resource_name_override: str | None = None
+    resolved_kind = kind
     if kind == "Pod":
-        try:
-            dep_name, dep_yaml = await _walk_pod_to_deployment(
-                deps, live_yaml, namespace
-            )
-            live_yaml = dep_yaml
-            resource_name_override = dep_name
-        except ManifestPathUnresolvable:
-            pass
+        dep_name, dep_yaml = await _walk_pod_to_deployment(deps, live_yaml, namespace)
+        live_yaml = dep_yaml
+        resource_name_override = dep_name
+        resolved_kind = "Deployment"
+
+    manifest_path: str = await _resolve_manifest_path_k8s(
+        deps, fault, live_yaml, resolved_kind, namespace, resource_name_override
+    )
 
     try:
-        manifest_path: str | None = await _resolve_manifest_path_k8s(
-            deps, fault, live_yaml, source_branch, resource_name_override
+        declared_result = await deps.git_mcp.direct_call_tool(
+            "read_file",
+            {"branch": source_branch, "path": manifest_path},
         )
+        declared_yaml = _extract_text(declared_result)
+    except Exception as exc:
+        raise ManifestPathUnresolvable(
+            f"declared manifest unreadable at {manifest_path}: {exc}"
+        ) from exc
 
-        try:
-            declared_result = await deps.git_mcp.direct_call_tool(
-                "read_file",
-                {"branch": source_branch, "path": manifest_path},
-            )
-            declared_yaml = _extract_text(declared_result)
-        except Exception as exc:
-            raise ManifestPathUnresolvable(
-                f"declared manifest unreadable at {manifest_path}: {exc}"
-            ) from exc
-
-        diff = _compute_diff(live_yaml, declared_yaml)
-        return DiagnosisContext(
-            source_branch=source_branch,
-            manifest_path=manifest_path,
-            live_yaml=live_yaml,
-            declared_yaml=declared_yaml,
-            diff=diff,
-        )
-    except ManifestPathUnresolvable as exc:
-        logging.getLogger(__name__).warning("manifest path unresolvable: %s", exc)
-        return DiagnosisContext(
-            source_branch=source_branch,
-            manifest_path=None,
-            live_yaml=live_yaml,
-            declared_yaml="",
-            diff="",
-        )
+    diff = _compute_diff(live_yaml, declared_yaml)
+    return DiagnosisContext(
+        source_branch=source_branch,
+        manifest_path=manifest_path,
+        live_yaml=live_yaml,
+        declared_yaml=declared_yaml,
+        diff=diff,
+    )
