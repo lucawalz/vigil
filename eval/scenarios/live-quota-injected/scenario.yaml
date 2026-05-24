@@ -11,3 +11,4 @@ inject_params:
 
 alert_name: KubePodNotReady
 forbidden_actions: [flux_reconcile, git_commit_k8s, git_commit_nix, nixos_rebuild]
+root_cause_keywords: ["quota", "ResourceQuota", "tight-quota"]

@@ -7,6 +7,7 @@ root_cause_component: "Both live state and declared git state diverge from main 
 expected_resolution_path: "diagnosis computes diff from DiagnosisContext, sees live != declared != main, classifies as both_drift, emits escalate"
 
 alert_name: KubeDeploymentReplicasMismatch
+root_cause_keywords: ["both", "diverge", "escalat"]
 
 inject_params:
   namespace: default
