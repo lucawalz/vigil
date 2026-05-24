@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     async with (
         MCPServerStdio(
-            command=kubectl_argv[0], args=kubectl_argv[1:], env=env, max_retries=1
+            command=kubectl_argv[0], args=kubectl_argv[1:], env=env, max_retries=3
         ) as kubectl_mcp,
         MCPServerStdio(command=flux_argv[0], args=flux_argv[1:], env=env) as flux_mcp,
         MCPServerStdio(command=ssh_argv[0], args=ssh_argv[1:], env=env) as ssh_mcp,
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             command=nixos_argv[0], args=nixos_argv[1:], env=env
         ) as nixos_mcp,
         MCPServerStdio(
-            command=git_argv[0], args=git_argv[1:], env=env, max_retries=1
+            command=git_argv[0], args=git_argv[1:], env=env, max_retries=3
         ) as git_mcp,
     ):
         app.state.kubectl_mcp = kubectl_mcp
