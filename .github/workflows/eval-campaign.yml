@@ -38,18 +38,30 @@ on:
         default: false
 
 jobs:
-  run-scenarios:
+  setup:
     runs-on: ubuntu-latest
-    if: "(matrix.group == 'k8s' && !inputs.skip_k8s) || (matrix.group == 'os' && !inputs.skip_os)"
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - id: build
+        run: |
+          groups='[]'
+          if [ '${{ inputs.skip_k8s }}' != 'true' ]; then
+            groups=$(echo "$groups" | jq -c '. + [{"group":"k8s","scenarios":"k8s-1g k8s-2g k8s-3g k8s-4g k8s-5g live-quota-injected deceptive-2"}]')
+          fi
+          if [ '${{ inputs.skip_os }}' != 'true' ]; then
+            groups=$(echo "$groups" | jq -c '. + [{"group":"os","scenarios":"os-1 os-1g os-drift-sysctl os-stale-generation disk-pressure"}]')
+          fi
+          echo "matrix=$(echo "$groups" | jq -c '{include:.}')" >> "$GITHUB_OUTPUT"
+
+  run-scenarios:
+    needs: setup
+    if: ${{ needs.setup.outputs.matrix != '{"include":[]}' }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.concurrency || '4') }}
-      matrix:
-        include:
-          - group: k8s
-            scenarios: "k8s-1g k8s-2g k8s-3g k8s-4g k8s-5g live-quota-injected deceptive-2"
-          - group: os
-            scenarios: "os-1 os-1g os-drift-sysctl os-stale-generation disk-pressure"
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     env:
       TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
       TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
