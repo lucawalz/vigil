@@ -69,7 +69,7 @@ func walkKustomize(cloneDir, dir, kind, namespace, name string, candidates *[]re
 
 	kPath := findKustomizationFile(dir)
 	if kPath == "" {
-		return scanYAMLDir(cloneDir, dir, kind, namespace, name, candidates)
+		return scanYAMLDir(cloneDir, dir, kind, namespace, name, candidates, depth)
 	}
 
 	resources, err := readKustomizationResources(kPath)
@@ -175,16 +175,27 @@ func checkYAMLFile(cloneDir, absPath, wantKind, wantNS, wantName string, candida
 	return "", errNotFound
 }
 
-func scanYAMLDir(cloneDir, dir, kind, namespace, name string, candidates *[]resourceCandidate) (string, error) {
+func scanYAMLDir(cloneDir, dir, kind, namespace, name string, candidates *[]resourceCandidate, depth int) (string, error) {
+	if depth > maxKustomizeDepth {
+		return "", fmt.Errorf("kustomize walk: max depth %d exceeded at %s", maxKustomizeDepth, dir)
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("scan dir %s: %w", dir, err)
 	}
 	for _, e := range entries {
-		if e.IsDir() || !isYAMLFile(e.Name()) {
+		absPath := filepath.Join(dir, e.Name())
+		if e.IsDir() {
+			if match, walkErr := walkKustomize(cloneDir, absPath, kind, namespace, name, candidates, depth+1); walkErr == nil {
+				return match, nil
+			} else if !errors.Is(walkErr, errNotFound) {
+				return "", walkErr
+			}
 			continue
 		}
-		absPath := filepath.Join(dir, e.Name())
+		if !isYAMLFile(e.Name()) {
+			continue
+		}
 		if match, checkErr := checkYAMLFile(cloneDir, absPath, kind, namespace, name, candidates); checkErr == nil {
 			return match, nil
 		}
