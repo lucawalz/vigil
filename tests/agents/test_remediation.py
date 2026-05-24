@@ -31,7 +31,7 @@ def test_run_remediation_is_coroutine() -> None:
 def test_run_remediation_toolsets_exclude_ssh() -> None:
     """Remediation scope is git+flux+nixos only; no ssh or kubectl."""
     source = inspect.getsource(run_remediation)
-    assert "toolsets=[deps.git_mcp, deps.flux_mcp, deps.nixos_mcp]" in source
+    assert "toolsets=[git_toolset, flux_toolset, nixos_toolset]" in source
     assert "ssh_mcp" not in source
     assert "kubectl_mcp" not in source
 
