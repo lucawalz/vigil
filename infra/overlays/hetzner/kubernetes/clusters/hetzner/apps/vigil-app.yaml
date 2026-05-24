@@ -16,10 +16,12 @@ spec:
         app: vigil-app
     spec:
       containers:
-        - name: vigil-app
-          image: nginx:stable
-          resources:
-            requests:
-              memory: "64Mi"
-            limits:
-              memory: "128Mi"
+      - name: vigil-app
+        image: nginx:stable
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+      nodeSelector:
+        kubernetes.io/hostname: nonexistent-bogus-node
