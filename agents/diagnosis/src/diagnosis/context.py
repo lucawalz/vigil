@@ -186,6 +186,8 @@ async def _resolve_manifest_path_k8s(
                 "namespace": namespace,
             },
         )
+        if isinstance(result, dict) and "path" in result:
+            return result["path"]
         return _extract_text(result)
     except Exception as exc:
         logging.getLogger(__name__).warning(
