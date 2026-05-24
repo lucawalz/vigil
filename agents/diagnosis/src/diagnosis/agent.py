@@ -200,8 +200,7 @@ async def run_diagnosis(
     git_readonly = FilteredToolset(
         deps.git_mcp,
         filter_func=lambda _ctx, tool_def: (
-            tool_def.name not in _git_write_tools
-            and tool_def.name not in blocked_tools
+            tool_def.name not in _git_write_tools and tool_def.name not in blocked_tools
         ),
     )
     flux_readonly = FilteredToolset(

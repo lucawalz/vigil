@@ -327,7 +327,10 @@ async def run_orchestration(
             try:
                 async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
                     report, diag_usage, diag_msgs = await run_diagnosis(
-                        diagnosis_deps, event, diagnosis_context, model=model,
+                        diagnosis_deps,
+                        event,
+                        diagnosis_context,
+                        model=model,
                         blocked_tools=blocked,
                     )
             except asyncio.TimeoutError:

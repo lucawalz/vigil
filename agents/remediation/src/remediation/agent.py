@@ -167,15 +167,18 @@ async def run_remediation(
 
     git_toolset = (
         FilteredToolset(deps.git_mcp, filter_func=lambda _ctx, td: _allow(td.name))
-        if blocked_tools else deps.git_mcp
+        if blocked_tools
+        else deps.git_mcp
     )
     flux_toolset = (
         FilteredToolset(deps.flux_mcp, filter_func=lambda _ctx, td: _allow(td.name))
-        if blocked_tools else deps.flux_mcp
+        if blocked_tools
+        else deps.flux_mcp
     )
     nixos_toolset = (
         FilteredToolset(deps.nixos_mcp, filter_func=lambda _ctx, td: _allow(td.name))
-        if blocked_tools else deps.nixos_mcp
+        if blocked_tools
+        else deps.nixos_mcp
     )
 
     constraint_block = ""
