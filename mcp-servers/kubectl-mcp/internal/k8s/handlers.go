@@ -103,7 +103,7 @@ func HandleRolloutStatus(client K8sClient, maxBytes int) server.ToolHandlerFunc 
 		}
 		output, err := client.RolloutStatus(ctx, ns, deployment)
 		if err != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("RolloutStatus: %v", err)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("RolloutStatus: %v", err)), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
@@ -174,7 +174,7 @@ func HandleDeleteResource(client K8sClient, maxBytes int) server.ToolHandlerFunc
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("DeleteResource: %v", err)), nil
 		}
-		return mcp.NewToolResultText(output), nil
+		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
 }
 
