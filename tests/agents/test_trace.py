@@ -6,8 +6,6 @@ import json
 import logging
 import os
 
-import pytest
-
 from common.trace import _TRUNC, _t, log_messages, write_trace
 from pydantic_ai.messages import (
     ModelRequest,
@@ -142,7 +140,11 @@ def test_write_trace_partial_flag(tmp_path):
 
     trace_file = tmp_path / f"{run_id}_trace.jsonl"
     assert trace_file.exists(), "trace file not written"
-    lines = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
+    lines = [
+        json.loads(raw)
+        for raw in trace_file.read_text().splitlines()
+        if raw.strip()
+    ]
     assert lines, "trace file is empty"
     assert all(line.get("partial") is True for line in lines), (
         f"expected partial=true in all lines, got: {lines}"
@@ -162,7 +164,11 @@ def test_write_trace_full_has_partial_false(tmp_path):
         os.environ.update(old)
 
     trace_file = tmp_path / f"{run_id}_trace.jsonl"
-    lines = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
+    lines = [
+        json.loads(raw)
+        for raw in trace_file.read_text().splitlines()
+        if raw.strip()
+    ]
     assert all(line.get("partial") is False for line in lines), (
         f"expected partial=false by default, got: {lines}"
     )

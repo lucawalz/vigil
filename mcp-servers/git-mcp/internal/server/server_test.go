@@ -48,18 +48,18 @@ func TestServerRegisters13Tools(t *testing.T) {
 
 	tools := mcpSrv.ListTools()
 	want := map[string]bool{
-		"clone_repo":     true,
-		"create_branch":  true,
-		"write_manifest": true,
-		"commit_files":   true,
-		"push_branch":    true,
-		"create_pr":      true,
-		"get_pr_status":  true,
-		"wait_for_gate":  true,
-		"revert_commit":  true,
-		"close_pr":       true,
-		"delete_branch":          true,
-		"read_file":              true,
+		"clone_repo":            true,
+		"create_branch":         true,
+		"write_manifest":        true,
+		"commit_files":          true,
+		"push_branch":           true,
+		"create_pr":             true,
+		"get_pr_status":         true,
+		"wait_for_gate":         true,
+		"revert_commit":         true,
+		"close_pr":              true,
+		"delete_branch":         true,
+		"read_file":             true,
 		"resolve_manifest_path": true,
 	}
 	if len(tools) != len(want) {

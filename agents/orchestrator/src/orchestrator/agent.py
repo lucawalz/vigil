@@ -433,7 +433,9 @@ async def run_orchestration(
                     _write_run_record(record)
                     return record
                 except UnexpectedModelBehavior as exc:
-                    log.error("run %s aborted: retry_exhausted:remediation: %s", run_id, exc)
+                    log.error(
+                        "run %s aborted: retry_exhausted:remediation: %s", run_id, exc
+                    )
                     record = _abort_record(f"retry_exhausted:remediation: {exc}")
                     _write_run_record(record)
                     return record
@@ -474,7 +476,9 @@ async def run_orchestration(
                     _write_run_record(record)
                     return record
                 except UnexpectedModelBehavior as exc:
-                    log.error("run %s aborted: retry_exhausted:remediation: %s", run_id, exc)
+                    log.error(
+                        "run %s aborted: retry_exhausted:remediation: %s", run_id, exc
+                    )
                     record = _abort_record(f"retry_exhausted:remediation: {exc}")
                     _write_run_record(record)
                     return record
