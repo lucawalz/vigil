@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from common import trace
 from common.provider import build_model
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
@@ -206,7 +208,7 @@ async def run_diagnosis(
         f"  declared_yaml:\n{context.declared_yaml}\n"
         f"  diff:\n{context.diff}"
     )
-    result = await diagnosis_agent.run(
+    async with diagnosis_agent.iter(
         user_message,
         deps=deps,
         toolsets=[kubectl_readonly, nixos_readonly, git_readonly, flux_readonly],
@@ -214,5 +216,13 @@ async def run_diagnosis(
             request_limit=int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
         ),
         model=model,
-    )
-    return result.output, result.usage, result.all_messages()
+    ) as agent_run:
+        try:
+            async for _ in agent_run:
+                pass
+        except UnexpectedModelBehavior:
+            partial_msgs = agent_run.all_messages()
+            if partial_msgs:
+                trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
+            raise
+    return agent_run.result.output, agent_run.usage, agent_run.all_messages()

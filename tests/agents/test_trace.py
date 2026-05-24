@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 
-from common.trace import _TRUNC, _t, log_messages
+import pytest
+
+from common.trace import _TRUNC, _t, log_messages, write_trace
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -122,3 +126,43 @@ def test_empty_text_part_not_logged(caplog):
     with caplog.at_level(logging.INFO, logger="vigil.agent.trace"):
         log_messages("run1", "diagnosis", msgs)
     assert not any("model:" in r.message for r in caplog.records)
+
+
+def test_write_trace_partial_flag(tmp_path):
+    msgs = [_tool_call_msg("read_file", '{"branch":"main","path":"k8s/app.yaml"}')]
+    run_id = "k8s-4g_partial_test"
+    monkeyenv = {**os.environ, "EVAL_RUNS_DIR": str(tmp_path)}
+    old = os.environ.copy()
+    os.environ.update(monkeyenv)
+    try:
+        write_trace(run_id, "diagnosis", msgs, partial=True)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+
+    trace_file = tmp_path / f"{run_id}_trace.jsonl"
+    assert trace_file.exists(), "trace file not written"
+    lines = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
+    assert lines, "trace file is empty"
+    assert all(line.get("partial") is True for line in lines), (
+        f"expected partial=true in all lines, got: {lines}"
+    )
+    assert all(line.get("phase") == "diagnosis" for line in lines)
+
+
+def test_write_trace_full_has_partial_false(tmp_path):
+    msgs = [_tool_call_msg("get_pods", '{"namespace":"default"}')]
+    run_id = "k8s-1g_full_test"
+    old = os.environ.copy()
+    os.environ["EVAL_RUNS_DIR"] = str(tmp_path)
+    try:
+        write_trace(run_id, "remediation", msgs)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+
+    trace_file = tmp_path / f"{run_id}_trace.jsonl"
+    lines = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
+    assert all(line.get("partial") is False for line in lines), (
+        f"expected partial=false by default, got: {lines}"
+    )

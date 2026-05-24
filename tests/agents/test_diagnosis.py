@@ -70,9 +70,9 @@ def test_run_diagnosis_signature_accepts_diagnosis_deps() -> None:
 def test_run_diagnosis_returns_tuple_with_usage() -> None:
     """Orchestrator needs usage tuple for token aggregation."""
     source = inspect.getsource(run_diagnosis)
-    assert "result.usage" in source
-    assert "result.all_messages()" in source
-    assert "return result.output, result.usage, result.all_messages()" in source
+    assert "agent_run.usage" in source
+    assert "agent_run.all_messages()" in source
+    assert "agent_run.result.output" in source
 
 
 def test_diagnosis_system_prompt_contains_action_selection_rule() -> None:

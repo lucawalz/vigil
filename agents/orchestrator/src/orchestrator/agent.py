@@ -421,6 +421,7 @@ async def run_orchestration(
                             report,
                             source_branch=base_branch,
                             model=model,
+                            run_id=run_id,
                         )
                 except asyncio.TimeoutError:
                     log.error(
@@ -451,6 +452,7 @@ async def run_orchestration(
                                         report,
                                         source_branch=base_branch,
                                         model=model,
+                                        run_id=run_id,
                                     )
                                 )
                                 wtch_task = tg.create_task(

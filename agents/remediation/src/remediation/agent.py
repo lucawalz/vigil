@@ -9,9 +9,11 @@ Tool scope: git, flux, and nixos MCP clients only.
 
 from __future__ import annotations
 
+from common import trace
 from common.provider import build_model
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.usage import Usage, UsageLimits
@@ -147,6 +149,7 @@ async def run_remediation(
     report: DiagnosisReport,
     source_branch: str = "main",
     model: OpenAIChatModel | None = None,
+    run_id: str = "",
 ) -> tuple[RemediationResult, Usage, list[ModelMessage]]:
     if source_branch == "main":
         refused = RemediationResult(
@@ -164,11 +167,20 @@ async def run_remediation(
         f"recommended_action = {report.recommended_action}. "
         f"source_branch = {source_branch}."
     )
-    result = await remediation_agent.run(
+    async with remediation_agent.iter(
         task,
         deps=deps,
         toolsets=[deps.git_mcp, deps.flux_mcp, deps.nixos_mcp],
         usage_limits=UsageLimits(request_limit=20),
         model=model,
-    )
-    return result.output, result.usage, result.all_messages()
+    ) as agent_run:
+        try:
+            async for _ in agent_run:
+                pass
+        except UnexpectedModelBehavior:
+            if run_id:
+                partial_msgs = agent_run.all_messages()
+                if partial_msgs:
+                    trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+            raise
+    return agent_run.result.output, agent_run.usage, agent_run.all_messages()
