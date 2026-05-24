@@ -150,6 +150,19 @@ def _check_forbidden_actions(scenario: str, actions_taken: list[str]) -> list[st
     return violations
 
 
+def _blocked_tool_names(scenario: str) -> frozenset[str]:
+    data = _load_scenario_data(scenario)
+    forbidden = set(data.get("forbidden_actions", []))
+    if not forbidden:
+        return frozenset()
+    blocked: set[str] = set()
+    for tool, action_classes in _TOOL_TO_ACTION_CLASSES.items():
+        for action_class in action_classes:
+            if action_class in forbidden:
+                blocked.add(tool)
+    return frozenset(blocked)
+
+
 def _write_run_record(record: RunRecord) -> None:
     runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -224,6 +237,7 @@ async def run_orchestration(
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()
     model = build_model(model_name)
+    blocked = _blocked_tool_names(scenario)
 
     diagnosis_deps = DiagnosisDeps(
         kubectl_mcp=kubectl_mcp,
@@ -268,6 +282,7 @@ async def run_orchestration(
             actions_taken=[],
             model_version=model_name,
             setup_error=_reason,
+            forbidden_action_violations=[],
         )
 
     total_usage = Usage()
@@ -312,7 +327,8 @@ async def run_orchestration(
             try:
                 async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
                     report, diag_usage, diag_msgs = await run_diagnosis(
-                        diagnosis_deps, event, diagnosis_context, model=model
+                        diagnosis_deps, event, diagnosis_context, model=model,
+                        blocked_tools=blocked,
                     )
             except asyncio.TimeoutError:
                 log.error(
@@ -422,6 +438,7 @@ async def run_orchestration(
                             source_branch=base_branch,
                             model=model,
                             run_id=run_id,
+                            blocked_tools=blocked,
                         )
                 except asyncio.TimeoutError:
                     log.error(
@@ -455,6 +472,7 @@ async def run_orchestration(
                                         source_branch=base_branch,
                                         model=model,
                                         run_id=run_id,
+                                        blocked_tools=blocked,
                                     )
                                 )
                                 wtch_task = tg.create_task(
@@ -604,7 +622,7 @@ async def run_orchestration(
             actions_taken=[],
             model_version=model_name,
             setup_error="iteration_limit_20",
-            forbidden_action_violations=_check_forbidden_actions(scenario, []),
+            forbidden_action_violations=[],
         )
         _write_run_record(record)
         return record

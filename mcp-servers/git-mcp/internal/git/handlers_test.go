@@ -27,26 +27,29 @@ const (
 )
 
 type fakeGitClient struct {
-	cloneDir          string
-	gotBaseBranch     string
-	gotBase           string
-	commitSHA         string
-	prNumber          int
-	prState           string
-	prMerged          bool
-	prMergeSHA        string
-	revertSHA         string
-	lastRevertBranch  string
-	err               error
-	getPRCalls        int
-	autoMergeErr      error
-	autoMergeCalls    int
-	closePRErr        error
-	closePRCalls      int
-	deleteBranchErr   error
-	deleteBranchCalls int
-	readFileOut       string
-	readFileErr       error
+	cloneDir              string
+	gotBaseBranch         string
+	gotBase               string
+	commitSHA             string
+	prNumber              int
+	prState               string
+	prMerged              bool
+	prMergeSHA            string
+	revertSHA             string
+	lastRevertBranch      string
+	err                   error
+	getPRCalls            int
+	autoMergeErr          error
+	autoMergeCalls        int
+	closePRErr            error
+	closePRCalls          int
+	deleteBranchErr       error
+	deleteBranchCalls     int
+	readFileOut           string
+	readFileErr           error
+	checkRunFailed        bool
+	checkRunConclusion    string
+	checkRunErr           error
 }
 
 var _ git.GitClient = &fakeGitClient{}
@@ -108,6 +111,10 @@ func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, err
 
 func (f *fakeGitClient) ResolveManifestPath(_ context.Context, _, _, _, _, _ string) (string, string, error) {
 	return f.readFileOut, "", f.readFileErr
+}
+
+func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, string, error) {
+	return f.checkRunFailed, f.checkRunConclusion, f.checkRunErr
 }
 
 type fakeSessionState struct {
@@ -1085,6 +1092,39 @@ func TestWaitForGateHandler_MissingArgument(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected IsError=true for missing pr_number")
+	}
+}
+
+func TestWaitForGateHandler_GateCheckFailed(t *testing.T) {
+	fake := &fakeGitClient{
+		prState:            "open",
+		prMerged:           false,
+		checkRunFailed:     true,
+		checkRunConclusion: "failure",
+	}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("wait_for_gate",
+		mcp.WithNumber("pr_number", mcp.Required()),
+		mcp.WithNumber("timeout_seconds"),
+	)
+	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
+
+	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
+		"pr_number":       float64(42),
+		"timeout_seconds": float64(30),
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true when gate check failed")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "gate check failed") {
+		t.Errorf("expected 'gate check failed' in error, got: %s", text)
+	}
+	if !strings.Contains(text, "failure") {
+		t.Errorf("expected conclusion in error, got: %s", text)
 	}
 }
 

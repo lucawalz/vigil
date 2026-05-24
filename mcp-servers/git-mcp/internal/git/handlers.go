@@ -338,6 +338,12 @@ func HandleWaitForGate(client GitClient, state SessionState, maxBytes int, pollI
 				if prState == "closed" {
 					return toolError("HandleWaitForGate", "PR closed without merge", hintWaitForGate), nil
 				}
+				gateFailed, conclusion, checkErr := client.GetCheckRunStatus(ctx, prNumber)
+				if checkErr == nil && gateFailed {
+					return toolError("HandleWaitForGate",
+						fmt.Sprintf("gate check failed (conclusion=%s)", conclusion),
+						hintWaitForGate), nil
+				}
 			}
 		}
 	}

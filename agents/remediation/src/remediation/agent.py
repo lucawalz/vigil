@@ -16,6 +16,7 @@ from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .models import RemediationDeps, RemediationResult
@@ -150,6 +151,7 @@ async def run_remediation(
     source_branch: str = "main",
     model: OpenAIChatModel | None = None,
     run_id: str = "",
+    blocked_tools: frozenset[str] = frozenset(),
 ) -> tuple[RemediationResult, Usage, list[ModelMessage]]:
     if source_branch == "main":
         refused = RemediationResult(
@@ -160,17 +162,41 @@ async def run_remediation(
         )
         return refused, Usage(), []
 
+    def _allow(tool_name: str) -> bool:
+        return tool_name not in blocked_tools
+
+    git_toolset = (
+        FilteredToolset(deps.git_mcp, filter_func=lambda _ctx, td: _allow(td.name))
+        if blocked_tools else deps.git_mcp
+    )
+    flux_toolset = (
+        FilteredToolset(deps.flux_mcp, filter_func=lambda _ctx, td: _allow(td.name))
+        if blocked_tools else deps.flux_mcp
+    )
+    nixos_toolset = (
+        FilteredToolset(deps.nixos_mcp, filter_func=lambda _ctx, td: _allow(td.name))
+        if blocked_tools else deps.nixos_mcp
+    )
+
+    constraint_block = ""
+    if blocked_tools:
+        constraint_block = (
+            f" These tools are blocked for this run and must not be called: "
+            f"{', '.join(sorted(blocked_tools))}."
+            f" If remediation requires a blocked tool, return success=False immediately."
+        )
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
         f"{report.model_dump_json()}. "
         f"affected_resources = {report.affected_resources}. "
         f"recommended_action = {report.recommended_action}. "
         f"source_branch = {source_branch}."
+        f"{constraint_block}"
     )
     async with remediation_agent.iter(
         task,
         deps=deps,
-        toolsets=[deps.git_mcp, deps.flux_mcp, deps.nixos_mcp],
+        toolsets=[git_toolset, flux_toolset, nixos_toolset],
         usage_limits=UsageLimits(request_limit=20),
         model=model,
     ) as agent_run:

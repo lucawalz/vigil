@@ -42,6 +42,7 @@ type GitClient interface {
 	CreatePR(ctx context.Context, title, head, base, body string) (prNumber int, err error)
 	EnableAutoMerge(ctx context.Context, prNumber int) error
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
+	GetCheckRunStatus(ctx context.Context, prNumber int) (gateFailed bool, conclusion string, err error)
 	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (revertSHA string, err error)
 	ClosePR(ctx context.Context, prNumber int) error
 	DeleteBranch(ctx context.Context, branch string) error
@@ -268,6 +269,37 @@ func (c *realGitClient) GetPRStatus(ctx context.Context, prNumber int) (string, 
 		return "", false, "", fmt.Errorf("get_pr_status: %w", err)
 	}
 	return pr.GetState(), pr.GetMerged(), pr.GetMergeCommitSHA(), nil
+}
+
+const remediationGateCheckName = "Remediation Gate / remediation-gate"
+
+var gateFailedConclusions = map[string]bool{
+	"failure":         true,
+	"cancelled":       true,
+	"timed_out":       true,
+	"action_required": true,
+}
+
+func (c *realGitClient) GetCheckRunStatus(ctx context.Context, prNumber int) (bool, string, error) {
+	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
+	if err != nil {
+		return false, "", fmt.Errorf("get_check_run_status: get pr: %w", err)
+	}
+	headSHA := pr.GetHead().GetSHA()
+	if headSHA == "" {
+		return false, "", nil
+	}
+	runs, _, err := c.gh.Checks.ListCheckRunsForRef(ctx, c.owner, c.repo, headSHA, &gogithub.ListCheckRunsOptions{})
+	if err != nil {
+		return false, "", fmt.Errorf("get_check_run_status: list runs: %w", err)
+	}
+	for _, run := range runs.CheckRuns {
+		if run.GetName() == remediationGateCheckName {
+			conclusion := run.GetConclusion()
+			return gateFailedConclusions[conclusion], conclusion, nil
+		}
+	}
+	return false, "", nil
 }
 
 func (c *realGitClient) ClosePR(ctx context.Context, prNumber int) error {

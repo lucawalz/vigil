@@ -31,6 +31,9 @@ func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, err
 func (f *fakeGitClient) ResolveManifestPath(_ context.Context, _, _, _, _, _ string) (string, string, error) {
 	return "", "", nil
 }
+func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, string, error) {
+	return false, "", nil
+}
 
 var _ git.GitClient = &fakeGitClient{}
 

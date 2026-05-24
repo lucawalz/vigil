@@ -176,6 +176,7 @@ async def run_diagnosis(
     fault: FaultEvent,
     context: DiagnosisContext,
     model: OpenAIChatModel | None = None,
+    blocked_tools: frozenset[str] = frozenset(),
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
     _nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
     # Blocks delete_resource; expand if kubectl-mcp gains additional write tools.
@@ -184,20 +185,40 @@ async def run_diagnosis(
     _flux_write_tools = frozenset({"reconcile_kustomization"})
     kubectl_readonly = FilteredToolset(
         deps.kubectl_mcp,
-        filter_func=lambda _ctx, tool_def: tool_def.name not in _kubectl_write_tools,
+        filter_func=lambda _ctx, tool_def: (
+            tool_def.name not in _kubectl_write_tools
+            and tool_def.name not in blocked_tools
+        ),
     )
     nixos_readonly = FilteredToolset(
         deps.nixos_mcp,
-        filter_func=lambda _ctx, tool_def: tool_def.name not in _nixos_write_tools,
+        filter_func=lambda _ctx, tool_def: (
+            tool_def.name not in _nixos_write_tools
+            and tool_def.name not in blocked_tools
+        ),
     )
     git_readonly = FilteredToolset(
         deps.git_mcp,
-        filter_func=lambda _ctx, tool_def: tool_def.name not in _git_write_tools,
+        filter_func=lambda _ctx, tool_def: (
+            tool_def.name not in _git_write_tools
+            and tool_def.name not in blocked_tools
+        ),
     )
     flux_readonly = FilteredToolset(
         deps.flux_mcp,
-        filter_func=lambda _ctx, tool_def: tool_def.name not in _flux_write_tools,
+        filter_func=lambda _ctx, tool_def: (
+            tool_def.name not in _flux_write_tools
+            and tool_def.name not in blocked_tools
+        ),
     )
+    constraint_block = ""
+    if blocked_tools:
+        constraint_block = (
+            f"\n\nScenario constraint: these tools are unavailable for this run: "
+            f"{', '.join(sorted(blocked_tools))}. "
+            f"If your recommended action requires one of these tools, "
+            f"set recommended_action=escalate."
+        )
     user_message = (
         f"Diagnose fault.\n\n"
         f"Fault: {fault.model_dump_json()}\n\n"
@@ -207,6 +228,7 @@ async def run_diagnosis(
         f"  live_yaml:\n{context.live_yaml}\n"
         f"  declared_yaml:\n{context.declared_yaml}\n"
         f"  diff:\n{context.diff}"
+        f"{constraint_block}"
     )
     async with diagnosis_agent.iter(
         user_message,
