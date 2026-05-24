@@ -183,7 +183,8 @@ async def run_remediation(
         constraint_block = (
             f" These tools are blocked for this run and must not be called: "
             f"{', '.join(sorted(blocked_tools))}."
-            f" If remediation requires a blocked tool, return success=False immediately."
+            f" If remediation requires a blocked tool,"
+            f" return success=False immediately."
         )
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
