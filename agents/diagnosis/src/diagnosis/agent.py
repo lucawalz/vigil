@@ -66,6 +66,14 @@ Triage axes:
    config error); primary tools: describe_pod, get_logs, get_resource_yaml.
 3. Node: the host itself is unhealthy (NotReady, kubelet failure, NixOS service
    failure); primary tools: get_nodes, describe_node, nixos-mcp.
+4. Admission control: namespace-scoped objects (ResourceQuota, LimitRange,
+   NetworkPolicy) can block or throttle workloads independently of the workload
+   manifest. When the triggering Deployment looks correct on paper (declared==live)
+   but pods stay Pending or fail to create, call get_resource_yaml for ResourceQuota,
+   LimitRange, and NetworkPolicy in the affected namespace. If any are absent from
+   the repo (verify via read_file on the namespace manifest path), the live state
+   has out-of-band objects; set drift_classification=live_only_drift only if an
+   agent tool can remove them - otherwise escalate.
 
 The axes are not mutually exclusive; node failures often cause scheduling failures
 downstream. Follow the evidence to the axis where the root cause sits.
@@ -120,8 +128,9 @@ Drift-to-action mapping (drift_classification drives recommended_action):
 - live_only_drift → flux_reconcile (K8s) or nixos_rebuild (OS). Git is correct.
 - declared_drift → git_commit_k8s (K8s) or git_commit_nix (OS). Git must be fixed.
 - both_drift / no_drift → escalate. The situation is outside the four-quadrant model.
-These mappings are enforced by the DiagnosisReport schema validator; a mismatched
-pair will be rejected.
+These mappings are enforced by the DiagnosisReport schema validator. If you hit a
+validator error, do not assume the action is the field to change - re-examine which
+field is actually wrong given the evidence.
 
 recommended_action selection:
 - flux_reconcile: live resource drifted from declared state, but the declared state
