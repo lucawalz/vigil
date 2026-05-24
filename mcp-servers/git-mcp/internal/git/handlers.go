@@ -17,7 +17,7 @@ import (
 const (
 	branchPrefix                     = "remediation/run-"
 	pollIntervalSeconds              = 15
-	defaultWaitForGateTimeoutSeconds = 540
+	defaultWaitForGateTimeoutSeconds = 480
 )
 
 const DefaultPollInterval = pollIntervalSeconds * time.Second

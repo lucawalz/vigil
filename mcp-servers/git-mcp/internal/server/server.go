@@ -172,7 +172,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Pull request number"),
 			),
 			mcp.WithNumber("timeout_seconds",
-				mcp.Description("Default 540"),
+				mcp.Description("Default 480"),
 			),
 		),
 		git.HandleWaitForGate(client, s, cfg.MaxOutputBytes, git.DefaultPollInterval),

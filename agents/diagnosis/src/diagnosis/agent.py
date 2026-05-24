@@ -11,10 +11,7 @@ from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
 from .context import DiagnosisContext
-from .manifest_paths import (
-    ManifestPathError,
-    lookup_os_manifest_path as _lookup_os_manifest_path,
-)
+from .manifest_paths import lookup_os_manifest_path as _lookup_os_manifest_path
 from .models import DiagnosisDeps, DiagnosisReport
 
 if TYPE_CHECKING:
@@ -169,10 +166,7 @@ diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
 @diagnosis_agent.tool_plain
 def lookup_os_manifest_path(hostname: str) -> str:
     """Return the repo-relative NixOS config path for the given hostname."""
-    try:
-        return _lookup_os_manifest_path(hostname)
-    except ManifestPathError as exc:
-        return f"manifest path not resolvable: {exc}"
+    return _lookup_os_manifest_path(hostname)
 
 
 async def run_diagnosis(

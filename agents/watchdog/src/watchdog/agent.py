@@ -16,12 +16,15 @@ is required and adding one would increase latency and cost for no benefit.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import datetime, timezone
 
 from common.flux_status import extract_mcp_text, parse_kust_text
 
 from .models import HealthSnapshot, WatchdogDeps, WatchdogResult
+
+log = logging.getLogger(__name__)
 
 WATCHDOG_POLL_INTERVAL_S: float = float(
     os.environ.get("WATCHDOG_POLL_INTERVAL_S", "5.0")
@@ -87,8 +90,9 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
         )
         kust_data = parse_kust_text(extract_mcp_text(kust_result))
         flux_ready = kust_data.get("ready") == "True"
-    except Exception:
-        pass
+    except (RuntimeError, ValueError, AttributeError) as exc:
+        log.warning("flux kustomization status unavailable: %s", exc)
+        flux_ready = False
 
     return HealthSnapshot(
         ready_pods=ready,
