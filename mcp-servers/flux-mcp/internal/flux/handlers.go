@@ -2,10 +2,15 @@ package flux
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+)
+
+const (
+	hintReconcileKustomization = "try get_kustomization_status to check current state before reconciling"
+	hintGetKustomizationStatus = "verify the Flux Kustomization exists; check kubectl get kustomization -n <namespace>"
+	hintGetGitRepositoryStatus = "verify the Flux GitRepository exists and the source-controller pod is healthy"
 )
 
 func HandleReconcileKustomization(client FluxClient, maxBytes int) server.ToolHandlerFunc {
@@ -21,7 +26,7 @@ func HandleReconcileKustomization(client FluxClient, maxBytes int) server.ToolHa
 		}
 		result, err := client.ReconcileKustomization(ctx, ns, name)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("ReconcileKustomization: %v", err)), nil
+			return toolError("ReconcileKustomization", err.Error(), hintReconcileKustomization), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(result, maxBytes)), nil
 	}
@@ -40,7 +45,7 @@ func HandleGetKustomizationStatus(client FluxClient, maxBytes int) server.ToolHa
 		}
 		result, err := client.GetKustomizationStatus(ctx, ns, name)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetKustomizationStatus: %v", err)), nil
+			return toolError("GetKustomizationStatus", err.Error(), hintGetKustomizationStatus), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(result, maxBytes)), nil
 	}
@@ -59,7 +64,7 @@ func HandleGetGitRepositoryStatus(client FluxClient, maxBytes int) server.ToolHa
 		}
 		result, err := client.GetGitRepositoryStatus(ctx, ns, name)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("GetGitRepositoryStatus: %v", err)), nil
+			return toolError("GetGitRepositoryStatus", err.Error(), hintGetGitRepositoryStatus), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(result, maxBytes)), nil
 	}

@@ -22,6 +22,23 @@ const (
 
 const DefaultPollInterval = pollIntervalSeconds * time.Second
 
+const (
+	hintCloneRepo        = "verify the repo URL is accessible and the auth token has read permissions"
+	hintCreateBranch     = "verify the base branch exists and the auth token has write permissions"
+	hintWriteManifest    = "read the file with read_file first to confirm the path exists on the branch"
+	hintCommitFiles      = "ensure write_manifest was called with valid content before committing"
+	hintPushBranch       = "verify the auth token has push permissions to the remote"
+	hintCreatePR         = "ensure push_branch succeeded and the branch exists on the remote"
+	hintEnableAutoMerge  = "auto-merge may require branch protection rules; verify repo settings"
+	hintGetPRStatus      = "verify the PR number was returned by create_pull_request"
+	hintWaitForGate      = "check PR status with get_pr_status; the PR may have been closed or a CI check failed"
+	hintClosePR          = "verify the PR number is correct; it may already be closed"
+	hintDeleteBranch     = "verify the branch exists and is not protected"
+	hintReadFile         = "verify the branch and path are correct; call resolve_manifest_path to locate the repo-relative path"
+	hintReadFileNotFound = "call resolve_manifest_path(kustomize_path, kind, name, namespace) to locate the correct repo-relative path"
+	hintRevertCommit     = "verify the merge commit SHA from wait_for_gate and that the session is initialised"
+)
+
 var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 var commitSHAPattern = regexp.MustCompile(`^[a-f0-9]{7,40}$`)
@@ -59,7 +76,7 @@ func HandleCloneRepo(client GitClient, state SessionState, authURL string, maxBy
 
 		cloneDir, err := client.Clone(ctx, authURL, base)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleCloneRepo: %v", err)), nil
+			return toolError("HandleCloneRepo", err.Error(), hintCloneRepo), nil
 		}
 		state.BeginSession(runID, cloneDir)
 		state.SetBaseBranch(base)
@@ -86,7 +103,7 @@ func HandleCreateBranch(client GitClient, state SessionState, maxBytes int) serv
 
 		branch := branchPrefix + runID
 		if err := client.CreateBranch(ctx, cloneDir, branch); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleCreateBranch: %v", err)), nil
+			return toolError("HandleCreateBranch", err.Error(), hintCreateBranch), nil
 		}
 		state.SetBranch(branch)
 
@@ -173,7 +190,7 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 			if os.IsNotExist(err) {
 				return mcp.NewToolResultError("manifest_path: file does not exist on base branch; remediation cannot create new manifests"), nil
 			}
-			return mcp.NewToolResultError(fmt.Sprintf("HandleWriteManifest: read existing: %v", err)), nil
+			return toolError("HandleWriteManifest", "read existing: "+err.Error(), hintWriteManifest), nil
 		}
 		if string(existing) == patchBody {
 			return mcp.NewToolResultError("patch_body: identical to current file; no-op patches are rejected"), nil
@@ -189,7 +206,7 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 		}
 
 		if err := client.WriteFile(ctx, cloneDir, cleaned, patchBody); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleWriteManifest: %v", err)), nil
+			return toolError("HandleWriteManifest", err.Error(), hintWriteManifest), nil
 		}
 		return mcp.NewToolResultText(truncateOutput("wrote manifest: "+manifestPath, maxBytes)), nil
 	}
@@ -210,7 +227,7 @@ func HandleCommitFiles(client GitClient, state SessionState, maxBytes int) serve
 
 		sha, err := client.CommitFiles(ctx, cloneDir, branch, message)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleCommitFiles: %v", err)), nil
+			return toolError("HandleCommitFiles", err.Error(), hintCommitFiles), nil
 		}
 		state.SetLastCommit(sha)
 		return mcp.NewToolResultText(truncateOutput("commit: "+sha, maxBytes)), nil
@@ -225,7 +242,7 @@ func HandlePushBranch(client GitClient, state SessionState, maxBytes int) server
 		}
 
 		if err := client.Push(ctx, cloneDir, branch); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandlePushBranch: %v", err)), nil
+			return toolError("HandlePushBranch", err.Error(), hintPushBranch), nil
 		}
 		return mcp.NewToolResultText(truncateOutput("pushed: "+branch, maxBytes)), nil
 	}
@@ -254,10 +271,10 @@ func HandleCreatePR(client GitClient, state SessionState, maxBytes int) server.T
 
 		prNumber, err := client.CreatePR(ctx, title, branch, base, body)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleCreatePR: %v", err)), nil
+			return toolError("HandleCreatePR", err.Error(), hintCreatePR), nil
 		}
 		if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleCreatePR: enable auto-merge: %v", err)), nil
+			return toolError("HandleCreatePR", "enable auto-merge: "+err.Error(), hintEnableAutoMerge), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(fmt.Sprintf("pr created: #%d", prNumber), maxBytes)), nil
 	}
@@ -274,7 +291,7 @@ func HandleGetPRStatus(client GitClient, state SessionState, maxBytes int) serve
 
 		prState, merged, mergeCommitSHA, err := client.GetPRStatus(ctx, prNumber)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleGetPRStatus: %v", err)), nil
+			return toolError("HandleGetPRStatus", err.Error(), hintGetPRStatus), nil
 		}
 		output := fmt.Sprintf("%s merged=%v sha=%s", prState, merged, mergeCommitSHA)
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
@@ -303,20 +320,20 @@ func HandleWaitForGate(client GitClient, state SessionState, maxBytes int, pollI
 		for {
 			select {
 			case <-ctx.Done():
-				return mcp.NewToolResultError("HandleWaitForGate: context cancelled"), nil
+				return toolError("HandleWaitForGate", "context cancelled", hintWaitForGate), nil
 			case <-timer.C:
-				return mcp.NewToolResultError(fmt.Sprintf("HandleWaitForGate: timed out after %d seconds", timeoutSecs)), nil
+				return toolError("HandleWaitForGate", fmt.Sprintf("timed out after %d seconds", timeoutSecs), hintWaitForGate), nil
 			case <-ticker.C:
 				prState, merged, mergeCommitSHA, err := client.GetPRStatus(ctx, prNumber)
 				if err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("HandleWaitForGate: %v", err)), nil
+					return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), nil
 				}
 				if merged {
 					output := fmt.Sprintf("gate passed: merged sha=%s", mergeCommitSHA)
 					return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 				}
 				if prState == "closed" {
-					return mcp.NewToolResultError("HandleWaitForGate: PR closed without merge"), nil
+					return toolError("HandleWaitForGate", "PR closed without merge", hintWaitForGate), nil
 				}
 			}
 		}
@@ -336,7 +353,7 @@ func HandleClosePR(client GitClient, state SessionState, maxBytes int) server.To
 		}
 
 		if err := client.ClosePR(ctx, prNumber); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleClosePR: %v", err)), nil
+			return toolError("HandleClosePR", err.Error(), hintClosePR), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(fmt.Sprintf("pr #%d closed", prNumber), maxBytes)), nil
 	}
@@ -351,7 +368,7 @@ func HandleDeleteBranch(client GitClient, state SessionState, maxBytes int) serv
 		}
 
 		if err := client.DeleteBranch(ctx, branch); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleDeleteBranch: %v", err)), nil
+			return toolError("HandleDeleteBranch", err.Error(), hintDeleteBranch), nil
 		}
 		return mcp.NewToolResultText(truncateOutput("branch deleted: "+branch, maxBytes)), nil
 	}
@@ -374,11 +391,11 @@ func HandleReadFile(client GitClient, state SessionState, maxBytes int) server.T
 		}
 		contents, err := client.ReadFile(ctx, cloneDir, branch, path)
 		if err != nil {
-			msg := fmt.Sprintf("HandleReadFile: %v", err)
+			hint := hintReadFile
 			if strings.HasPrefix(err.Error(), "path not found:") {
-				msg += ". Call resolve_manifest_path(kustomize_path, kind, name, namespace) to locate the correct repo-relative path."
+				hint = hintReadFileNotFound
 			}
-			return mcp.NewToolResultError(msg), nil
+			return toolError("HandleReadFile", err.Error(), hint), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(contents, maxBytes)), nil
 	}
@@ -408,8 +425,7 @@ func HandleResolveManifestPath(client GitClient, state SessionState, maxBytes in
 
 		path, hint, err := client.ResolveManifestPath(ctx, cloneDir, kustomizePath, kind, namespace, name)
 		if err != nil {
-			msg := fmt.Sprintf("HandleResolveManifestPath: %s/%s not found under %s; %s", kind, name, kustomizePath, hint)
-			return mcp.NewToolResultError(msg), nil
+			return toolError("HandleResolveManifestPath", kind+"/"+name+" not found under "+kustomizePath, hint), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(path, maxBytes)), nil
 	}
@@ -437,7 +453,7 @@ func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) serv
 		}
 		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA, baseBranch)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("HandleRevertCommit: %v", err)), nil
+			return toolError("HandleRevertCommit", err.Error(), hintRevertCommit), nil
 		}
 		state.SetBranch(baseBranch)
 		return mcp.NewToolResultText(truncateOutput("reverted: "+revertSHA, maxBytes)), nil

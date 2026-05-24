@@ -8,6 +8,10 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+const (
+	hintRunAllowedCommand = "verify the host is reachable; the SSH key may be missing or the host may be offline"
+)
+
 func HandleRunAllowedCommand(client SSHClient, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -39,7 +43,7 @@ func HandleRunAllowedCommand(client SSHClient, maxBytes int) server.ToolHandlerF
 
 		output, err := client.RunAllowedCommand(ctx, host, binary, stringArgs)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("RunAllowedCommand: %v", err)), nil
+			return toolError("RunAllowedCommand", err.Error(), hintRunAllowedCommand), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 	}
