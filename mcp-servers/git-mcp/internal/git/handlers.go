@@ -376,7 +376,7 @@ func HandleReadFile(client GitClient, state SessionState, maxBytes int) server.T
 		if err != nil {
 			msg := fmt.Sprintf("HandleReadFile: %v", err)
 			if strings.HasPrefix(err.Error(), "path not found:") {
-				msg += ". Call lookup_k8s_manifest_path with the resource's Kustomization YAML to resolve the correct path under spec.path."
+				msg += ". Call resolve_manifest_path(kustomize_path, kind, name, namespace) to locate the correct repo-relative path."
 			}
 			return mcp.NewToolResultError(msg), nil
 		}
