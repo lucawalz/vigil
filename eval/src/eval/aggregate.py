@@ -29,6 +29,7 @@ _OUTCOME_BUCKET: dict[str, str] = {
     "rollback_failed": "agent-failed",
     "quota_exhausted": "agent-failed",
     "baseline_degraded": "infra-error",
+    "abort": "infra-error",
     "setup_error": "infra-error",
     "gate_failed": "gate-uncertain",
 }
@@ -38,22 +39,30 @@ def _bucket_outcome(literal: str) -> str:
     return _OUTCOME_BUCKET.get(literal, "agent-failed")
 
 
-def _count_buckets(records: Any) -> dict[str, int]:
+def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
     counts: dict[str, int] = {
         "passed": 0,
         "out-of-scope": 0,
         "agent-failed": 0,
         "infra-error": 0,
         "gate-uncertain": 0,
+        "not-run": 0,
     }
+    n_seen = 0
     for r in records:
+        if r is None:
+            continue
+        n_seen += 1
         outcome = r.get("outcome", "")
         success_rate = r.get("success_rate")
         if outcome == "success" and not success_rate:
             counts["out-of-scope"] += 1
+        elif outcome == "escalated":
+            counts["passed" if success_rate else "agent-failed"] += 1
         else:
             bucket = _bucket_outcome(outcome)
             counts[bucket] = counts.get(bucket, 0) + 1
+    counts["not-run"] = max(0, n_planned - n_seen)
     return counts
 
 
@@ -280,21 +289,22 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     lines.append("## Per-Scenario Summary")
     lines.append("")
     by_scenario = summary["by_scenario"]
-    bucket_counts = _count_buckets(by_scenario.values())
-    n_total = len(by_scenario)
+    planned: list[str] = summary.get("planned_scenarios") or []
+    n_total = len(planned) if planned else len(by_scenario)
+    bucket_counts = _count_buckets(by_scenario.values(), n_planned=n_total)
     lines.append(
         f"{bucket_counts['passed']}/{n_total} passed, "
         f"{bucket_counts['out-of-scope']}/{n_total} out-of-scope, "
         f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
         f"{bucket_counts['infra-error']}/{n_total} infra-error, "
-        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain"
+        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain, "
+        f"{bucket_counts['not-run']}/{n_total} not-run"
     )
     lines.append("")
     lines.append(
         "| Scenario | N | Outcome | Success Rate | Mean MTTR (s) | Std MTTR (s) |"
     )
     lines.append("|---|---:|---|---:|---:|---:|")
-    planned: list[str] = summary.get("planned_scenarios") or []
     scenario_keys = planned if planned else sorted(by_scenario)
     ordered_scenarios: list[str] = []
     for group in _GROUP_ORDER:
@@ -371,7 +381,7 @@ def write_step_summary(
             by_group.setdefault(g, {}).setdefault(sid, None)
 
     n_total = sum(len(scs) for scs in by_group.values())
-    bucket_counts = _count_buckets(records)
+    bucket_counts = _count_buckets(records, n_planned=n_total)
 
     model = records[0]["model"]
     git_sha = records[0].get("git_sha7", "")
@@ -390,7 +400,8 @@ def write_step_summary(
         f"{bucket_counts['out-of-scope']}/{n_total} out-of-scope, "
         f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
         f"{bucket_counts['infra-error']}/{n_total} infra-error, "
-        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain",
+        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain, "
+        f"{bucket_counts['not-run']}/{n_total} not-run",
         "",
     ]
 

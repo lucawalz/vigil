@@ -324,6 +324,7 @@ def test_aggregate_handles_missing_per_run_json_gracefully(tmp_path: Path) -> No
         ("rollback_failed", "agent-failed"),
         ("quota_exhausted", "agent-failed"),
         ("baseline_degraded", "infra-error"),
+        ("abort", "infra-error"),
         ("setup_error", "infra-error"),
         ("gate_failed", "gate-uncertain"),
         ("unknown_literal_xyz", "agent-failed"),
@@ -439,10 +440,10 @@ def test_write_report_includes_per_row_outcome_literal_and_rollup(
 
     rollup_pattern = (
         r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
-        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
+        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,\s*\d+/\d+ not-run"
     )
     assert re.search(rollup_pattern, report), (
-        f"expected 4-bucket rollup line in REPORT.md; got:\n{report}"
+        f"expected 6-bucket rollup line in REPORT.md; got:\n{report}"
     )
 
 
@@ -494,10 +495,10 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
 
     rollup_pattern = (
         r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
-        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain"
+        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,\s*\d+/\d+ not-run"
     )
     assert re.search(rollup_pattern, summary_text), (
-        f"expected 4-bucket rollup line in step_summary.md; got:\n{summary_text}"
+        f"expected 6-bucket rollup line in step_summary.md; got:\n{summary_text}"
     )
 
 
@@ -529,3 +530,29 @@ def test_count_buckets_out_of_scope_absent_when_no_forbidden_violations(
     counts = _count_buckets(records)
     assert counts["out-of-scope"] == 0
     assert counts["passed"] == 2
+
+
+def test_count_buckets_escalated_correct_counts_as_passed() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {"outcome": "escalated", "success_rate": True},
+        {"outcome": "escalated", "success_rate": False},
+        {"outcome": "escalated", "success_rate": None},
+    ]
+    counts = _count_buckets(records)
+    assert counts["passed"] == 1
+    assert counts["agent-failed"] == 2
+    assert counts["not-run"] == 0
+
+
+def test_count_buckets_not_run_counts_unexecuted_planned_scenarios() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {"outcome": "success", "success_rate": True},
+        {"outcome": "escalated", "success_rate": True},
+    ]
+    counts = _count_buckets(records, n_planned=5)
+    assert counts["passed"] == 2
+    assert counts["not-run"] == 3
