@@ -267,7 +267,7 @@ async def run_orchestration(
             autonomy_level="full",
             actions_taken=[],
             model_version=model_name,
-            setup_error=_reason if _outcome != "abort" else None,
+            setup_error=_reason,
         )
 
     total_usage = Usage()

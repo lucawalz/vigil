@@ -30,7 +30,7 @@ from orchestrator.agent import (
     run_orchestration,
 )
 from orchestrator.models import CircuitBreakerTripped, FaultEvent, RunRecord
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.usage import Usage
 from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
@@ -731,6 +731,39 @@ async def test_runs_index_written_on_abort_path_circuit_breaker(
     assert len(lines) == 1
     assert json.loads(lines[0])["outcome"] == "abort"
     assert json.loads(lines[0])["run_id"] == record.run_id
+
+
+async def test_abort_record_preserves_setup_error_reason(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "run_diagnosis",
+        AsyncMock(
+            side_effect=UnexpectedModelBehavior(
+                "Tool 'read_file' exceeded max retries count of 3"
+            )
+        ),
+    )
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "abort"
+    assert record.setup_error is not None
+    assert "read_file" in record.setup_error
 
 
 async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
