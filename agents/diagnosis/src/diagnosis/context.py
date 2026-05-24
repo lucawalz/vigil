@@ -69,7 +69,7 @@ async def _resolve_source_branch(deps: DiagnosisDeps) -> str:
         data = yaml.safe_load(text)
         branch = (data.get("spec") or {}).get("ref", {}).get("branch", "")
         return branch or "main"
-    except Exception:
+    except (yaml.YAMLError, AttributeError):
         return "main"
 
 
@@ -96,7 +96,6 @@ def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
     try:
         data = yaml.safe_load(live_text)
         metadata = data.get("metadata") or {}
-        # Flux v2 puts tracking identifiers in labels; check annotations as fallback
         labels = metadata.get("labels") or {}
         annotations = metadata.get("annotations") or {}
         kust_name = labels.get("kustomize.toolkit.fluxcd.io/name") or annotations.get(
@@ -106,7 +105,7 @@ def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
             "kustomize.toolkit.fluxcd.io/namespace"
         ) or annotations.get("kustomize.toolkit.fluxcd.io/namespace")
         return kust_name, kust_ns
-    except Exception:
+    except (yaml.YAMLError, AttributeError):
         return None, None
 
 
