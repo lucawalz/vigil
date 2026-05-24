@@ -8,6 +8,10 @@ import (
 	"github.com/lucawalz/vigil/mcp-servers/ssh-mcp/internal/ssh"
 )
 
+type TextResult struct {
+	Text string `json:"text" jsonschema:"Output text"`
+}
+
 func NewServer(client ssh.SSHClient, cfg *config.Config) *server.MCPServer {
 	s := server.NewMCPServer("ssh-mcp", "1.0.0",
 		server.WithToolCapabilities(true),
@@ -27,6 +31,7 @@ func NewServer(client ssh.SSHClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithArray("args",
 				mcp.Description("Command arguments"),
 			),
+			mcp.WithOutputSchema[TextResult](),
 		),
 		ssh.HandleRunAllowedCommand(client, cfg.MaxOutputBytesDescribe),
 	)

@@ -230,7 +230,7 @@ func HandleCommitFiles(client GitClient, state SessionState, maxBytes int) serve
 			return toolError("HandleCommitFiles", err.Error(), hintCommitFiles), nil
 		}
 		state.SetLastCommit(sha)
-		return mcp.NewToolResultText(truncateOutput("commit: "+sha, maxBytes)), nil
+		return mcp.NewToolResultStructured(CommitResult{SHA: sha}, "commit: "+sha), nil
 	}
 }
 
@@ -276,7 +276,7 @@ func HandleCreatePR(client GitClient, state SessionState, maxBytes int) server.T
 		if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
 			return toolError("HandleCreatePR", "enable auto-merge: "+err.Error(), hintEnableAutoMerge), nil
 		}
-		return mcp.NewToolResultText(truncateOutput(fmt.Sprintf("pr created: #%d", prNumber), maxBytes)), nil
+		return mcp.NewToolResultStructured(PRNumberResult{PRNumber: prNumber}, fmt.Sprintf("pr created: #%d", prNumber)), nil
 	}
 }
 
@@ -293,8 +293,9 @@ func HandleGetPRStatus(client GitClient, state SessionState, maxBytes int) serve
 		if err != nil {
 			return toolError("HandleGetPRStatus", err.Error(), hintGetPRStatus), nil
 		}
-		output := fmt.Sprintf("%s merged=%v sha=%s", prState, merged, mergeCommitSHA)
-		return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
+		result := PRStatusResult{State: prState, Merged: merged, MergeCommitSHA: mergeCommitSHA}
+		fallback := fmt.Sprintf("%s merged=%v sha=%s", prState, merged, mergeCommitSHA)
+		return mcp.NewToolResultStructured(result, fallback), nil
 	}
 }
 
@@ -329,8 +330,10 @@ func HandleWaitForGate(client GitClient, state SessionState, maxBytes int, pollI
 					return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), nil
 				}
 				if merged {
-					output := fmt.Sprintf("gate passed: merged sha=%s", mergeCommitSHA)
-					return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
+					return mcp.NewToolResultStructured(
+						GatePassedResult{MergeCommitSHA: mergeCommitSHA},
+						fmt.Sprintf("gate passed: merged sha=%s", mergeCommitSHA),
+					), nil
 				}
 				if prState == "closed" {
 					return toolError("HandleWaitForGate", "PR closed without merge", hintWaitForGate), nil
@@ -355,7 +358,7 @@ func HandleClosePR(client GitClient, state SessionState, maxBytes int) server.To
 		if err := client.ClosePR(ctx, prNumber); err != nil {
 			return toolError("HandleClosePR", err.Error(), hintClosePR), nil
 		}
-		return mcp.NewToolResultText(truncateOutput(fmt.Sprintf("pr #%d closed", prNumber), maxBytes)), nil
+		return mcp.NewToolResultStructured(PRNumberResult{PRNumber: prNumber}, fmt.Sprintf("pr #%d closed", prNumber)), nil
 	}
 }
 
@@ -427,7 +430,7 @@ func HandleResolveManifestPath(client GitClient, state SessionState, maxBytes in
 		if err != nil {
 			return toolError("HandleResolveManifestPath", kind+"/"+name+" not found under "+kustomizePath, hint), nil
 		}
-		return mcp.NewToolResultText(truncateOutput(path, maxBytes)), nil
+		return mcp.NewToolResultStructured(ManifestPathResult{Path: path}, path), nil
 	}
 }
 
@@ -456,6 +459,6 @@ func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) serv
 			return toolError("HandleRevertCommit", err.Error(), hintRevertCommit), nil
 		}
 		state.SetBranch(baseBranch)
-		return mcp.NewToolResultText(truncateOutput("reverted: "+revertSHA, maxBytes)), nil
+		return mcp.NewToolResultStructured(CommitResult{SHA: revertSHA}, "reverted: "+revertSHA), nil
 	}
 }
