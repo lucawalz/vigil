@@ -23,6 +23,3 @@ spec:
             memory: 64Mi
           limits:
             memory: 128Mi
-        env:
-        - name: APP_CRASH_MODE
-          value: '1'
