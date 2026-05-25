@@ -14,3 +14,9 @@ inject_params:
   env_value: ""
 
 alert_name: KubePodCrashLooping
+
+verify_broken:
+  symptom: pod_not_ready
+  deployment: vigil-app
+  namespace: default
+  timeout_s: 90

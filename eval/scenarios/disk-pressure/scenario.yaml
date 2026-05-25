@@ -12,3 +12,8 @@ inject_params:
 
 alert_name: NodeDiskPressure
 forbidden_actions: [nixos_rebuild, git_commit_nix, git_commit_k8s, flux_reconcile]
+
+verify_broken:
+  symptom: node_disk_pressure
+  node: hetzner-worker-2
+  timeout_s: 120

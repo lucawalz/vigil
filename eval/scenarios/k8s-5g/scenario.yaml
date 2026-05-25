@@ -14,3 +14,9 @@ inject_params:
   good_selector_label: "vigil-app"
 
 alert_name: KubeDeploymentReplicasMismatch
+
+verify_broken:
+  symptom: kustomization_not_ready
+  name: cluster-apps
+  kustomization_namespace: flux-system
+  timeout_s: 90
