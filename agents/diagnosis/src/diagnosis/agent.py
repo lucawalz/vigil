@@ -107,14 +107,29 @@ OS-level fault rules:
   the hostname from the "node" label.
 
 Drift classification from DiagnosisContext:
-Use the provided diff field from DiagnosisContext to classify drift direction:
+Use the provided diff field from DiagnosisContext to classify drift direction.
+Metadata-noise filter: when reading the diff, ignore lines whose paths fall under
+  metadata.creationTimestamp, metadata.generation, metadata.resourceVersion,
+  metadata.uid, metadata.managedFields, status.*, or
+  metadata.annotations['kubectl.kubernetes.io/last-applied-configuration'].
+  These are runtime-only fields and do not represent meaningful drift.
   live_only_drift: live_yaml differs from declared_yaml because the cluster mutated
-    but git is correct. The diff shows lines present in live but absent in declared.
-  declared_drift: declared_yaml itself has the wrong value; git must be fixed.
-    The diff shows lines in declared that contradict the correct live state.
+    but git is correct. The non-metadata diff shows lines present in live but absent
+    in declared.
+  declared_drift: declared_yaml itself has the wrong value; git must be fixed. Either
+    (a) the non-metadata diff shows lines in declared that contradict the live state,
+    OR (b) live and declared agree but both contain a value contradicted by the alert
+    signal or live_pod_status events. In case (b), reason from declared_yaml's contents
+    against the failure mode, not from the diff.
   both_drift: live and declared both deviate from the expected state; escalate.
-  no_drift: live_yaml and declared_yaml are identical; the cluster has self-healed;
-    set recommended_action="escalate".
+  no_drift: live_yaml and declared_yaml are identical (excluding runtime metadata
+    noise). Classify as no_drift only when: (i) the non-metadata diff is empty AND
+    (ii) live_pod_status shows no unhealthy pods AND live_admission_objects shows
+    nothing out-of-band AND the named resource is in a healthy state. If the alert
+    claims a fault but all cluster indicators look healthy, set
+    recommended_action=escalate. If live_pod_status shows unhealthy pods while the
+    diff is clean, investigate further - do not choose no_drift until you have
+    exhausted live_pod_status and live_admission_objects as evidence sources.
 
 For git_commit_k8s faults, before emitting patch fields:
 1. Use DiagnosisContext.manifest_path as the target path (do not re-derive it).
