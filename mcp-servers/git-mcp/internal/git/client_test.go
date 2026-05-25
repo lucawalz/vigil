@@ -84,6 +84,9 @@ func TestRevertCommit_FetchesBeforeRevert(t *testing.T) {
 	}
 	sha := strings.TrimSpace(string(out))
 
+	mustRun(t, cloneDir, "git", "config", "user.email", "test@test")
+	mustRun(t, cloneDir, "git", "config", "user.name", "test")
+
 	cfg := &config.Config{RepoURL: "https://github.com/test/test.git"}
 	c := NewRealGitClient(cfg)
 	revertSHA, err := c.RevertCommit(context.Background(), cloneDir, sha, "main")
