@@ -63,6 +63,28 @@ def _ssh(host: str, command: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _discover_failing_pod(
+    namespace: str, deployment: str, kubeconfig: str | None
+) -> str | None:
+    """Return the first non-Running pod name matching the deployment app label."""
+    r = _kubectl(
+        ["get", "pods", "-n", namespace, "-l", f"app={deployment}", "-o", "json"],
+        kubeconfig,
+    )
+    if r.returncode != 0:
+        return None
+    try:
+        items = json.loads(r.stdout).get("items", [])
+    except json.JSONDecodeError:
+        return None
+    for pod in items:
+        if pod.get("status", {}).get("phase", "") != "Running":
+            return pod["metadata"]["name"]
+    if items:
+        return items[0]["metadata"]["name"]
+    return None
+
+
 def _symptom_observed(verify: dict, kubeconfig: str | None = None) -> bool:
     """Return True when the fault symptom declared in verify_broken is present."""
     symptom = verify.get("symptom", "")
@@ -388,8 +410,21 @@ def _reset_circuit_breaker() -> None:
         pass
 
 
+_POD_SCOPED_ALERTS: frozenset[str] = frozenset(
+    {"KubePodCrashLooping", "KubePodNotReady", "KubeContainerWaiting"}
+)
+
 _K8S_LABEL_KEYS: frozenset[str] = frozenset(
-    {"deployment", "namespace", "pod", "statefulset", "daemonset", "name", "service"}
+    {
+        "deployment",
+        "kustomization",
+        "namespace",
+        "pod",
+        "statefulset",
+        "daemonset",
+        "name",
+        "service",
+    }
 )
 
 
@@ -405,13 +440,27 @@ def _load_scenario(scenario_id: str) -> dict[str, Any]:
 def _build_fault_event(
     scenario_id: str, target_host: str | None = None
 ) -> dict[str, Any]:
+    kubeconfig = os.environ.get("EVAL_RUNNER_KUBECONFIG") or None
     scenario = _load_scenario(scenario_id)
     alert_name = scenario.get("alert_name") or scenario_id
     inject_params: dict[str, Any] = scenario.get("inject_params") or {}
     labels: dict[str, str] = {"alertname": alert_name}
-    for key in _K8S_LABEL_KEYS:
-        if key in inject_params:
-            labels[key] = str(inject_params[key])
+
+    if alert_name in _POD_SCOPED_ALERTS:
+        namespace = str(inject_params.get("namespace", "default"))
+        deployment = str(inject_params.get("deployment", ""))
+        labels["namespace"] = namespace
+        if deployment:
+            pod_name = _discover_failing_pod(namespace, deployment, kubeconfig)
+            if pod_name:
+                labels["pod"] = pod_name
+            else:
+                labels["deployment"] = deployment
+    else:
+        for key in _K8S_LABEL_KEYS:
+            if key in inject_params:
+                labels[key] = str(inject_params[key])
+
     if target_host:
         labels["node"] = target_host
     return {
