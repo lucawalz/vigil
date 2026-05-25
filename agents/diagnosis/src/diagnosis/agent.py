@@ -37,10 +37,20 @@ Available tools:
 
 Ground-truth context (DiagnosisContext):
 The user message includes a DiagnosisContext block containing:
-  source_branch, manifest_path, live_yaml, declared_yaml, diff
+  source_branch, manifest_path, live_yaml, declared_yaml, diff,
+  live_pod_status, live_admission_objects
 These fields are pre-computed by Python and are ground truth. Treat them as
 authoritative inputs. Do not call get_resource_yaml to re-derive live_yaml; that
 call has already been made. Use the provided diff to determine drift direction.
+live_pod_status: pre-fetched pod and event table for the alert's namespace.
+  Non-empty for K8s workload alerts. Contains pod phase/readiness and recent
+  namespace events. Use this as primary pod-failure evidence before calling
+  additional kubectl tools.
+live_admission_objects: list of ResourceQuota/LimitRange/NetworkPolicy objects
+  discovered in the alert's namespace, each annotated with declared_in_git (True/False)
+  and git_path. An object with declared_in_git=False is an out-of-band live injection.
+  For such objects: set drift_classification=live_only_drift only if an agent tool can
+  remove them; otherwise escalate.
 The git-mcp session is pre-warmed; use read_file(branch, path) to inspect related
 manifests (parent Kustomizations, ConfigMap sources, Helm values) when needed.
 If read_file returns a path-not-found error for manifest_path, call
@@ -68,12 +78,11 @@ Triage axes:
    failure); primary tools: get_nodes, describe_node, nixos-mcp.
 4. Admission control: namespace-scoped objects (ResourceQuota, LimitRange,
    NetworkPolicy) can block or throttle workloads independently of the workload
-   manifest. When the triggering Deployment looks correct on paper (declared==live)
-   but pods stay Pending or fail to create, call get_resource_yaml for ResourceQuota,
-   LimitRange, and NetworkPolicy in the affected namespace. If any are absent from
-   the repo (verify via read_file on the namespace manifest path), the live state
-   has out-of-band objects; set drift_classification=live_only_drift only if an
-   agent tool can remove them - otherwise escalate.
+   manifest. Check live_admission_objects in DiagnosisContext first - objects with
+   declared_in_git=False are out-of-band live injections not present in git. If any
+   such blocking object is present and no agent tool can remove it, escalate. If
+   live_admission_objects is empty but live_pod_status shows Pending or FailedCreate
+   events, call get_events for the namespace to look for quota or scheduling messages.
 
 The axes are not mutually exclusive; node failures often cause scheduling failures
 downstream. Follow the evidence to the axis where the root cause sits.
@@ -90,6 +99,15 @@ triage sequence is get_nodes (confirm the named node's Ready state) → describe
 intervention only if needed. describe_node may reveal a K8s-side cause
 (MemoryPressure, kubelet flapping, taint) that does not require touching the OS.
 
+Flux-layer triage: when the alert labels include `kustomization`, live_yaml contains
+the Kustomization status output (pre-fetched). Read the apply error message in
+live_yaml verbatim - it names the rejected field and the affected resource. Then
+call git_mcp.read_file(source_branch, path) on the manifest indicated by the error
+to verify the declared value. Derive manifest_path from the Kustomization spec.path
+and the failing resource name (DiagnosisContext.manifest_path is null for Kustomization
+alerts - do not rely on it). Set drift_classification=declared_drift and
+recommended_action=git_commit_k8s when the declared manifest contains the wrong value.
+
 OS-level fault rules:
 - The alert labels include a "node" field with the exact hostname (e.g.,
   "hetzner-worker-1"). Use this value verbatim as the hostname argument for ALL
@@ -98,14 +116,29 @@ OS-level fault rules:
   the hostname from the "node" label.
 
 Drift classification from DiagnosisContext:
-Use the provided diff field from DiagnosisContext to classify drift direction:
+Use the provided diff field from DiagnosisContext to classify drift direction.
+Metadata-noise filter: when reading the diff, ignore lines whose paths fall under
+  metadata.creationTimestamp, metadata.generation, metadata.resourceVersion,
+  metadata.uid, metadata.managedFields, status.*, or
+  metadata.annotations['kubectl.kubernetes.io/last-applied-configuration'].
+  These are runtime-only fields and do not represent meaningful drift.
   live_only_drift: live_yaml differs from declared_yaml because the cluster mutated
-    but git is correct. The diff shows lines present in live but absent in declared.
-  declared_drift: declared_yaml itself has the wrong value; git must be fixed.
-    The diff shows lines in declared that contradict the correct live state.
+    but git is correct. The non-metadata diff shows lines present in live but absent
+    in declared.
+  declared_drift: declared_yaml itself has the wrong value; git must be fixed. Either
+    (a) the non-metadata diff shows lines in declared that contradict the live state,
+    OR (b) live and declared agree but both contain a value contradicted by the alert
+    signal or live_pod_status events. In case (b), reason from declared_yaml's contents
+    against the failure mode, not from the diff.
   both_drift: live and declared both deviate from the expected state; escalate.
-  no_drift: live_yaml and declared_yaml are identical; the cluster has self-healed;
-    set recommended_action="escalate".
+  no_drift: live_yaml and declared_yaml are identical (excluding runtime metadata
+    noise). Classify as no_drift only when: (i) the non-metadata diff is empty AND
+    (ii) live_pod_status shows no unhealthy pods AND live_admission_objects shows
+    nothing out-of-band AND the named resource is in a healthy state. If the alert
+    claims a fault but all cluster indicators look healthy, set
+    recommended_action=escalate. If live_pod_status shows unhealthy pods while the
+    diff is clean, investigate further - do not choose no_drift until you have
+    exhausted live_pod_status and live_admission_objects as evidence sources.
 
 For git_commit_k8s faults, before emitting patch fields:
 1. Use DiagnosisContext.manifest_path as the target path (do not re-derive it).
@@ -226,6 +259,19 @@ async def run_diagnosis(
             f"If your recommended action requires one of these tools, "
             f"set recommended_action=escalate."
         )
+    admission_lines: list[str] = []
+    for ao in context.live_admission_objects:
+        in_git = "in-git" if ao.declared_in_git else "NOT-in-git"
+        line = f"    {ao.kind}/{ao.name} ({ao.namespace}) [{in_git}]"
+        if ao.git_path:
+            line += f" git_path={ao.git_path}"
+        line += f"\n      {ao.summary}"
+        admission_lines.append(line)
+    admission_block = (
+        "  live_admission_objects:\n" + "\n".join(admission_lines)
+        if admission_lines
+        else "  live_admission_objects: []"
+    )
     user_message = (
         f"Diagnose fault.\n\n"
         f"Fault: {fault.model_dump_json()}\n\n"
@@ -234,7 +280,9 @@ async def run_diagnosis(
         f"  manifest_path: {context.manifest_path}\n"
         f"  live_yaml:\n{context.live_yaml}\n"
         f"  declared_yaml:\n{context.declared_yaml}\n"
-        f"  diff:\n{context.diff}"
+        f"  diff:\n{context.diff}\n"
+        f"  live_pod_status:\n{context.live_pod_status}\n"
+        f"{admission_block}"
         f"{constraint_block}"
     )
     async with diagnosis_agent.iter(

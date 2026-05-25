@@ -13,3 +13,9 @@ inject_params:
   bad_node_selector: "nonexistent-bogus-node"
 
 alert_name: KubeDeploymentReplicasMismatch
+
+verify_broken:
+  symptom: pod_not_ready
+  deployment: vigil-app
+  namespace: default
+  timeout_s: 60

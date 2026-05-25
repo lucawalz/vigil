@@ -42,6 +42,7 @@ class RunRecord(BaseModel):
         "quota_exhausted",
         "baseline_degraded",
         "escalated",
+        "inject_did_not_break",
     ]
     success_rate: bool | None
     diagnosis_accuracy: bool | None

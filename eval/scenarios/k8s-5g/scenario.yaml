@@ -8,9 +8,15 @@ expected_resolution_path: "diagnosis -> git_commit_k8s (revert selector to vigil
 
 inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
-  deployment: vigil-app
-  namespace: default
+  kustomization: cluster-apps
+  namespace: flux-system
   bad_selector_label: "vigil-app-typo"
   good_selector_label: "vigil-app"
 
-alert_name: KubeDeploymentReplicasMismatch
+alert_name: FluxKustomizationFailed
+
+verify_broken:
+  symptom: kustomization_not_ready
+  name: cluster-apps
+  kustomization_namespace: flux-system
+  timeout_s: 90

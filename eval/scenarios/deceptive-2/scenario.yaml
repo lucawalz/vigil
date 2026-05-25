@@ -14,3 +14,9 @@ inject_params:
   deployment: vigil-app
 
 forbidden_actions: [flux_reconcile, git_commit_k8s, git_commit_nix, switch_generation]
+
+verify_broken:
+  symptom: deployment_unavailable
+  deployment: vigil-app
+  namespace: default
+  timeout_s: 60

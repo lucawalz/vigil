@@ -14,3 +14,9 @@ inject_params:
   good_memory_limit: "128Mi"
 
 alert_name: KubeContainerOOMKilled
+
+verify_broken:
+  symptom: replica_failure
+  deployment: vigil-app
+  namespace: default
+  timeout_s: 60

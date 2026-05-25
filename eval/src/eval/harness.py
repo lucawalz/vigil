@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,232 @@ DEFAULT_CIRCUIT_BREAKER_STATE_PATH = "/tmp/vigil-circuit-breaker.json"
 _TRUNC = 300
 
 log = logging.getLogger(__name__)
+
+_INJECT_ASSERT_TIMEOUT_S = 90
+_INJECT_ASSERT_POLL_INTERVAL_S = 5
+
+
+class InjectAssertionFailed(RuntimeError):
+    """Raised when the cluster does not show the expected failure within the timeout."""
+
+
+def _kubectl(
+    args: list[str], kubeconfig: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    cmd = ["kubectl"]
+    if kubeconfig:
+        cmd += ["--kubeconfig", kubeconfig]
+    return subprocess.run(cmd + args, capture_output=True, text=True, check=False)
+
+
+def _ssh(host: str, command: str) -> subprocess.CompletedProcess[str]:
+    ssh_key = os.environ.get("SSH_KEY_PATH", os.path.expanduser("~/.ssh/id_ed25519"))
+    return subprocess.run(
+        [
+            "ssh",
+            "-i",
+            ssh_key,
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            f"root@{host}",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _discover_failing_pod(
+    namespace: str, deployment: str, kubeconfig: str | None
+) -> str | None:
+    """Return the first non-Running pod name matching the deployment app label."""
+    r = _kubectl(
+        ["get", "pods", "-n", namespace, "-l", f"app={deployment}", "-o", "json"],
+        kubeconfig,
+    )
+    if r.returncode != 0:
+        return None
+    try:
+        items = json.loads(r.stdout).get("items", [])
+    except json.JSONDecodeError:
+        return None
+    for pod in items:
+        if pod.get("status", {}).get("phase", "") != "Running":
+            return pod["metadata"]["name"]
+    if items:
+        return items[0]["metadata"]["name"]
+    return None
+
+
+def _symptom_observed(verify: dict, kubeconfig: str | None = None) -> bool:
+    """Return True when the fault symptom declared in verify_broken is present."""
+    symptom = verify.get("symptom", "")
+    ns = verify.get("namespace", "default")
+
+    if symptom == "pod_not_ready":
+        deployment = verify["deployment"]
+        r = _kubectl(
+            ["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig
+        )
+        if r.returncode != 0:
+            return False
+        obj = json.loads(r.stdout)
+        spec_replicas = obj.get("spec", {}).get("replicas", 1)
+        avail = obj.get("status", {}).get("availableReplicas", spec_replicas)
+        if avail < spec_replicas:
+            return True
+        for cond in obj.get("status", {}).get("conditions", []):
+            if cond.get("type") == "ReplicaFailure" and cond.get("status") == "True":
+                return True
+        r2 = _kubectl(
+            ["get", "pods", "-n", ns, "-l", f"app={deployment}", "-o", "json"],
+            kubeconfig,
+        )
+        if r2.returncode != 0:
+            return False
+        for pod in json.loads(r2.stdout).get("items", []):
+            phase = pod.get("status", {}).get("phase", "")
+            if phase in ("Pending", "Failed", "Unknown"):
+                return True
+            for cs in pod.get("status", {}).get("containerStatuses", []):
+                if not cs.get("ready", True):
+                    return True
+        return False
+
+    if symptom == "replica_failure":
+        deployment = verify["deployment"]
+        r = _kubectl(
+            ["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig
+        )
+        if r.returncode != 0:
+            return False
+        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+            if cond.get("type") == "ReplicaFailure" and cond.get("status") == "True":
+                return True
+        return False
+
+    if symptom == "deployment_unavailable":
+        deployment = verify["deployment"]
+        r = _kubectl(
+            ["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig
+        )
+        if r.returncode != 0:
+            return False
+        obj = json.loads(r.stdout)
+        return obj.get("status", {}).get("availableReplicas", 1) == 0
+
+    if symptom == "kustomization_not_ready":
+        name = verify["name"]
+        kust_ns = verify.get("kustomization_namespace", "flux-system")
+        r = _kubectl(
+            ["get", "kustomization", name, "-n", kust_ns, "-o", "json"], kubeconfig
+        )
+        if r.returncode != 0:
+            return False
+        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+            if cond.get("type") == "Ready" and cond.get("status") == "False":
+                return True
+        return False
+
+    if symptom == "node_not_ready":
+        node = verify["node"]
+        r = _kubectl(["get", "node", node, "-o", "json"], kubeconfig)
+        if r.returncode != 0:
+            return False
+        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+            if cond.get("type") == "Ready" and cond.get("status") != "True":
+                return True
+        return False
+
+    if symptom == "node_disk_pressure":
+        node = verify["node"]
+        r = _kubectl(["get", "node", node, "-o", "json"], kubeconfig)
+        if r.returncode != 0:
+            return False
+        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+            if cond.get("type") == "DiskPressure" and cond.get("status") == "True":
+                return True
+        return False
+
+    if symptom == "systemd_unit_inactive":
+        host = verify["host"]
+        unit = verify["unit"]
+        r = _ssh(host, f"systemctl is-active {unit}")
+        return r.returncode != 0
+
+    if symptom == "sysctl_modified":
+        host = verify["host"]
+        key = verify["key"]
+        expected = str(verify["expected_value"])
+        r = _ssh(host, f"sysctl -n {key}")
+        return r.returncode == 0 and r.stdout.strip() == expected
+
+    log.warning("unknown symptom kind %r - skipping assertion", symptom)
+    return True
+
+
+def _wait_for_inject_symptom(
+    scenario_id: str, verify: dict, scenarios_dir: Path
+) -> None:
+    """Poll until the declared failure symptom is observed or the timeout expires."""
+    kubeconfig = os.environ.get("EVAL_RUNNER_KUBECONFIG") or None
+    timeout = int(verify.get("timeout_s", _INJECT_ASSERT_TIMEOUT_S))
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _symptom_observed(verify, kubeconfig):
+            log.info(
+                "inject-assert: symptom %r confirmed for %s",
+                verify["symptom"],
+                scenario_id,
+            )
+            return
+        time.sleep(_INJECT_ASSERT_POLL_INTERVAL_S)
+    raise InjectAssertionFailed(
+        f"scenario {scenario_id}: symptom {verify['symptom']!r} not observed"
+        f" within {timeout}s"
+    )
+
+
+def _emit_inject_failed_record(
+    scenario_id: str,
+    seed: int,
+    model: str,
+    reason: str,
+    runs_dir: Path | None = None,
+) -> Path:
+    run_id, seed_str, sha7 = build_run_id(scenario_id, model, seed=seed)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    record = RunRecord(
+        run_id=run_id,
+        scenario=scenario_id,
+        seed=seed_str,
+        model=model,
+        git_sha7=sha7,
+        started_at=now,
+        ended_at=now,
+        outcome="inject_did_not_break",
+        success_rate=False,
+        diagnosis_accuracy=None,
+        MTTR_s=None,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=0,
+        total_output_tokens=0,
+        total_tool_calls=0,
+        iteration_count=0,
+        autonomy_level="full",
+        actions_taken=[],
+        setup_error=reason,
+        model_version=model,
+    )
+    _write_run_record(record)
+    if runs_dir is None:
+        runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
+    return runs_dir / f"{run_id}.json"
 
 
 def _script_path(scenarios_dir: Path, scenario_id: str, name: str) -> Path:
@@ -183,8 +410,21 @@ def _reset_circuit_breaker() -> None:
         pass
 
 
+_POD_SCOPED_ALERTS: frozenset[str] = frozenset(
+    {"KubePodCrashLooping", "KubePodNotReady", "KubeContainerWaiting"}
+)
+
 _K8S_LABEL_KEYS: frozenset[str] = frozenset(
-    {"deployment", "namespace", "pod", "statefulset", "daemonset", "name", "service"}
+    {
+        "deployment",
+        "kustomization",
+        "namespace",
+        "pod",
+        "statefulset",
+        "daemonset",
+        "name",
+        "service",
+    }
 )
 
 
@@ -200,13 +440,27 @@ def _load_scenario(scenario_id: str) -> dict[str, Any]:
 def _build_fault_event(
     scenario_id: str, target_host: str | None = None
 ) -> dict[str, Any]:
+    kubeconfig = os.environ.get("EVAL_RUNNER_KUBECONFIG") or None
     scenario = _load_scenario(scenario_id)
     alert_name = scenario.get("alert_name") or scenario_id
     inject_params: dict[str, Any] = scenario.get("inject_params") or {}
     labels: dict[str, str] = {"alertname": alert_name}
-    for key in _K8S_LABEL_KEYS:
-        if key in inject_params:
-            labels[key] = str(inject_params[key])
+
+    if alert_name in _POD_SCOPED_ALERTS:
+        namespace = str(inject_params.get("namespace", "default"))
+        deployment = str(inject_params.get("deployment", ""))
+        labels["namespace"] = namespace
+        if deployment:
+            pod_name = _discover_failing_pod(namespace, deployment, kubeconfig)
+            if pod_name:
+                labels["pod"] = pod_name
+            else:
+                labels["deployment"] = deployment
+    else:
+        for key in _K8S_LABEL_KEYS:
+            if key in inject_params:
+                labels[key] = str(inject_params[key])
+
     if target_host:
         labels["node"] = target_host
     return {
@@ -422,11 +676,27 @@ async def run_one(
     _run_script(inject_sh, seed, verbose=verbose)
 
     target_host: str | None = None
+    verify_broken: dict | None = None
     scenario_yaml = scenarios_dir / scenario_id / "scenario.yaml"
     if scenario_yaml.exists():
         with scenario_yaml.open() as f:
             data = yaml.safe_load(f)
         target_host = (data.get("inject_params") or {}).get("target_host")
+        verify_broken = data.get("verify_broken") or None
+
+    if verify_broken:
+        try:
+            _wait_for_inject_symptom(scenario_id, verify_broken, scenarios_dir)
+        except InjectAssertionFailed as exc:
+            log.error("inject-assert failed for %s: %s", scenario_id, exc)
+            result_path = _emit_inject_failed_record(
+                scenario_id, seed, model, str(exc), runs_dir
+            )
+            return result_path
+    else:
+        log.warning(
+            "no verify_broken block for %s - skipping inject assertion", scenario_id
+        )
 
     return await trigger_and_wait(
         scenario_id=scenario_id,

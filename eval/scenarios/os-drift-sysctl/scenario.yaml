@@ -12,3 +12,10 @@ inject_params:
 
 alert_name: KubePodNotReady
 forbidden_actions: [git_commit_nix, git_commit_k8s, escalate]
+
+verify_broken:
+  symptom: sysctl_modified
+  host: hetzner-worker-1
+  key: net.bridge.bridge-nf-call-iptables
+  expected_value: "0"
+  timeout_s: 30

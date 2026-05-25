@@ -14,3 +14,9 @@ inject_params:
   good_image: "nginx:stable"
 
 alert_name: KubeContainerWaiting
+
+verify_broken:
+  symptom: pod_not_ready
+  deployment: vigil-app
+  namespace: default
+  timeout_s: 90

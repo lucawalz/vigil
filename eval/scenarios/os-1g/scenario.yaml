@@ -11,3 +11,9 @@ inject_params:
   fault_type: k3s-disabled-via-nix-commit
 
 alert_name: KubeNodeNotReady
+
+verify_broken:
+  symptom: systemd_unit_inactive
+  unit: k3s
+  host: hetzner-worker-1
+  timeout_s: 120
