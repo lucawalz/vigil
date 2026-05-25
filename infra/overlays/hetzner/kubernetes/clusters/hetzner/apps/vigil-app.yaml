@@ -23,5 +23,3 @@ spec:
             memory: 64Mi
           limits:
             memory: 128Mi
-      nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
