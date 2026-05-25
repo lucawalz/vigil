@@ -339,16 +339,14 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git fetch origin main "${RESULTS_BRANCH}" 2>/dev/null || true
+          git fetch origin "${RESULTS_BRANCH}" 2>/dev/null || true
           if git rev-parse "origin/${RESULTS_BRANCH}" &>/dev/null; then
             git branch "${RESULTS_BRANCH}" "origin/${RESULTS_BRANCH}"
           else
+            git fetch origin main
             git branch "${RESULTS_BRANCH}" origin/main
           fi
           git worktree add /tmp/eval-results "${RESULTS_BRANCH}"
-          if ! git -C /tmp/eval-results merge-base --is-ancestor origin/main HEAD; then
-            git -C /tmp/eval-results rebase origin/main
-          fi
           DEST="/tmp/eval-results/results/${RUN_ID}"
           mkdir -p "${DEST}/traces"
           cp eval/results/REPORT.md eval/results/summary.json "${DEST}/"
@@ -361,5 +359,5 @@ jobs:
           else
             TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
             git commit -m "docs(eval): record campaign ${RUN_ID} (${TIMESTAMP})"
-            git push --force-with-lease origin "${RESULTS_BRANCH}"
+            git push origin "${RESULTS_BRANCH}"
           fi
