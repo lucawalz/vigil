@@ -107,14 +107,14 @@ Use the provided diff field from DiagnosisContext to classify drift direction:
   no_drift: live_yaml and declared_yaml are identical; the cluster has self-healed;
     set recommended_action="escalate".
 
-For git_commit_k8s faults, before emitting proposed_patch:
+For git_commit_k8s faults, before emitting patch fields:
 1. Use DiagnosisContext.manifest_path as the target path (do not re-derive it).
-2. Populate DiagnosisReport.proposed_patch with a ProposedPatch whose patch_body is
-   derived from DiagnosisContext.declared_yaml with the single faulty field corrected.
+2. Populate DiagnosisReport.patch_body with the corrected manifest YAML derived from
+   DiagnosisContext.declared_yaml with the single faulty field corrected.
    Never use get_resource_yaml output as the base for patch_body — it contains
    runtime-only fields (creationTimestamp, resourceVersion, uid, status) that must
-   not enter git. The resource_kind, resource_name, and resource_namespace fields
-   mirror the resource. When the manifest path ends in "helmrelease.yaml", generate
+   not enter git. Set resource_kind, resource_name, and resource_namespace to mirror
+   the affected resource. When the manifest path ends in "helmrelease.yaml", generate
    patch_body as the HelmRelease YAML with corrected .spec.values.* (not a
    StatefulSet or Deployment spec patch).
 
@@ -134,28 +134,27 @@ field is actually wrong given the evidence.
 
 recommended_action selection:
 - flux_reconcile: live resource drifted from declared state, but the declared state
-  in git is correct; Flux can self-heal by reconciling. Set proposed_patch=None.
+  in git is correct; Flux can self-heal by reconciling. Set all patch fields to null.
 - git_commit_k8s: declared manifest state in git is itself wrong (bad image tag,
   wrong config value); a git commit on the K8s manifest is required to fix declared
-  state. Populate proposed_patch with resource_kind/namespace/name AND patch_body
+  state. Populate resource_kind, resource_name, resource_namespace, and patch_body
   (full replacement manifest YAML derived from DiagnosisContext.declared_yaml, not
   from live YAML).
 - nixos_rebuild: live NixOS host drifted from declared NixOS config, but the config
-  in git is correct; rebuilding the host restores the desired state. Set
-  proposed_patch=None. Set target_host to the affected hostname.
+  in git is correct; rebuilding the host restores the desired state. Set all patch
+  fields to null. Set target_host to the affected hostname.
 - git_commit_nix: declared NixOS config in git is itself wrong; a git commit on the
-  NixOS config is required. Populate proposed_patch with patch_body (corrected config
-  YAML derived from DiagnosisContext.declared_yaml). Set target_host to the affected
-  hostname.
+  NixOS config is required. Populate patch_body (corrected config YAML derived from
+  DiagnosisContext.declared_yaml). Set target_host to the affected hostname.
 - escalate: resolve_manifest_path could not locate the manifest, the resource is not
   Flux-managed, or the fault falls outside
-  the four-quadrant model. Set proposed_patch=None.
+  the four-quadrant model. Set all patch fields to null.
 
 patch_body / target_host rules:
 - patch_body is populated only for git_commit_k8s and git_commit_nix. For
-  flux_reconcile, nixos_rebuild, and escalate, proposed_patch must be None.
+  flux_reconcile, nixos_rebuild, and escalate, all patch fields must be null.
 - target_host is required when recommended_action is nixos_rebuild or git_commit_nix.
-  For flux_reconcile, git_commit_k8s, and escalate, target_host may be None.
+  For flux_reconcile, git_commit_k8s, and escalate, target_host may be null.
 
 - When confidence is below 0.6, gather more evidence with additional tool calls
   rather than committing to a repair action prematurely.

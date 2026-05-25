@@ -209,15 +209,21 @@ def test_diagnosis_deps_docstring_rationale() -> None:
     assert "nixos-mcp" in DiagnosisDeps.__doc__
 
 
-def test_proposed_patch_allows_none_patch_body() -> None:
-    from diagnosis.models import ProposedPatch
-
-    patch = ProposedPatch(
-        resource_kind="Pod",
+def test_diagnosis_report_patch_body_optional() -> None:
+    r = DiagnosisReport(
+        root_cause="drift",
+        root_cause_component="vigil-app",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="event",
+        drift_classification="declared_drift",
+        recommended_action="git_commit_k8s",
+        confidence=0.9,
+        resource_kind="Deployment",
+        resource_name="vigil-app",
         resource_namespace="default",
-        resource_name="foo",
     )
-    assert patch.patch_body is None
+    assert r.patch_body is None
 
 
 def test_diagnosis_report_lacks_live_observed_field() -> None:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from diagnosis.models import DiagnosisReport, ProposedPatch
+from diagnosis.models import DiagnosisReport
 from orchestrator.models import FaultEvent, RunRecord
 from pydantic import ValidationError
 from watchdog.models import HealthSnapshot, WatchdogResult
@@ -74,7 +74,7 @@ def _minimal_report(**overrides: object) -> DiagnosisReport:
 def test_diagnosis_report_accepts_git_commit_k8s_action() -> None:
     r = _minimal_report()
     assert r.manifest_path is None
-    assert r.proposed_patch is None
+    assert r.patch_body is None
 
 
 def test_diagnosis_report_requires_drift_classification() -> None:
@@ -90,40 +90,40 @@ def test_diagnosis_report_requires_drift_classification() -> None:
         )
 
 
-def test_diagnosis_report_with_proposed_patch_roundtrip() -> None:
-    patch = ProposedPatch(
+def test_diagnosis_report_with_patch_fields_roundtrip() -> None:
+    r = _minimal_report(
+        manifest_path="apps/vigil/deployment.yaml",
         resource_kind="Deployment",
         resource_name="vigil-app",
         resource_namespace="default",
         patch_body="apiVersion: apps/v1\nkind: Deployment\n",
     )
-    r = _minimal_report(
-        manifest_path="apps/vigil/deployment.yaml",
-        proposed_patch=patch,
-    )
     j = r.model_dump_json()
     assert DiagnosisReport.model_validate_json(j) == r
 
 
-def test_proposed_patch_requires_identity_fields() -> None:
-    base = dict(
+def test_patch_fields_must_be_null_for_non_patch_actions() -> None:
+    with pytest.raises(ValidationError, match="patch fields"):
+        DiagnosisReport(
+            root_cause="drift",
+            root_cause_component="vigil-app",
+            severity="high",
+            affected_resources=["default/vigil-app"],
+            evidence="event",
+            drift_classification="live_only_drift",
+            recommended_action="flux_reconcile",
+            confidence=0.9,
+            patch_body="apiVersion: apps/v1\n",
+        )
+
+
+def test_patch_body_is_optional_for_git_commit_k8s() -> None:
+    r = _minimal_report(
         resource_kind="Deployment",
         resource_name="vigil-app",
         resource_namespace="default",
     )
-    for field in ("resource_kind", "resource_name", "resource_namespace"):
-        kwargs = {k: v for k, v in base.items() if k != field}
-        with pytest.raises(ValidationError):
-            ProposedPatch(**kwargs)
-
-
-def test_proposed_patch_body_is_optional() -> None:
-    patch = ProposedPatch(
-        resource_kind="ResourceQuota",
-        resource_name="restrictive-quota",
-        resource_namespace="default",
-    )
-    assert patch.patch_body is None
+    assert r.patch_body is None
 
 
 def test_diagnosis_report_rejects_delete_cluster_still_invalid() -> None:

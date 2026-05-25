@@ -37,7 +37,7 @@ If recommended_action == "flux_reconcile":
 If recommended_action == "git_commit_k8s":
   Inputs already present in the report:
     - DiagnosisReport.manifest_path -- repo-relative path to overwrite
-    - DiagnosisReport.proposed_patch.patch_body -- full replacement manifest YAML
+    - DiagnosisReport.patch_body -- full replacement manifest YAML
     - affected_resources -- list of affected Kubernetes resources
 
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
@@ -48,10 +48,10 @@ If recommended_action == "git_commit_k8s":
        -- record the branch name into RemediationResult.agent_branch.
     1b. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
         the current declared content. If the returned content is identical to
-        DiagnosisReport.proposed_patch.patch_body, the fix is already in git; escalate
+        DiagnosisReport.patch_body, the fix is already in git; escalate
         rather than opening a no-op PR.
     2. write_manifest(manifest_path=DiagnosisReport.manifest_path,
-                     patch_body=DiagnosisReport.proposed_patch.patch_body)
+                     patch_body=DiagnosisReport.patch_body)
     3. commit_files(message='fix(remediation): <short root cause summary>')
        -- record the SHA from 'commit: <sha>' into RemediationResult.agent_commits.
     4. push_branch()
@@ -85,7 +85,7 @@ If recommended_action == "nixos_rebuild":
 If recommended_action == "git_commit_nix":
   Inputs already present in the report:
     - DiagnosisReport.manifest_path -- repo-relative path to overwrite
-    - DiagnosisReport.proposed_patch.patch_body -- full replacement manifest YAML
+    - DiagnosisReport.patch_body -- full replacement manifest YAML
     - DiagnosisReport.target_host -- NixOS hostname for nixos-mcp calls
 
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
@@ -93,10 +93,10 @@ If recommended_action == "git_commit_nix":
        -- idempotent if diagnosis already ran.
     1. create_branch(run_id=<run_id>)
     1b. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
-        the current declared content. If identical to proposed_patch.patch_body,
+        the current declared content. If identical to DiagnosisReport.patch_body,
         escalate.
     2. write_manifest(manifest_path=DiagnosisReport.manifest_path,
-                     patch_body=DiagnosisReport.proposed_patch.patch_body)
+                     patch_body=DiagnosisReport.patch_body)
     3. commit_files(message='fix(remediation): <short root cause summary>')
     4. push_branch()
     5. create_pr(title='<short summary>', body='<root cause + evidence>')

@@ -6,20 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 from pydantic_ai.mcp import MCPServerStdio
 
-
-class ProposedPatch(BaseModel):
-    resource_kind: str
-    resource_name: str
-    resource_namespace: str
-    patch_body: str | None = Field(
-        default=None,
-        description=(
-            "Full replacement manifest YAML for git_commit_k8s and git_commit_nix;"
-            " None for flux_reconcile / nixos_rebuild / escalate."
-        ),
-    )
-
-
 _LIVE_ONLY = {"flux_reconcile", "nixos_rebuild"}
 _DECLARED = {"git_commit_k8s", "git_commit_nix"}
 
@@ -69,11 +55,23 @@ class DiagnosisReport(BaseModel):
             "Repo-relative path to the manifest file the patch_body should overwrite"
         ),
     )
-    proposed_patch: ProposedPatch | None = Field(
+    resource_kind: str | None = Field(
+        default=None,
+        description="K8s resource kind (e.g. Deployment). Required for git_commit_k8s.",
+    )
+    resource_name: str | None = Field(
+        default=None,
+        description="Kubernetes resource name. Required for git_commit_k8s.",
+    )
+    resource_namespace: str | None = Field(
+        default=None,
+        description="Kubernetes resource namespace. Required for git_commit_k8s.",
+    )
+    patch_body: str | None = Field(
         default=None,
         description=(
-            "Full replacement manifest YAML and resource identifiers"
-            " for git-mcp.write_manifest"
+            "Full replacement manifest YAML for git_commit_k8s and git_commit_nix;"
+            " null for flux_reconcile / nixos_rebuild / escalate."
         ),
     )
 
@@ -107,6 +105,25 @@ class DiagnosisReport(BaseModel):
                 f" to match the action, or change recommended_action to"
                 f" 'escalate' to match the classification."
                 f" Re-examine the diff before deciding."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _patch_fields_consistent(self) -> "DiagnosisReport":
+        action = self.recommended_action
+        has_any = any(
+            f is not None
+            for f in [
+                self.resource_kind,
+                self.resource_name,
+                self.resource_namespace,
+                self.patch_body,
+            ]
+        )
+        if action not in {"git_commit_k8s", "git_commit_nix"} and has_any:
+            raise ValueError(
+                f"patch fields (resource_kind, resource_name, resource_namespace,"
+                f" patch_body) must be null when recommended_action='{action}'."
             )
         return self
 

@@ -21,7 +21,7 @@ os.environ.setdefault("LLM_MODEL_NAME", "test-model")
 os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
-from diagnosis.models import DiagnosisReport, ProposedPatch
+from diagnosis.models import DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
     _issue_rollback,
@@ -55,13 +55,11 @@ def _canned_report() -> DiagnosisReport:
         recommended_action="git_commit_k8s",
         confidence=0.95,
         manifest_path="infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml",
-        proposed_patch=ProposedPatch(
-            resource_kind="Deployment",
-            resource_name="vigil-app",
-            resource_namespace="default",
-            patch_body=(
-                "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\n"
-            ),
+        resource_kind="Deployment",
+        resource_name="vigil-app",
+        resource_namespace="default",
+        patch_body=(
+            "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\n"
         ),
     )
 
