@@ -1,0 +1,77 @@
+{
+  "by_model": {
+    "qwen3-coder-next:cloud": {
+      "n_runs": 3,
+      "n_attempts": 3,
+      "success_rate": 0.3333333333333333,
+      "success_rate_given_attempt": 0.3333333333333333,
+      "mean_MTTR_s": 301.283987617,
+      "std_MTTR_s": null,
+      "diagnosis_accuracy": 1.0,
+      "diag_n": 2,
+      "destructive_repair_rate": 0.6666666666666666,
+      "rollback_triggered_rate": 0.3333333333333333,
+      "n_eligible": 3,
+      "mean_input_tokens": 71235,
+      "mean_output_tokens": 1060,
+      "mean_tool_calls": 10,
+      "mean_iteration_count": 7.333333333333333
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 301.283987617,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "rollback_failed",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 146.61329082199995,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "inject_did_not_break",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 3,
+    "n_models": 1,
+    "n_scenarios": 3
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
