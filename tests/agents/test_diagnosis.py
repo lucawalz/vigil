@@ -321,12 +321,15 @@ def test_diagnosis_context_required_fields() -> None:
         "live_yaml",
         "declared_yaml",
         "diff",
+        "live_pod_status",
+        "live_admission_objects",
     }
     assert fields["source_branch"].type in (str, "str")
     assert fields["manifest_path"].type in ("str | None", "Optional[str]")
     assert fields["live_yaml"].type in (str, "str")
     assert fields["declared_yaml"].type in (str, "str")
     assert fields["diff"].type in (str, "str")
+    assert fields["live_pod_status"].type in (str, "str")
 
 
 def test_compute_diff_unified_format() -> None:

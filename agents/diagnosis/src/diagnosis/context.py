@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import difflib
 import logging
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import yaml
@@ -14,6 +15,18 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class AdmissionObject:
+    """A namespace-scoped admission-control object discovered in the cluster."""
+
+    kind: str
+    name: str
+    namespace: str
+    summary: str
+    declared_in_git: bool
+    git_path: str | None
+
+
+@dataclass(frozen=True)
 class DiagnosisContext:
     """Ground-truth state computed by Python before the diagnosis LLM runs."""
 
@@ -22,6 +35,8 @@ class DiagnosisContext:
     live_yaml: str
     declared_yaml: str
     diff: str
+    live_pod_status: str = field(default="")
+    live_admission_objects: list[AdmissionObject] = field(default_factory=list)
 
 
 class ManifestPathUnresolvable(RuntimeError):
@@ -241,6 +256,118 @@ def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
     )
 
 
+_QUOTA_NAME_RE = re.compile(r"exceeded quota:\s*([^\s,]+)")
+
+
+def _extract_quota_names_from_events(events_text: str) -> list[str]:
+    """Return deduplicated ResourceQuota names from FailedCreate event messages."""
+    return list(dict.fromkeys(_QUOTA_NAME_RE.findall(events_text)))
+
+
+async def _get_kustomize_spec_path(deps: DiagnosisDeps, live_text: str) -> str | None:
+    """Extract the Kustomization spec.path from a live resource's Flux annotations."""
+    kust_name, kust_ns = _extract_flux_annotations(live_text)
+    if not kust_name or not kust_ns:
+        return None
+    try:
+        kust_result = await deps.kubectl_mcp.direct_call_tool(
+            "get_resource_yaml",
+            {"kind": "Kustomization", "namespace": kust_ns, "name": kust_name},
+        )
+        kust_data = yaml.safe_load(_extract_text(kust_result))
+        spec_path = (kust_data.get("spec") or {}).get("path", "").lstrip("./")
+        return spec_path or None
+    except Exception:
+        return None
+
+
+async def _fetch_admission_objects(
+    deps: DiagnosisDeps,
+    namespace: str,
+    source_branch: str,
+    kustomize_path: str | None,
+) -> list[AdmissionObject]:
+    """Discover ResourceQuota objects from namespace events and check git."""
+    log = logging.getLogger(__name__)
+    objects: list[AdmissionObject] = []
+
+    try:
+        events_result = await deps.kubectl_mcp.direct_call_tool(
+            "get_events", {"namespace": namespace, "field_selector": ""}
+        )
+        events_text = _extract_text(events_result)
+    except Exception:
+        return objects
+
+    for quota_name in _extract_quota_names_from_events(events_text):
+        try:
+            rq_result = await deps.kubectl_mcp.direct_call_tool(
+                "get_resource_yaml",
+                {"kind": "ResourceQuota", "namespace": namespace, "name": quota_name},
+            )
+            rq_text = _extract_text(rq_result)
+        except Exception:
+            continue
+
+        declared_in_git = False
+        git_path: str | None = None
+        if kustomize_path:
+            try:
+                path_result = await deps.git_mcp.direct_call_tool(
+                    "resolve_manifest_path",
+                    {
+                        "kustomize_path": kustomize_path,
+                        "kind": "ResourceQuota",
+                        "name": quota_name,
+                        "namespace": namespace,
+                    },
+                )
+                git_path = (
+                    path_result.get("path")
+                    if isinstance(path_result, dict)
+                    else _extract_text(path_result)
+                )
+                declared_in_git = bool(git_path)
+            except Exception:
+                log.debug(
+                    "resolve_manifest_path failed for ResourceQuota/%s: skipping",
+                    quota_name,
+                )
+
+        objects.append(
+            AdmissionObject(
+                kind="ResourceQuota",
+                name=quota_name,
+                namespace=namespace,
+                summary=rq_text[:500],
+                declared_in_git=declared_in_git,
+                git_path=git_path,
+            )
+        )
+
+    return objects
+
+
+async def _fetch_pod_status(deps: DiagnosisDeps, namespace: str) -> str:
+    """Pre-fetch pods and namespace events for K8s workload alerts."""
+    parts: list[str] = []
+    try:
+        pods_result = await deps.kubectl_mcp.direct_call_tool(
+            "get_pods", {"namespace": namespace}
+        )
+        parts.append("=== Pods ===\n" + _extract_text(pods_result))
+    except Exception as exc:
+        parts.append(f"=== Pods (error) ===\n{exc}")
+    try:
+        events_result = await deps.kubectl_mcp.direct_call_tool(
+            "get_events", {"namespace": namespace, "field_selector": ""}
+        )
+        parts.append("=== Events ===\n" + _extract_text(events_result))
+    except Exception as exc:
+        parts.append(f"=== Events (error) ===\n{exc}")
+    return "\n\n".join(parts)
+
+
 async def build_diagnosis_context(
     deps: DiagnosisDeps, fault: FaultEvent
 ) -> DiagnosisContext:
@@ -329,10 +456,17 @@ async def build_diagnosis_context(
         ) from exc
 
     diff = _compute_diff(live_yaml, declared_yaml)
+    live_pod_status = await _fetch_pod_status(deps, namespace)
+    kustomize_path = await _get_kustomize_spec_path(deps, live_yaml)
+    live_admission_objects = await _fetch_admission_objects(
+        deps, namespace, source_branch, kustomize_path
+    )
     return DiagnosisContext(
         source_branch=source_branch,
         manifest_path=manifest_path,
         live_yaml=live_yaml,
         declared_yaml=declared_yaml,
         diff=diff,
+        live_pod_status=live_pod_status,
+        live_admission_objects=live_admission_objects,
     )
