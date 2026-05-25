@@ -712,6 +712,56 @@ func TestWriteManifestHandler_RejectsAbsolutePath(t *testing.T) {
 	}
 }
 
+func TestWriteManifestHandler_RejectsInvalidYAML(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    `apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\n`,
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for literal-escape YAML")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "yaml parse error") {
+		t.Errorf("expected 'yaml parse error' in error, got: %s", text)
+	}
+}
+
+func TestWriteManifestHandler_AcceptsValidYAML(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: v1\nkind: Deployment\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for valid YAML, got error: %v", result.Content)
+	}
+}
+
 func TestCommitFilesHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{commitSHA: "abc1234"}

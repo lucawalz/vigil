@@ -12,6 +12,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -202,6 +203,13 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 		} else {
 			if violation := findRuntimeOnlyField(patchBody); violation != "" {
 				return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML"), nil
+			}
+			ext := strings.ToLower(filepath.Ext(cleaned))
+			if ext == ".yaml" || ext == ".yml" {
+				var doc any
+				if err := yaml.Unmarshal([]byte(patchBody), &doc); err != nil {
+					return mcp.NewToolResultError("patch_body: yaml parse error: " + err.Error()), nil
+				}
 			}
 		}
 
