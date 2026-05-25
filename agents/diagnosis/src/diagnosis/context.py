@@ -136,9 +136,25 @@ def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
 async def _walk_pod_to_deployment(
     deps: DiagnosisDeps, pod_yaml: str, namespace: str
 ) -> tuple[str, str]:
-    """Walk Pod ownerReferences → ReplicaSet → Deployment; return (name, yaml)."""
+    """Resolve Deployment from pod labels first; fall back to ownerReferences walk."""
     try:
         pod_data = yaml.safe_load(pod_yaml)
+        labels = (pod_data.get("metadata") or {}).get("labels") or {}
+        for label_key in ("app.kubernetes.io/name", "app"):
+            dep_name = labels.get(label_key)
+            if dep_name:
+                try:
+                    dep_result = await deps.kubectl_mcp.direct_call_tool(
+                        "get_resource_yaml",
+                        {
+                            "kind": "Deployment",
+                            "namespace": namespace,
+                            "name": dep_name,
+                        },
+                    )
+                    return dep_name, _extract_text(dep_result)
+                except Exception:
+                    pass
         owner_refs = (pod_data.get("metadata") or {}).get("ownerReferences") or []
         rs_ref = next((r for r in owner_refs if r.get("kind") == "ReplicaSet"), None)
         if not rs_ref:
@@ -162,7 +178,9 @@ async def _walk_pod_to_deployment(
     except ManifestPathUnresolvable:
         raise
     except Exception as exc:
-        raise ManifestPathUnresolvable(f"Pod owner-walk failed: {exc}") from exc
+        raise ManifestPathUnresolvable(
+            f"pod-to-deployment resolution failed: {exc}"
+        ) from exc
 
 
 async def _resolve_manifest_path_k8s(
@@ -447,17 +465,36 @@ async def build_diagnosis_context(
     )
     live_yaml = _extract_text(live_result)
 
+    log = logging.getLogger(__name__)
     resource_name_override: str | None = None
     resolved_kind = kind
     if kind == "Pod":
-        dep_name, dep_yaml = await _walk_pod_to_deployment(deps, live_yaml, namespace)
-        live_yaml = dep_yaml
-        resource_name_override = dep_name
-        resolved_kind = "Deployment"
+        try:
+            dep_name, dep_yaml = await _walk_pod_to_deployment(
+                deps, live_yaml, namespace
+            )
+            live_yaml = dep_yaml
+            resource_name_override = dep_name
+            resolved_kind = "Deployment"
+        except ManifestPathUnresolvable as exc:
+            log.warning("pod-to-deployment walk failed, proceeding as Pod: %s", exc)
 
-    manifest_path: str = await _resolve_manifest_path_k8s(
-        deps, fault, live_yaml, resolved_kind, namespace, resource_name_override
-    )
+    try:
+        manifest_path: str = await _resolve_manifest_path_k8s(
+            deps, fault, live_yaml, resolved_kind, namespace, resource_name_override
+        )
+    except ManifestPathUnresolvable:
+        if resolved_kind == "Pod":
+            live_pod_status = await _fetch_pod_status(deps, namespace)
+            return DiagnosisContext(
+                source_branch=source_branch,
+                manifest_path=None,
+                live_yaml=live_yaml,
+                declared_yaml="",
+                diff="",
+                live_pod_status=live_pod_status,
+            )
+        raise
 
     try:
         declared_result = await deps.git_mcp.direct_call_tool(
