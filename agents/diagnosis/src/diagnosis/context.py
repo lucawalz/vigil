@@ -53,6 +53,7 @@ _LABEL_TO_KIND: tuple[tuple[str, str], ...] = (
     ("daemonset", "DaemonSet"),
     ("pod", "Pod"),
     ("persistentvolumeclaim", "PersistentVolumeClaim"),
+    ("kustomization", "Kustomization"),
 )
 
 
@@ -418,6 +419,20 @@ async def build_diagnosis_context(
     if kind == "Namespace":
         alert_labels = [a.get("labels", {}) for a in fault.alerts]
         live_yaml = f"namespace: {namespace}\nalert_labels: {alert_labels}"
+        return DiagnosisContext(
+            source_branch=source_branch,
+            manifest_path=None,
+            live_yaml=live_yaml,
+            declared_yaml="",
+            diff="",
+        )
+
+    if kind == "Kustomization":
+        kust_status_result = await deps.flux_mcp.direct_call_tool(
+            "get_kustomization_status",
+            {"namespace": namespace, "name": name},
+        )
+        live_yaml = _extract_text(kust_status_result)
         return DiagnosisContext(
             source_branch=source_branch,
             manifest_path=None,

@@ -99,6 +99,15 @@ triage sequence is get_nodes (confirm the named node's Ready state) → describe
 intervention only if needed. describe_node may reveal a K8s-side cause
 (MemoryPressure, kubelet flapping, taint) that does not require touching the OS.
 
+Flux-layer triage: when the alert labels include `kustomization`, live_yaml contains
+the Kustomization status output (pre-fetched). Read the apply error message in
+live_yaml verbatim - it names the rejected field and the affected resource. Then
+call git_mcp.read_file(source_branch, path) on the manifest indicated by the error
+to verify the declared value. Derive manifest_path from the Kustomization spec.path
+and the failing resource name (DiagnosisContext.manifest_path is null for Kustomization
+alerts - do not rely on it). Set drift_classification=declared_drift and
+recommended_action=git_commit_k8s when the declared manifest contains the wrong value.
+
 OS-level fault rules:
 - The alert labels include a "node" field with the exact hostname (e.g.,
   "hetzner-worker-1"). Use this value verbatim as the hostname argument for ALL
