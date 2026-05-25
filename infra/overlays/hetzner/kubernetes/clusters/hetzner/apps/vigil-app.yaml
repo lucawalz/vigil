@@ -24,4 +24,4 @@ spec:
           limits:
             memory: 128Mi
       nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
+        kubernetes.io/hostname: hetzner-worker-1
