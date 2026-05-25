@@ -376,20 +376,14 @@ func (c *realGitClient) ResolveManifestPath(_ context.Context, cloneDir, kustomi
 
 // go-git v5 does not expose a native Revert; fall back to the git binary.
 func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (string, error) {
-	r, err := git.PlainOpen(cloneDir)
-	if err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: open repo: %w", err), c.cfg.AuthURL())
-	}
-	wt, err := r.Worktree()
-	if err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: worktree: %w", err), c.cfg.AuthURL())
+	fetchCmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "fetch", "origin", branch)
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: fetch: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
 	}
 
-	if err := wt.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.NewBranchReferenceName(branch),
-		Create: false,
-	}); err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: checkout %s: %w", branch, err), c.cfg.AuthURL())
+	resetCmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "reset", "--hard", "origin/"+branch)
+	if out, err := resetCmd.CombinedOutput(); err != nil {
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: reset: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "revert", "--no-edit", mergeCommitSHA)
@@ -397,6 +391,10 @@ func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitS
 		return "", sanitiseAuthError(fmt.Errorf("revert_commit: git revert: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
 	}
 
+	r, err := git.PlainOpen(cloneDir)
+	if err != nil {
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: open repo: %w", err), c.cfg.AuthURL())
+	}
 	head, err := r.Head()
 	if err != nil {
 		return "", sanitiseAuthError(fmt.Errorf("revert_commit: read HEAD after revert: %w", err), c.cfg.AuthURL())

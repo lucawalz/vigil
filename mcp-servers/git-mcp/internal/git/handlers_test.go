@@ -1810,24 +1810,12 @@ func TestHandleRevertCommit_FailsWhenBaseBranchUnset(t *testing.T) {
 	}
 }
 
-func TestRealGitClient_RevertCommitCheckoutMessage(t *testing.T) {
+func TestRealGitClient_RevertCommitFetchError(t *testing.T) {
 	repoDir := t.TempDir()
 	if out, err := exec.Command("git", "-C", repoDir, "init").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
-	if out, err := exec.Command("git", "-C", repoDir, "config", "user.email", "test@test.com").CombinedOutput(); err != nil {
-		t.Fatalf("git config email: %v: %s", err, out)
-	}
-	if out, err := exec.Command("git", "-C", repoDir, "config", "user.name", "test").CombinedOutput(); err != nil {
-		t.Fatalf("git config name: %v: %s", err, out)
-	}
-	if err := os.WriteFile(filepath.Join(repoDir, "init.txt"), []byte("init"), 0o644); err != nil {
-		t.Fatalf("write init: %v", err)
-	}
-	if out, err := exec.Command("git", "-C", repoDir, "add", ".").CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v: %s", err, out)
-	}
-	if out, err := exec.Command("git", "-C", repoDir, "commit", "-m", "init").CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "-C", repoDir, "commit", "--allow-empty", "-m", "init").CombinedOutput(); err != nil {
 		t.Fatalf("git commit: %v: %s", err, out)
 	}
 
@@ -1839,12 +1827,9 @@ func TestRealGitClient_RevertCommitCheckoutMessage(t *testing.T) {
 
 	_, err := client.RevertCommit(context.Background(), repoDir, "deadbeef", "chore/eval-cluster-baseline")
 	if err == nil {
-		t.Fatal("expected error for non-existent branch, got nil")
+		t.Fatal("expected error for missing origin remote, got nil")
 	}
-	if !strings.Contains(err.Error(), "chore/eval-cluster-baseline") {
-		t.Errorf("expected branch name in error message, got: %v", err)
-	}
-	if strings.Contains(err.Error(), ": checkout main:") {
-		t.Errorf("error message must not contain 'checkout main:', got: %v", err)
+	if !strings.HasPrefix(err.Error(), "revert_commit: fetch:") {
+		t.Errorf("expected 'revert_commit: fetch:' prefix, got: %v", err)
 	}
 }
