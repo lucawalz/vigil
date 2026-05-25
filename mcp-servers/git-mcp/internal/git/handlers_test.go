@@ -1815,6 +1815,12 @@ func TestRealGitClient_RevertCommitFetchError(t *testing.T) {
 	if out, err := exec.Command("git", "-C", repoDir, "init").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
+	if out, err := exec.Command("git", "-C", repoDir, "config", "user.email", "test@example.com").CombinedOutput(); err != nil {
+		t.Fatalf("git config user.email: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repoDir, "config", "user.name", "Test").CombinedOutput(); err != nil {
+		t.Fatalf("git config user.name: %v: %s", err, out)
+	}
 	if out, err := exec.Command("git", "-C", repoDir, "commit", "--allow-empty", "-m", "init").CombinedOutput(); err != nil {
 		t.Fatalf("git commit: %v: %s", err, out)
 	}
