@@ -13,7 +13,12 @@ python3 -c "
 import yaml, sys
 with open('$MANIFEST') as f:
     obj = yaml.safe_load(f)
-obj['spec']['template']['spec']['containers'][0]['env'] = [{'name': 'APP_CRASH_MODE', 'value': '1'}]
+envs = obj['spec']['template']['spec']['containers'][0].get('env', [])
+for e in envs:
+    if e['name'] == 'REQUIRED_API_BASE':
+        e['value'] = ''
+        break
+obj['spec']['template']['spec']['containers'][0]['env'] = envs
 with open('$MANIFEST', 'w') as f:
     yaml.dump(obj, f, default_flow_style=False, sort_keys=False)
 "
@@ -22,7 +27,7 @@ git -C "$VIGIL_REPO_ROOT" commit -am "k8s-2g: inject fault"
 git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
 flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" || true
-kubectl rollout status deployment/vigil-app -n default --timeout=30s \
+kubectl rollout status deployment/vigil-app -n default --timeout=60s \
   --kubeconfig "$EVAL_RUNNER_KUBECONFIG" 2>&1 || true
 
 echo "inject.sh: k8s-2g seed=${SEED} complete"

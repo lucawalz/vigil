@@ -18,8 +18,19 @@ spec:
       containers:
         - name: vigil-app
           image: nginx:stable
+          env:
+            - name: REQUIRED_API_BASE
+              value: "http://app.local"
           resources:
             requests:
               memory: "64Mi"
             limits:
               memory: "128Mi"
+          volumeMounts:
+            - name: nginx-config-template
+              mountPath: /etc/nginx/templates
+              readOnly: true
+      volumes:
+        - name: nginx-config-template
+          configMap:
+            name: vigil-app-nginx-config

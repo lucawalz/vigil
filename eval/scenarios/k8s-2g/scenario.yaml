@@ -1,16 +1,16 @@
 id: k8s-2g
-name: crash-env-committed
+name: crash-nginx-config-committed
 layer: k8s
 expected_action: git_commit_k8s
 
-root_cause_component: "vigil-app.yaml committed env: [{name: APP_CRASH_MODE, value: \"1\"}] on chore/eval-cluster-baseline causing container crash loop"
-expected_resolution_path: "diagnosis -> git_commit_k8s (remove crash env from manifest) -> gate_pass -> reconcile -> watchdog_confirm"
+root_cause_component: "vigil-app.yaml committed REQUIRED_API_BASE: \"\" on chore/eval-cluster-baseline; envsubst produces proxy_pass with empty URL; nginx fails config validation at startup causing CrashLoopBackOff"
+expected_resolution_path: "diagnosis -> git_commit_k8s (restore REQUIRED_API_BASE to http://app.local) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
   deployment: vigil-app
   namespace: default
-  env_name: "APP_CRASH_MODE"
-  env_value: "1"
+  env_name: "REQUIRED_API_BASE"
+  env_value: ""
 
 alert_name: KubePodCrashLooping
