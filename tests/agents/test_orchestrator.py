@@ -1167,6 +1167,106 @@ def test_check_forbidden_actions_empty_actions_returns_empty(
     assert _check_forbidden_actions("sc", []) == []
 
 
+async def test_no_rollback_when_watchdog_clears_within_settle_window(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
+    monkeypatch.setattr(
+        orch_mod,
+        "run_watchdog",
+        AsyncMock(side_effect=[degraded_rv, _watchdog_ok()]),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "success"
+    assert record.rollback_triggered is False
+
+
+async def test_rollback_when_watchdog_still_degraded_after_settle(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "reverted: cafebabe"}
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, args: (
+            {"content": "Ready: True"}
+            if tool == "get_kustomization_status"
+            else {"content": "reconciled"}
+        )
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.rollback_triggered is True
+    assert record.outcome in ("rollback_succeeded", "rollback_failed")
+
+
 def test_check_forbidden_actions_returns_tool_name_not_action_class(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
