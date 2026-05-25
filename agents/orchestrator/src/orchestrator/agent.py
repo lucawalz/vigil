@@ -38,6 +38,9 @@ REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "60
 WATCHDOG_RECONCILE_GRACE_S: float = float(
     os.environ.get("WATCHDOG_RECONCILE_GRACE_S", "90")
 )
+_POST_REMEDIATION_SETTLE_S: float = float(
+    os.environ.get("POST_REMEDIATION_SETTLE_S", "60")
+)
 
 
 class _CircuitBreaker:
@@ -177,6 +180,15 @@ def _write_run_record(record: RunRecord) -> None:
     index_path = runs_dir.parent / "runs_index.jsonl"
     with index_path.open("a") as f:
         f.write(record.model_dump_json() + "\n")
+
+
+async def _still_degraded_after_settle(
+    watchdog_deps: WatchdogDeps,
+    baseline: object,
+) -> bool:
+    await asyncio.sleep(_POST_REMEDIATION_SETTLE_S)
+    result = await run_watchdog(watchdog_deps, baseline)
+    return result.degraded
 
 
 async def _issue_rollback(
@@ -540,6 +552,12 @@ async def run_orchestration(
                 and len(remediation_result.agent_commits) > GIT_COMMIT_BUDGET
             ):
                 outcome = "budget_exhausted"
+                rollback_triggered = False
+                rollback_success = None
+            elif watchdog_result.degraded and not await _still_degraded_after_settle(
+                watchdog_deps, baseline
+            ):
+                outcome = "success"
                 rollback_triggered = False
                 rollback_success = None
             elif watchdog_result.degraded:

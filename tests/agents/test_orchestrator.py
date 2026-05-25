@@ -176,6 +176,7 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -831,6 +832,7 @@ async def test_outcome_rollback_succeeded(
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -884,6 +886,7 @@ async def test_outcome_rollback_failed(
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
     diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
     rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
