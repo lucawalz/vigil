@@ -9,28 +9,28 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vigil-app
+      app: vigil-app-typo
   template:
     metadata:
       labels:
         app: vigil-app
     spec:
       containers:
-        - name: vigil-app
-          image: nginx:stable
-          env:
-            - name: REQUIRED_API_BASE
-              value: "http://127.0.0.1"
-          resources:
-            requests:
-              memory: "64Mi"
-            limits:
-              memory: "128Mi"
-          volumeMounts:
-            - name: nginx-config-template
-              mountPath: /etc/nginx/templates
-              readOnly: true
-      volumes:
+      - name: vigil-app
+        image: nginx:stable
+        env:
+        - name: REQUIRED_API_BASE
+          value: http://127.0.0.1
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+        volumeMounts:
         - name: nginx-config-template
-          configMap:
-            name: vigil-app-nginx-config
+          mountPath: /etc/nginx/templates
+          readOnly: true
+      volumes:
+      - name: nginx-config-template
+        configMap:
+          name: vigil-app-nginx-config
