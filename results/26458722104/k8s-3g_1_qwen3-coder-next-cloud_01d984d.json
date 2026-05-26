@@ -1,0 +1,21 @@
+{
+  "run_id": "k8s-3g_1_qwen3-coder-next-cloud_01d984d",
+  "scenario": "k8s-3g",
+  "seed": 1,
+  "model": "qwen3-coder-next:cloud",
+  "outcome": "setup_error",
+  "success_rate": false,
+  "diagnosis_accuracy": null,
+  "MTTR_s": null,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "total_tool_calls": 0,
+  "iteration_count": 0,
+  "autonomy_level": "full",
+  "actions_taken": [],
+  "started_at": "2026-05-26T16:04:11Z",
+  "ended_at": "2026-05-26T16:04:11Z",
+  "error_message": "/root/vigil/eval/scenarios/k8s-3g/inject.sh exited 1: remote: Bypassed rule violations for refs/heads/chore/eval-cluster-baseline:        \nremote: \nremote: - Required status check \"remediation-gate\" is expected.        \nremote: \nTo https://github.com/lucawalz/vigil\n   cf01325..01d984d  HEAD -> chore/eval-cluster-baseline\n\u25ba annotating GitRepository flux-system in flux-system namespace\n\u2714 GitRepository annotated\n\u25ce waiting for GitRepository reconciliation\n\u2714 fetched revision chore/eval-cluster-baseli"
+}

@@ -1,0 +1,121 @@
+{
+  "by_model": {
+    "qwen3-coder-next:cloud": {
+      "n_runs": 7,
+      "n_attempts": 7,
+      "success_rate": 0.2857142857142857,
+      "success_rate_given_attempt": 0.2857142857142857,
+      "mean_MTTR_s": 289.63107961700007,
+      "std_MTTR_s": 4.484759275930955,
+      "diagnosis_accuracy": 0.5,
+      "diag_n": 6,
+      "destructive_repair_rate": 0.42857142857142855,
+      "rollback_triggered_rate": 0.14285714285714285,
+      "n_eligible": 7,
+      "mean_input_tokens": 71535.28571428571,
+      "mean_output_tokens": 1092.2857142857142,
+      "mean_tool_calls": 10.714285714285714,
+      "mean_iteration_count": 5.571428571428571
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 286.459875921,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "rollback_succeeded",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 223.36841657500008,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "setup_error",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 292.8022833130001,
+      "std_MTTR_s": null
+    },
+    "k8s-5g": {
+      "n_runs": 1,
+      "outcome": "escalated",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 9.66564257899995,
+      "std_MTTR_s": null
+    },
+    "live-quota-injected": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 243.01420339100014,
+      "std_MTTR_s": null
+    },
+    "deceptive-2": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 234.5088338129999,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 7,
+    "n_models": 1,
+    "n_scenarios": 7
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
