@@ -212,12 +212,47 @@ def lookup_os_manifest_path(hostname: str) -> str:
     return _lookup_os_manifest_path(hostname)
 
 
+def _build_user_message(
+    fault: "FaultEvent",
+    context: DiagnosisContext,
+    retry_hint: str | None = None,
+) -> str:
+    admission_lines: list[str] = []
+    for ao in context.live_admission_objects:
+        in_git = "in-git" if ao.declared_in_git else "NOT-in-git"
+        line = f"    {ao.kind}/{ao.name} ({ao.namespace}) [{in_git}]"
+        if ao.git_path:
+            line += f" git_path={ao.git_path}"
+        line += f"\n      {ao.summary}"
+        admission_lines.append(line)
+    admission_block = (
+        "  live_admission_objects:\n" + "\n".join(admission_lines)
+        if admission_lines
+        else "  live_admission_objects: []"
+    )
+    retry_block = f"Retry signal: {retry_hint}\n\n" if retry_hint else ""
+    return (
+        f"{retry_block}"
+        f"Diagnose fault.\n\n"
+        f"Fault: {fault.model_dump_json()}\n\n"
+        f"DiagnosisContext:\n"
+        f"  source_branch: {context.source_branch}\n"
+        f"  manifest_path: {context.manifest_path}\n"
+        f"  live_yaml:\n{context.live_yaml}\n"
+        f"  declared_yaml:\n{context.declared_yaml}\n"
+        f"  diff:\n{context.diff}\n"
+        f"  live_pod_status:\n{context.live_pod_status}\n"
+        f"{admission_block}"
+    )
+
+
 async def run_diagnosis(
     deps: DiagnosisDeps,
     fault: FaultEvent,
     context: DiagnosisContext,
     model: OpenAIChatModel | None = None,
     blocked_tools: frozenset[str] = frozenset(),
+    retry_hint: str | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
     _nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
     # Blocks delete_resource; expand if kubectl-mcp gains additional write tools.
@@ -259,32 +294,7 @@ async def run_diagnosis(
             f"If your recommended action requires one of these tools, "
             f"set recommended_action=escalate."
         )
-    admission_lines: list[str] = []
-    for ao in context.live_admission_objects:
-        in_git = "in-git" if ao.declared_in_git else "NOT-in-git"
-        line = f"    {ao.kind}/{ao.name} ({ao.namespace}) [{in_git}]"
-        if ao.git_path:
-            line += f" git_path={ao.git_path}"
-        line += f"\n      {ao.summary}"
-        admission_lines.append(line)
-    admission_block = (
-        "  live_admission_objects:\n" + "\n".join(admission_lines)
-        if admission_lines
-        else "  live_admission_objects: []"
-    )
-    user_message = (
-        f"Diagnose fault.\n\n"
-        f"Fault: {fault.model_dump_json()}\n\n"
-        f"DiagnosisContext:\n"
-        f"  source_branch: {context.source_branch}\n"
-        f"  manifest_path: {context.manifest_path}\n"
-        f"  live_yaml:\n{context.live_yaml}\n"
-        f"  declared_yaml:\n{context.declared_yaml}\n"
-        f"  diff:\n{context.diff}\n"
-        f"  live_pod_status:\n{context.live_pod_status}\n"
-        f"{admission_block}"
-        f"{constraint_block}"
-    )
+    user_message = _build_user_message(fault, context, retry_hint) + constraint_block
     async with diagnosis_agent.iter(
         user_message,
         deps=deps,

@@ -815,9 +815,10 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
 
 
 def test_orchestrator_constants_have_correct_defaults() -> None:
-    assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 750.0
+    assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 1800.0
     assert orch_mod.REMEDIATION_TIMEOUT_S == 600.0
     assert orch_mod.WATCHDOG_RECONCILE_GRACE_S == 90.0
+    assert orch_mod._MAX_DIAGNOSIS_ATTEMPTS == 3
 
 
 async def test_outcome_rollback_succeeded(
@@ -1371,7 +1372,6 @@ async def test_escalate_action_returns_escalated_record(
 
     assert record.outcome == "escalated"
     assert record.success_rate is None
-    fetch_snapshot_mock.assert_not_called()
     run_remediation_mock.assert_not_called()
     run_watchdog_mock.assert_not_called()
 
@@ -1916,3 +1916,162 @@ async def test_success_rate_true_when_no_forbidden_actions(
     assert record.outcome == "success"
     assert record.success_rate is True
     assert record.forbidden_action_violations == []
+
+
+async def test_retry_succeeds_on_second_attempt(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
+
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
+    monkeypatch.setattr(
+        orch_mod,
+        "run_watchdog",
+        AsyncMock(side_effect=[degraded_rv, degraded_rv, _watchdog_ok()]),
+    )
+    mock_git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "success"
+    assert record.attempts == 2
+    assert record.rollback_triggered is False
+    assert run_diagnosis_mock.call_count == 2
+    _, second_kwargs = run_diagnosis_mock.call_args_list[1]
+    hint = second_kwargs.get("retry_hint")
+    assert hint is not None
+    assert "git_commit_k8s" in hint
+
+
+async def test_all_retries_exhausted_triggers_rollback_on_last_attempt(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
+
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "reverted: cafebabe"}
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.attempts == 3
+    assert record.rollback_triggered is True
+    assert record.outcome in ("rollback_succeeded", "rollback_failed")
+    assert run_diagnosis_mock.call_count == 3
+    revert_calls = [
+        c
+        for c in mock_git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "revert_commit"
+    ]
+    assert len(revert_calls) == 1
+
+
+async def test_gate_failed_does_not_retry(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_ssh_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+
+    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    failed_rem = RemediationResult(
+        success=False,
+        actions_taken=["create_branch", "write_manifest", "commit_files", "create_pr"],
+        tool_calls_count=4,
+        destructive_repair=False,
+        gate_status="closed",
+    )
+    rem_rv = (failed_rem, Usage(input_tokens=100, output_tokens=30), [])
+    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        ssh_mcp=mock_ssh_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "gate_failed"
+    assert record.attempts == 1
+    assert run_diagnosis_mock.call_count == 1

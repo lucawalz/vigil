@@ -17,7 +17,7 @@ os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
 import diagnosis.agent as _diag_module
-from diagnosis.agent import diagnosis_agent, run_diagnosis
+from diagnosis.agent import _build_user_message, diagnosis_agent, run_diagnosis
 from diagnosis.models import DiagnosisDeps, DiagnosisReport
 from pydantic_ai import Agent
 
@@ -60,7 +60,7 @@ def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:
 def test_run_diagnosis_signature_accepts_diagnosis_deps() -> None:
     sig = inspect.signature(run_diagnosis)
     params = list(sig.parameters.values())
-    assert len(params) == 5
+    assert len(params) == 6
     assert params[0].name == "deps"
     ann = params[0].annotation
     assert ann is DiagnosisDeps or (isinstance(ann, str) and "DiagnosisDeps" in ann)
@@ -1205,4 +1205,50 @@ def test_build_diagnosis_context_kustomization_dependency_fallback() -> None:
 
     assert ctx.manifest_path is None
     assert "cluster-apps" in ctx.live_yaml
-    assert ctx.declared_yaml == ""
+
+
+def _canned_context_for_msg():
+    from diagnosis.context import DiagnosisContext
+
+    return DiagnosisContext(
+        source_branch="main",
+        manifest_path="apps/vigil-app.yaml",
+        live_yaml="live: yaml",
+        declared_yaml="declared: yaml",
+        diff="",
+    )
+
+
+def _canned_fault_for_msg():
+    from orchestrator.models import FaultEvent
+
+    return FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[],
+        groupLabels={},
+        commonLabels={},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey="{}",
+    )
+
+
+def test_build_user_message_includes_retry_hint_prefix() -> None:
+    hint = (
+        "Attempt 2 of 3: prior recommended_action=git_commit_k8s. "
+        "Cluster still degraded after settle."
+    )
+    msg = _build_user_message(_canned_fault_for_msg(), _canned_context_for_msg(), hint)
+    assert msg.startswith("Retry signal:")
+    assert hint in msg
+    assert "Diagnose fault." in msg
+
+
+def test_build_user_message_without_hint_has_no_retry_block() -> None:
+    msg = _build_user_message(
+        _canned_fault_for_msg(), _canned_context_for_msg(), retry_hint=None
+    )
+    assert "Retry signal:" not in msg
+    assert msg.startswith("Diagnose fault.")

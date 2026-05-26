@@ -31,7 +31,7 @@ from .models import CircuitBreakerTripped, FaultEvent, RunRecord
 log = logging.getLogger("vigil.orchestrator.agent")
 
 ORCHESTRATOR_RUN_TIMEOUT_S: float = float(
-    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "750")
+    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "1800")
 )
 DIAGNOSIS_TIMEOUT_S: float = float(os.environ.get("DIAGNOSIS_TIMEOUT_S", "300"))
 REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "600"))
@@ -41,6 +41,7 @@ WATCHDOG_RECONCILE_GRACE_S: float = float(
 _POST_REMEDIATION_SETTLE_S: float = float(
     os.environ.get("POST_REMEDIATION_SETTLE_S", "60")
 )
+_MAX_DIAGNOSIS_ATTEMPTS = 3
 
 
 class _CircuitBreaker:
@@ -237,6 +238,76 @@ async def _issue_rollback(
         return False
 
 
+def _build_retry_hint(
+    attempt: int,
+    max_attempts: int,
+    recommended_action: str,
+    snapshot,
+) -> str:
+    snap_info = (
+        f", ready_pods={snapshot.ready_pods}/{snapshot.total_pods}"
+        f", flux_ready={snapshot.flux_ready}"
+        if snapshot
+        else ""
+    )
+    return (
+        f"Attempt {attempt} of {max_attempts}: "
+        f"prior recommended_action={recommended_action}"
+        f"{snap_info}. "
+        f"Cluster still degraded after settle. "
+        f"Re-diagnose from current cluster state; "
+        f"do not assume the prior root cause was correct."
+    )
+
+
+async def _dispatch_remediation_and_watchdog(
+    report,
+    remediation_deps: RemediationDeps,
+    watchdog_deps: WatchdogDeps,
+    baseline,
+    base_branch: str,
+    model,
+    run_id: str,
+    blocked: frozenset[str],
+):
+    if report.recommended_action == "git_commit_k8s":
+        async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+            (remediation_result, rem_usage, rem_msgs) = await run_remediation(
+                remediation_deps,
+                report,
+                source_branch=base_branch,
+                model=model,
+                run_id=run_id,
+                blocked_tools=blocked,
+            )
+        await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
+        watchdog_result = await run_watchdog(watchdog_deps, baseline)
+    else:
+        async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    rem_task = tg.create_task(
+                        run_remediation(
+                            remediation_deps,
+                            report,
+                            source_branch=base_branch,
+                            model=model,
+                            run_id=run_id,
+                            blocked_tools=blocked,
+                        )
+                    )
+                    wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
+            except* (
+                UsageLimitExceeded,
+                UnexpectedModelBehavior,
+                CircuitBreakerTripped,
+            ) as eg:
+                raise eg.exceptions[0]
+        remediation_result, rem_usage, rem_msgs = rem_task.result()
+        watchdog_result = wtch_task.result()
+    return remediation_result, rem_usage, rem_msgs, watchdog_result
+
+
 async def run_orchestration(
     event: FaultEvent,
     kubectl_mcp: MCPServerStdio,
@@ -249,7 +320,7 @@ async def run_orchestration(
     seed: int | None = None,
     model_name: str | None = None,
 ) -> RunRecord:
-    """Drive one full diagnosis -> remediation -> verification cycle."""
+    """Drive up to _MAX_DIAGNOSIS_ATTEMPTS diagnosis-remediation-verification cycles."""
     model_name = model_name or os.environ.get("LLM_MODEL_NAME", "unknown")
     run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -275,6 +346,8 @@ async def run_orchestration(
     rollback_success: bool | None = None
     total_tool_calls = 0
     iteration_count = 0
+    actions_taken: list[str] = []
+    attempts_count = 0
 
     def _abort_record(_reason: str, _outcome: str = "abort") -> RunRecord:
         ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -302,6 +375,7 @@ async def run_orchestration(
             model_version=model_name,
             setup_error=_reason,
             forbidden_action_violations=None,
+            attempts=attempts_count,
         )
 
     total_usage = Usage()
@@ -310,202 +384,182 @@ async def run_orchestration(
 
     try:
         async with asyncio.timeout(ORCHESTRATOR_RUN_TIMEOUT_S):
-            try:
-                diagnosis_context = await build_diagnosis_context(diagnosis_deps, event)
-            except (ManifestPathUnresolvable, ResourceKindUnresolvable) as exc:
-                log.warning("run %s: manifest path unresolvable: %s", run_id, exc)
-                mttr_s = asyncio.get_event_loop().time() - t0
-                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record = RunRecord(
-                    run_id=run_id,
-                    scenario=scenario,
-                    seed=seed_str,
-                    model=model_name,
-                    git_sha7=sha7,
-                    started_at=started_at,
-                    ended_at=ended_at,
-                    outcome="escalated",
-                    success_rate=False,
-                    diagnosis_accuracy=None,
-                    MTTR_s=mttr_s,
-                    destructive_repair=False,
-                    rollback_triggered=False,
-                    rollback_success=None,
-                    total_input_tokens=0,
-                    total_output_tokens=0,
-                    total_tool_calls=0,
-                    iteration_count=0,
-                    autonomy_level="full",
-                    actions_taken=[],
-                    model_version=model_name,
-                    setup_error=str(exc),
-                )
-                _write_run_record(record)
-                return record
-
-            try:
-                async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
-                    report, diag_usage, diag_msgs = await run_diagnosis(
-                        diagnosis_deps,
-                        event,
-                        diagnosis_context,
-                        model=model,
-                        blocked_tools=blocked,
-                    )
-            except asyncio.TimeoutError:
-                log.error(
-                    "run %s aborted: diagnosis_timeout (%.0fs)",
-                    run_id,
-                    DIAGNOSIS_TIMEOUT_S,
-                )
-                record = _abort_record("diagnosis_timeout")
-                _write_run_record(record)
-                return record
-            except UnexpectedModelBehavior as exc:
-                log.error("run %s aborted: retry_exhausted:diagnosis: %s", run_id, exc)
-                record = _abort_record(f"retry_exhausted:diagnosis: {exc}")
-                _write_run_record(record)
-                return record
-
-            total_usage = total_usage + diag_usage
-
-            # Ollama Cloud returns 0 output tokens when per-window quota is exhausted.
-            if (total_usage.output_tokens or 0) == 0 and (
-                total_usage.input_tokens or 0
-            ) == 0:
-                log.error(
-                    "run %s: zero-token response (msg_count=%d) — quota exhausted",
-                    run_id,
-                    len(diag_msgs),
-                )
-                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record = RunRecord(
-                    run_id=run_id,
-                    scenario=scenario,
-                    seed=seed_str,
-                    model=model_name,
-                    git_sha7=sha7,
-                    started_at=started_at,
-                    ended_at=ended_at,
-                    outcome="quota_exhausted",
-                    success_rate=False,
-                    diagnosis_accuracy=None,
-                    MTTR_s=None,
-                    destructive_repair=False,
-                    rollback_triggered=False,
-                    rollback_success=None,
-                    total_input_tokens=0,
-                    total_output_tokens=0,
-                    total_tool_calls=0,
-                    iteration_count=0,
-                    autonomy_level="full",
-                    actions_taken=[],
-                    model_version=model_name,
-                )
-                _write_run_record(record)
-                return record
-
-            trace.log_messages(run_id, "diagnosis", diag_msgs)
-            trace.write_trace(run_id, "diagnosis", diag_msgs)
-            breaker.success()
-            iteration_count += 1
-
-            if report.recommended_action == "escalate":
-                mttr_s = asyncio.get_event_loop().time() - t0
-                ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record = RunRecord(
-                    run_id=run_id,
-                    scenario=scenario,
-                    seed=seed_str,
-                    model=model_name,
-                    git_sha7=sha7,
-                    started_at=started_at,
-                    ended_at=ended_at,
-                    outcome="escalated",
-                    success_rate=None,
-                    diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
-                    MTTR_s=mttr_s,
-                    destructive_repair=False,
-                    rollback_triggered=False,
-                    rollback_success=None,
-                    total_input_tokens=total_usage.input_tokens or 0,
-                    total_output_tokens=total_usage.output_tokens or 0,
-                    total_tool_calls=_count_tool_calls(diag_msgs),
-                    iteration_count=iteration_count,
-                    autonomy_level="full",
-                    actions_taken=[],
-                    model_version=model_name,
-                )
-                log.info("run %s finished outcome=escalated", run_id)
-                _write_run_record(record)
-                return record
-
             baseline = await capture_health_snapshot(watchdog_deps)
 
-            base_branch = diagnosis_context.source_branch or "main"
-            try:
-                await git_mcp.direct_call_tool(
-                    "create_branch",
-                    {"run_id": run_id, "base_branch": base_branch},
-                )
-            except Exception:
-                log.debug("run %s: base_branch pre-call skipped (non-fatal)", run_id)
+            retry_hint: str | None = None
+            last_report = None
+            last_remediation_result = None
+            last_watchdog_result = None
+            outcome: str = "abort"
 
-            if report.recommended_action == "git_commit_k8s":
+            for attempt in range(1, _MAX_DIAGNOSIS_ATTEMPTS + 1):
+                attempts_count = attempt
+
                 try:
-                    async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
-                        remediation_result, rem_usage, rem_msgs = await run_remediation(
-                            remediation_deps,
-                            report,
-                            source_branch=base_branch,
+                    diagnosis_context = await build_diagnosis_context(
+                        diagnosis_deps, event
+                    )
+                except (ManifestPathUnresolvable, ResourceKindUnresolvable) as exc:
+                    log.warning("run %s: manifest path unresolvable: %s", run_id, exc)
+                    mttr_s = asyncio.get_event_loop().time() - t0
+                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    record = RunRecord(
+                        run_id=run_id,
+                        scenario=scenario,
+                        seed=seed_str,
+                        model=model_name,
+                        git_sha7=sha7,
+                        started_at=started_at,
+                        ended_at=ended_at,
+                        outcome="escalated",
+                        success_rate=False,
+                        diagnosis_accuracy=None,
+                        MTTR_s=mttr_s,
+                        destructive_repair=False,
+                        rollback_triggered=False,
+                        rollback_success=None,
+                        total_input_tokens=0,
+                        total_output_tokens=0,
+                        total_tool_calls=0,
+                        iteration_count=0,
+                        autonomy_level="full",
+                        actions_taken=[],
+                        model_version=model_name,
+                        setup_error=str(exc),
+                        attempts=attempts_count,
+                    )
+                    _write_run_record(record)
+                    return record
+
+                try:
+                    async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
+                        report, diag_usage, diag_msgs = await run_diagnosis(
+                            diagnosis_deps,
+                            event,
+                            diagnosis_context,
                             model=model,
-                            run_id=run_id,
                             blocked_tools=blocked,
+                            retry_hint=retry_hint,
                         )
                 except asyncio.TimeoutError:
                     log.error(
-                        "run %s aborted: remediation_timeout (%.0fs)",
+                        "run %s aborted: diagnosis_timeout (%.0fs)",
                         run_id,
-                        REMEDIATION_TIMEOUT_S,
+                        DIAGNOSIS_TIMEOUT_S,
                     )
-                    record = _abort_record("remediation_timeout")
+                    record = _abort_record("diagnosis_timeout")
                     _write_run_record(record)
                     return record
                 except UnexpectedModelBehavior as exc:
                     log.error(
-                        "run %s aborted: retry_exhausted:remediation: %s", run_id, exc
+                        "run %s aborted: retry_exhausted:diagnosis: %s", run_id, exc
                     )
-                    record = _abort_record(f"retry_exhausted:remediation: {exc}")
+                    record = _abort_record(f"retry_exhausted:diagnosis: {exc}")
                     _write_run_record(record)
                     return record
 
-                await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
-                watchdog_result = await run_watchdog(watchdog_deps, baseline)
+                total_usage = total_usage + diag_usage
 
-            else:
+                # Ollama Cloud returns 0 tokens when per-window quota is exhausted.
+                if (diag_usage.output_tokens or 0) == 0 and (
+                    diag_usage.input_tokens or 0
+                ) == 0:
+                    log.error(
+                        "run %s: zero-token response (msg_count=%d) — quota exhausted",
+                        run_id,
+                        len(diag_msgs),
+                    )
+                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    record = RunRecord(
+                        run_id=run_id,
+                        scenario=scenario,
+                        seed=seed_str,
+                        model=model_name,
+                        git_sha7=sha7,
+                        started_at=started_at,
+                        ended_at=ended_at,
+                        outcome="quota_exhausted",
+                        success_rate=False,
+                        diagnosis_accuracy=None,
+                        MTTR_s=None,
+                        destructive_repair=False,
+                        rollback_triggered=False,
+                        rollback_success=None,
+                        total_input_tokens=0,
+                        total_output_tokens=0,
+                        total_tool_calls=0,
+                        iteration_count=0,
+                        autonomy_level="full",
+                        actions_taken=[],
+                        model_version=model_name,
+                        attempts=attempts_count,
+                    )
+                    _write_run_record(record)
+                    return record
+
+                trace.log_messages(run_id, "diagnosis", diag_msgs)
+                trace.write_trace(run_id, "diagnosis", diag_msgs)
+                breaker.success()
+                iteration_count += 1
+
+                if report.recommended_action == "escalate":
+                    mttr_s = asyncio.get_event_loop().time() - t0
+                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    record = RunRecord(
+                        run_id=run_id,
+                        scenario=scenario,
+                        seed=seed_str,
+                        model=model_name,
+                        git_sha7=sha7,
+                        started_at=started_at,
+                        ended_at=ended_at,
+                        outcome="escalated",
+                        success_rate=None,
+                        diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                        MTTR_s=mttr_s,
+                        destructive_repair=False,
+                        rollback_triggered=False,
+                        rollback_success=None,
+                        total_input_tokens=total_usage.input_tokens or 0,
+                        total_output_tokens=total_usage.output_tokens or 0,
+                        total_tool_calls=_count_tool_calls(diag_msgs),
+                        iteration_count=iteration_count,
+                        autonomy_level="full",
+                        actions_taken=[],
+                        model_version=model_name,
+                        attempts=attempts_count,
+                    )
+                    log.info("run %s finished outcome=escalated", run_id)
+                    _write_run_record(record)
+                    return record
+
+                base_branch = diagnosis_context.source_branch or "main"
                 try:
-                    async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
-                        try:
-                            async with asyncio.TaskGroup() as tg:
-                                rem_task = tg.create_task(
-                                    run_remediation(
-                                        remediation_deps,
-                                        report,
-                                        source_branch=base_branch,
-                                        model=model,
-                                        run_id=run_id,
-                                        blocked_tools=blocked,
-                                    )
-                                )
-                                wtch_task = tg.create_task(
-                                    run_watchdog(watchdog_deps, baseline)
-                                )
-                        except* (
-                            UsageLimitExceeded,
-                            UnexpectedModelBehavior,
-                            CircuitBreakerTripped,
-                        ) as eg:
-                            raise eg.exceptions[0]
+                    await git_mcp.direct_call_tool(
+                        "create_branch",
+                        {"run_id": run_id, "base_branch": base_branch},
+                    )
+                except Exception:
+                    log.debug(
+                        "run %s: base_branch pre-call skipped (non-fatal)", run_id
+                    )
+
+                try:
+                    (
+                        remediation_result,
+                        rem_usage,
+                        rem_msgs,
+                        watchdog_result,
+                    ) = await _dispatch_remediation_and_watchdog(
+                        report,
+                        remediation_deps,
+                        watchdog_deps,
+                        baseline,
+                        base_branch,
+                        model,
+                        run_id,
+                        blocked,
+                    )
                 except asyncio.TimeoutError:
                     log.error(
                         "run %s aborted: remediation_timeout (%.0fs)",
@@ -517,72 +571,93 @@ async def run_orchestration(
                     return record
                 except UnexpectedModelBehavior as exc:
                     log.error(
-                        "run %s aborted: retry_exhausted:remediation: %s", run_id, exc
+                        "run %s aborted: retry_exhausted:remediation: %s",
+                        run_id,
+                        exc,
                     )
                     record = _abort_record(f"retry_exhausted:remediation: {exc}")
                     _write_run_record(record)
                     return record
 
-                remediation_result, rem_usage, rem_msgs = rem_task.result()
-                watchdog_result = wtch_task.result()
+                total_usage = total_usage + rem_usage
+                trace.log_messages(run_id, "remediation", rem_msgs)
+                trace.write_trace(run_id, "remediation", rem_msgs)
 
-            total_usage = total_usage + rem_usage
-            trace.log_messages(run_id, "remediation", rem_msgs)
-            trace.write_trace(run_id, "remediation", rem_msgs)
-
-            destructive_repair = remediation_result.destructive_repair
-            total_tool_calls = _count_tool_calls(diag_msgs) + _count_tool_calls(
-                rem_msgs
-            )
-            iteration_count += _count_tool_calls(rem_msgs)
-            actions_taken = _extract_tool_names(rem_msgs)
-
-            outcome: str
-            if (
-                report.recommended_action == "git_commit_k8s"
-                and remediation_result.gate_status == "closed"
-            ):
-                outcome = "gate_failed"
-                rollback_triggered = False
-                rollback_success = None
-            elif (
-                report.recommended_action == "git_commit_k8s"
-                and remediation_result.merge_commit_sha is None
-                and remediation_result.agent_commits
-                and len(remediation_result.agent_commits) > GIT_COMMIT_BUDGET
-            ):
-                outcome = "budget_exhausted"
-                rollback_triggered = False
-                rollback_success = None
-            elif watchdog_result.degraded and not await _still_degraded_after_settle(
-                watchdog_deps, baseline
-            ):
-                outcome = "success"
-                rollback_triggered = False
-                rollback_success = None
-            elif watchdog_result.degraded:
-                rollback_triggered = True
-                rollback_success = await _issue_rollback(
-                    report.recommended_action,
-                    git_mcp,
-                    flux_mcp,
-                    nixos_mcp,
-                    remediation_result.merge_commit_sha,
-                    report.target_host,
+                destructive_repair = (
+                    destructive_repair or remediation_result.destructive_repair
                 )
-                outcome = (
-                    "rollback_succeeded" if rollback_success else "rollback_failed"
+                total_tool_calls += _count_tool_calls(diag_msgs) + _count_tool_calls(
+                    rem_msgs
                 )
-            else:
-                outcome = "success"
-                rollback_triggered = False
-                rollback_success = None
+                iteration_count += _count_tool_calls(rem_msgs)
+                actions_taken = actions_taken + _extract_tool_names(rem_msgs)
+
+                last_report = report
+                last_remediation_result = remediation_result
+                last_watchdog_result = watchdog_result
+
+                if (
+                    report.recommended_action == "git_commit_k8s"
+                    and remediation_result.gate_status == "closed"
+                ):
+                    outcome = "gate_failed"
+                    rollback_triggered = False
+                    rollback_success = None
+                    break
+                if (
+                    report.recommended_action == "git_commit_k8s"
+                    and remediation_result.merge_commit_sha is None
+                    and remediation_result.agent_commits
+                    and len(remediation_result.agent_commits) > GIT_COMMIT_BUDGET
+                ):
+                    outcome = "budget_exhausted"
+                    rollback_triggered = False
+                    rollback_success = None
+                    break
+
+                if watchdog_result.degraded:
+                    if not await _still_degraded_after_settle(watchdog_deps, baseline):
+                        outcome = "success"
+                        rollback_triggered = False
+                        rollback_success = None
+                        break
+                    if attempt < _MAX_DIAGNOSIS_ATTEMPTS:
+                        retry_hint = _build_retry_hint(
+                            attempt,
+                            _MAX_DIAGNOSIS_ATTEMPTS,
+                            report.recommended_action,
+                            watchdog_result.snapshot,
+                        )
+                        log.info(
+                            "run %s: attempt %d/%d still degraded, retrying",
+                            run_id,
+                            attempt,
+                            _MAX_DIAGNOSIS_ATTEMPTS,
+                        )
+                        continue
+                    rollback_triggered = True
+                    rollback_success = await _issue_rollback(
+                        last_report.recommended_action,
+                        git_mcp,
+                        flux_mcp,
+                        nixos_mcp,
+                        last_remediation_result.merge_commit_sha,
+                        last_report.target_host,
+                    )
+                    outcome = (
+                        "rollback_succeeded" if rollback_success else "rollback_failed"
+                    )
+                else:
+                    outcome = "success"
+                    rollback_triggered = False
+                    rollback_success = None
+                break
 
             mttr_s = asyncio.get_event_loop().time() - t0
             ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             forbidden_violations = _check_forbidden_actions(scenario, actions_taken)
-            accuracy = _score_diagnosis_accuracy(scenario, report)
+            accuracy = _score_diagnosis_accuracy(scenario, last_report)
             record = RunRecord(
                 run_id=run_id,
                 scenario=scenario,
@@ -593,8 +668,8 @@ async def run_orchestration(
                 ended_at=ended_at,
                 outcome=outcome,
                 success_rate=(
-                    remediation_result.success
-                    and not watchdog_result.degraded
+                    last_remediation_result.success
+                    and not last_watchdog_result.degraded
                     and not forbidden_violations
                     and accuracy is not False
                 ),
@@ -610,10 +685,11 @@ async def run_orchestration(
                 autonomy_level="full",
                 actions_taken=actions_taken,
                 model_version=model_name,
-                agent_branch=remediation_result.agent_branch,
-                agent_commits=remediation_result.agent_commits,
-                gate_status=remediation_result.gate_status,
+                agent_branch=last_remediation_result.agent_branch,
+                agent_commits=last_remediation_result.agent_commits,
+                gate_status=last_remediation_result.gate_status,
                 forbidden_action_violations=forbidden_violations,
+                attempts=attempts_count,
             )
             log.info("run %s finished outcome=%s MTTR=%.1fs", run_id, outcome, mttr_s)
             _write_run_record(record)
@@ -653,6 +729,7 @@ async def run_orchestration(
             model_version=model_name,
             setup_error="iteration_limit",
             forbidden_action_violations=None,
+            attempts=attempts_count,
         )
         _write_run_record(record)
         return record
