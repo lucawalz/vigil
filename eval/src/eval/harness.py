@@ -140,7 +140,19 @@ def _symptom_observed(verify: dict, kubeconfig: str | None = None) -> bool:
         if r.returncode != 0:
             return False
         obj = json.loads(r.stdout)
-        return obj.get("status", {}).get("availableReplicas", 1) == 0
+        spec_replicas = obj.get("spec", {}).get("replicas", 0)
+        avail = obj.get("status", {}).get("availableReplicas", 0)
+        return spec_replicas > 0 and avail == 0
+
+    if symptom == "kustomization_suspended":
+        name = verify["name"]
+        kust_ns = verify.get("kustomization_namespace", "flux-system")
+        r = _kubectl(
+            ["get", "kustomization", name, "-n", kust_ns, "-o", "json"], kubeconfig
+        )
+        if r.returncode != 0:
+            return False
+        return json.loads(r.stdout).get("spec", {}).get("suspend", False) is True
 
     if symptom == "kustomization_not_ready":
         name = verify["name"]

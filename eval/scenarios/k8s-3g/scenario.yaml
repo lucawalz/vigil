@@ -16,7 +16,7 @@ inject_params:
 alert_name: KubeContainerOOMKilled
 
 verify_broken:
-  symptom: replica_failure
+  symptom: pod_not_ready
   deployment: vigil-app
   namespace: default
   timeout_s: 60
