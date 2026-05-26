@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: vigil-app
-          image: nginx:bad-tag-v9
+          image: nginx:latest
           env:
             - name: REQUIRED_API_BASE
               value: "http://127.0.0.1"
