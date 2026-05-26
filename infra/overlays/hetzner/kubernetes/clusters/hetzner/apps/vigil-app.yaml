@@ -20,7 +20,7 @@ spec:
         image: nginx:stable
         env:
         - name: REQUIRED_API_BASE
-          value: ''
+          value: 'http://placeholder.svc.cluster.local'
         resources:
           requests:
             memory: 64Mi
