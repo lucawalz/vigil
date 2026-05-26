@@ -988,3 +988,221 @@ def test_build_diagnosis_context_constructed_path_missing_raises() -> None:
         asyncio.get_event_loop().run_until_complete(
             build_diagnosis_context(deps, fault)
         )
+
+
+def test_build_diagnosis_context_kustomization_apply_error_enrichment() -> None:
+    """FluxKustomizationFailed: apply error resolves child resource manifest context."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "FluxKustomizationFailed",
+                    "kustomization": "cluster-apps",
+                    "namespace": "flux-system",
+                },
+                "annotations": {},
+                "startsAt": "1970-01-01T00:00:00Z",
+                "endsAt": "",
+            }
+        ],
+        groupLabels={"alertname": "FluxKustomizationFailed"},
+        commonLabels={
+            "alertname": "FluxKustomizationFailed",
+            "namespace": "flux-system",
+        },
+        commonAnnotations={},
+        externalURL="",
+        version="4",
+        groupKey="eval/FluxKustomizationFailed",
+    )
+
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\nkind: GitRepository\n"
+        "metadata:\n  name: flux-system\n  namespace: flux-system\n"
+        "spec:\n  ref:\n    branch: chore/eval-cluster-baseline\n"
+    )
+    kust_status_text = (
+        "Kustomization: flux-system/cluster-apps\n"
+        "Conditions:\n"
+        "  Ready: False — ReconciliationFailed\n"
+    )
+    kust_raw_yaml = (
+        "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\n"
+        "metadata:\n  name: cluster-apps\n  namespace: flux-system\n"
+        "spec:\n  path: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps\n"
+        "status:\n"
+        "  conditions:\n"
+        "  - reason: ReconciliationFailed\n"
+        "    status: 'False'\n"
+        '    message: \'Deployment.apps "vigil-app" is invalid: spec.selector: Invalid'
+        " value: field is immutable'\n"
+    )
+    dep_live_yaml = (
+        "apiVersion: apps/v1\nkind: Deployment\n"
+        "metadata:\n  name: vigil-app\n  namespace: flux-system\n"
+        "spec:\n  selector:\n    matchLabels:\n      app: vigil-app\n"
+    )
+    declared_yaml_content = (
+        "apiVersion: apps/v1\nkind: Deployment\n"
+        "metadata:\n  name: vigil-app\n  namespace: default\n"
+        "spec:\n  selector:\n    matchLabels:\n      app: vigil-app-typo\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        kind = args.get("kind", "")
+        if kind == "GitRepository":
+            return {"content": git_repo_yaml}
+        if kind == "Kustomization":
+            return {"content": kust_raw_yaml}
+        if kind == "Deployment":
+            return {"content": dep_live_yaml}
+        return {"content": ""}
+
+    async def flux_side_effect(tool, args):
+        if tool == "get_kustomization_status":
+            return {"content": kust_status_text}
+        return {"content": "ok"}
+
+    async def git_side_effect(tool, args):
+        if tool == "clone_repo":
+            return {"content": "ok"}
+        if tool == "resolve_manifest_path":
+            return {
+                "path": "infra/overlays/hetzner/kubernetes"
+                "/clusters/hetzner/apps/vigil-app.yaml"
+            }
+        if tool == "read_file":
+            return {"content": declared_yaml_content}
+        return {"content": "ok"}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(side_effect=flux_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+    mock_nixos = AsyncMock()
+
+    from diagnosis.models import DiagnosisDeps
+
+    deps = DiagnosisDeps(
+        run_id="test-kust",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+        flux_mcp=mock_flux,
+    )
+
+    ctx = asyncio.get_event_loop().run_until_complete(
+        build_diagnosis_context(deps, fault)
+    )
+
+    _expected_path = (
+        "infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml"
+    )
+    assert ctx.manifest_path == _expected_path
+    assert "spec.selector" in ctx.live_yaml
+    assert "vigil-app-typo" in ctx.declared_yaml
+    assert ctx.diff != ""
+
+
+def test_build_diagnosis_context_kustomization_dependency_fallback() -> None:
+    """FluxKustomizationFailed with no extractable apply error falls back to status."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "FluxKustomizationFailed",
+                    "kustomization": "cluster-apps",
+                    "namespace": "flux-system",
+                },
+                "annotations": {},
+                "startsAt": "1970-01-01T00:00:00Z",
+                "endsAt": "",
+            }
+        ],
+        groupLabels={},
+        commonLabels={"namespace": "flux-system"},
+        commonAnnotations={},
+        externalURL="",
+        version="4",
+        groupKey="",
+    )
+
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\nkind: GitRepository\n"
+        "metadata:\n  name: flux-system\n  namespace: flux-system\n"
+        "spec:\n  ref:\n    branch: main\n"
+    )
+    kust_raw_yaml = (
+        "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\n"
+        "metadata:\n  name: cluster-apps\n  namespace: flux-system\n"
+        "status:\n"
+        "  conditions:\n"
+        "  - reason: DependencyNotReady\n"
+        "    status: 'False'\n"
+        "    message: \"dependency 'flux-system/cluster-infrastructure'"
+        ' is not ready"\n'
+    )
+    _dep_msg = "dependency 'flux-system/cluster-infrastructure' is not ready"
+    kust_status_text = (
+        "Kustomization: flux-system/cluster-apps\n"
+        f"Conditions:\n  Ready: False — {_dep_msg}\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        kind = args.get("kind", "")
+        if kind == "GitRepository":
+            return {"content": git_repo_yaml}
+        if kind == "Kustomization":
+            return {"content": kust_raw_yaml}
+        return {"content": ""}
+
+    async def flux_side_effect(tool, args):
+        if tool == "get_kustomization_status":
+            return {"content": kust_status_text}
+        return {"content": "ok"}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(side_effect=flux_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    mock_nixos = AsyncMock()
+
+    from diagnosis.models import DiagnosisDeps
+
+    deps = DiagnosisDeps(
+        run_id="test-kust-dep",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+        flux_mcp=mock_flux,
+    )
+
+    ctx = asyncio.get_event_loop().run_until_complete(
+        build_diagnosis_context(deps, fault)
+    )
+
+    assert ctx.manifest_path is None
+    assert "cluster-apps" in ctx.live_yaml
+    assert ctx.declared_yaml == ""

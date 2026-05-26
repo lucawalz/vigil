@@ -275,6 +275,13 @@ def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
     )
 
 
+_KUST_RESOURCE_RE = re.compile(
+    r"(?:([A-Za-z]+)(?:\.[\w.]+)?\s+\"([^\"]+)\""
+    r"|([A-Za-z]+)/([^\s:]+))"
+    r"\s+(?:apply failed|dry-run failed|is invalid)",
+    re.IGNORECASE,
+)
+
 _QUOTA_NAME_RE = re.compile(r"exceeded quota:\s*([^\s,]+)")
 
 
@@ -298,6 +305,45 @@ async def _get_kustomize_spec_path(deps: DiagnosisDeps, live_text: str) -> str |
         return spec_path or None
     except Exception:
         return None
+
+
+def _extract_kustomization_apply_error(
+    kust_yaml_text: str,
+) -> tuple[str, str | None, str | None]:
+    """Return (error_message, failing_kind, failing_name) from Kustomization status.
+
+    Prefers ReconciliationFailed/ApplyFailed conditions over DependencyNotReady so
+    the agent sees the root-cause apply error rather than a stale dependency message.
+    """
+    try:
+        data = yaml.safe_load(kust_yaml_text)
+        conditions = (data.get("status") or {}).get("conditions") or []
+    except (yaml.YAMLError, AttributeError):
+        return "", None, None
+
+    preferred_reasons = {"ReconciliationFailed", "ApplyFailed", "BuildFailed"}
+    best_msg = ""
+    for cond in conditions:
+        reason = cond.get("reason", "")
+        msg = cond.get("message", "")
+        if reason in preferred_reasons and msg:
+            best_msg = msg
+            break
+    if not best_msg:
+        for cond in conditions:
+            if cond.get("status") == "False" and cond.get("message"):
+                best_msg = cond["message"]
+                break
+
+    if not best_msg:
+        return "", None, None
+
+    m = _KUST_RESOURCE_RE.search(best_msg)
+    if m:
+        if m.group(1):
+            return best_msg, m.group(1), m.group(2)
+        return best_msg, m.group(3), m.group(4)
+    return best_msg, None, None
 
 
 async def _fetch_admission_objects(
@@ -446,15 +492,91 @@ async def build_diagnosis_context(
         )
 
     if kind == "Kustomization":
+        kust_raw_result = await deps.kubectl_mcp.direct_call_tool(
+            "get_resource_yaml",
+            {"kind": "Kustomization", "namespace": namespace, "name": name},
+        )
+        kust_raw_text = _extract_text(kust_raw_result)
         kust_status_result = await deps.flux_mcp.direct_call_tool(
             "get_kustomization_status",
             {"namespace": namespace, "name": name},
         )
-        live_yaml = _extract_text(kust_status_result)
+        kust_status_text = _extract_text(kust_status_result)
+
+        apply_error, failing_kind, failing_name = _extract_kustomization_apply_error(
+            kust_raw_text
+        )
+
+        if failing_kind and failing_name:
+            try:
+                failing_live_result = await deps.kubectl_mcp.direct_call_tool(
+                    "get_resource_yaml",
+                    {
+                        "kind": failing_kind,
+                        "namespace": namespace,
+                        "name": failing_name,
+                    },
+                )
+                failing_live_yaml = _extract_text(failing_live_result)
+            except Exception:
+                failing_live_yaml = ""
+
+            kust_data = yaml.safe_load(kust_raw_text) if kust_raw_text else {}
+            spec_path = (
+                (kust_data.get("spec") or {}).get("path", "").lstrip("./")
+                if isinstance(kust_data, dict)
+                else ""
+            )
+            child_manifest_path: str | None = None
+            child_declared_yaml = ""
+            if spec_path and failing_live_yaml:
+                try:
+                    path_result = await deps.git_mcp.direct_call_tool(
+                        "resolve_manifest_path",
+                        {
+                            "kustomize_path": spec_path,
+                            "kind": failing_kind,
+                            "name": failing_name,
+                            "namespace": namespace,
+                        },
+                    )
+                    child_manifest_path = (
+                        path_result.get("path")
+                        if isinstance(path_result, dict)
+                        else _extract_text(path_result)
+                    )
+                    declared_result = await deps.git_mcp.direct_call_tool(
+                        "read_file",
+                        {"branch": source_branch, "path": child_manifest_path},
+                    )
+                    child_declared_yaml = _extract_text(declared_result)
+                except Exception:
+                    child_manifest_path = None
+
+            live_yaml_parts = [kust_status_text]
+            if apply_error:
+                live_yaml_parts.append(f"\nApply error:\n{apply_error}")
+            if failing_live_yaml:
+                live_yaml_parts.append(
+                    f"\n{failing_kind}/{failing_name} live state:\n{failing_live_yaml}"
+                )
+            child_diff = (
+                _compute_diff(failing_live_yaml, child_declared_yaml)
+                if failing_live_yaml and child_declared_yaml
+                else ""
+            )
+            return DiagnosisContext(
+                source_branch=source_branch,
+                manifest_path=child_manifest_path,
+                live_yaml="\n".join(live_yaml_parts),
+                declared_yaml=child_declared_yaml,
+                diff=child_diff,
+            )
+
         return DiagnosisContext(
             source_branch=source_branch,
             manifest_path=None,
-            live_yaml=live_yaml,
+            live_yaml=kust_status_text,
             declared_yaml="",
             diff="",
         )
