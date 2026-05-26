@@ -35,4 +35,4 @@ spec:
         configMap:
           name: vigil-app-nginx-config
       nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
+        kubernetes.io/hostname: hetzner-worker-1
