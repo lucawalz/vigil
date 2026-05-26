@@ -651,7 +651,7 @@ async def run_orchestration(
             autonomy_level="full",
             actions_taken=[],
             model_version=model_name,
-            setup_error="iteration_limit_20",
+            setup_error="iteration_limit",
             forbidden_action_violations=None,
         )
         _write_run_record(record)
