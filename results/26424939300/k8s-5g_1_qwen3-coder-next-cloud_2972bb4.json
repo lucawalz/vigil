@@ -1,0 +1,32 @@
+{
+  "run_id": "k8s-5g_1_qwen3-coder-next-cloud_2972bb4",
+  "scenario": "k8s-5g",
+  "seed": "1",
+  "model": "qwen3-coder-next:cloud",
+  "git_sha7": "2972bb4",
+  "started_at": "2026-05-26T00:41:37Z",
+  "ended_at": "2026-05-26T00:43:56Z",
+  "outcome": "success",
+  "success_rate": false,
+  "diagnosis_accuracy": false,
+  "MTTR_s": 139.19828933600024,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "rollback_success": null,
+  "total_input_tokens": 57762,
+  "total_output_tokens": 931,
+  "total_tool_calls": 9,
+  "iteration_count": 4,
+  "autonomy_level": "full",
+  "actions_taken": [
+    "reconcile_kustomization",
+    "final_result",
+    "final_result"
+  ],
+  "model_version": "qwen3-coder-next:cloud",
+  "setup_error": null,
+  "agent_branch": null,
+  "agent_commits": [],
+  "gate_status": null,
+  "forbidden_action_violations": []
+}
