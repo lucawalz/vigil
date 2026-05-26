@@ -15,5 +15,6 @@ git -C "$VIGIL_REPO_ROOT" commit -am "k8s-3g: inject fault"
 git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
 flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" || true
+flux reconcile kustomization cluster-apps -n flux-system --timeout=120s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
 
 echo "inject.sh: k8s-3g seed=${SEED} complete"

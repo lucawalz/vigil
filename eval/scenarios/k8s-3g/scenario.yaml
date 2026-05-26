@@ -19,4 +19,4 @@ verify_broken:
   symptom: pod_not_ready
   deployment: vigil-app
   namespace: default
-  timeout_s: 60
+  timeout_s: 120
