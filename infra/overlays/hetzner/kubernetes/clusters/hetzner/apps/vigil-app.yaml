@@ -34,5 +34,3 @@ spec:
       - name: nginx-config-template
         configMap:
           name: vigil-app-nginx-config
-      nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
