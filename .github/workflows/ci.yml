@@ -16,7 +16,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --locked --all-extras --dev
+        run: uv sync --all-extras --dev
       - name: Ruff check
         run: uv run ruff check .
       - name: Ruff format check
@@ -30,7 +30,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --locked --all-extras --dev --all-packages
+        run: uv sync --all-extras --dev --all-packages
       - name: Pytest (agents)
         env:
           LLM_MODEL_NAME: test-model
@@ -38,6 +38,17 @@ jobs:
           OLLAMA_API_KEY: sk-test
           VIGIL_WEBHOOK_SECRET: test-secret
         run: uv run pytest tests/agents/ -x --tb=short -q
+
+  lockfile-drift:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - name: Check lockfile is up to date
+        run: uv lock --check
 
   detect-go-modules:
     runs-on: ubuntu-latest
