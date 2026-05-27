@@ -453,9 +453,7 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.run(
-        build_diagnosis_context(deps, fault)
-    )
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
     assert ctx.live_yaml == live_resource_yaml
     assert ctx.declared_yaml == declared_yaml_content
     assert "--- live" in ctx.diff or ctx.diff == ""
@@ -540,9 +538,7 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
     from diagnosis.context import ManifestPathUnresolvable
 
     with pytest.raises(ManifestPathUnresolvable):
-        asyncio.run(
-            build_diagnosis_context(deps, fault)
-        )
+        asyncio.run(build_diagnosis_context(deps, fault))
 
 
 def test_build_diagnosis_context_read_file_failure_degrades() -> None:
@@ -617,9 +613,7 @@ def test_build_diagnosis_context_read_file_failure_degrades() -> None:
         return_value="apps/vigil-app.yaml",
     ):
         with pytest.raises(ManifestPathUnresolvable):
-            asyncio.run(
-                build_diagnosis_context(deps, fault)
-            )
+            asyncio.run(build_diagnosis_context(deps, fault))
 
 
 def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
@@ -687,9 +681,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.run(
-        build_diagnosis_context(deps, fault)
-    )
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
     assert ctx.manifest_path == "infra/nixos/hosts/hetzner-worker-1.nix"
 
 
@@ -759,9 +751,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.run(
-        build_diagnosis_context(deps, fault)
-    )
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
     assert ctx.live_yaml == "live-systemd-status"
     assert ctx.declared_yaml == "declared-dry-build"
     assert ctx.manifest_path == "infra/nixos/hosts/hetzner-worker-1.nix"
@@ -985,9 +975,7 @@ def test_build_diagnosis_context_constructed_path_missing_raises() -> None:
     from diagnosis.context import ManifestPathUnresolvable
 
     with pytest.raises(ManifestPathUnresolvable):
-        asyncio.run(
-            build_diagnosis_context(deps, fault)
-        )
+        asyncio.run(build_diagnosis_context(deps, fault))
 
 
 def test_build_diagnosis_context_kustomization_apply_error_enrichment() -> None:
@@ -1102,9 +1090,7 @@ def test_build_diagnosis_context_kustomization_apply_error_enrichment() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.run(
-        build_diagnosis_context(deps, fault)
-    )
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
 
     _expected_path = (
         "infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml"
@@ -1199,9 +1185,7 @@ def test_build_diagnosis_context_kustomization_dependency_fallback() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.run(
-        build_diagnosis_context(deps, fault)
-    )
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
 
     assert ctx.manifest_path is None
     assert "cluster-apps" in ctx.live_yaml
