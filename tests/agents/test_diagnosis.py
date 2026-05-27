@@ -453,7 +453,7 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.get_event_loop().run_until_complete(
+    ctx = asyncio.run(
         build_diagnosis_context(deps, fault)
     )
     assert ctx.live_yaml == live_resource_yaml
@@ -540,7 +540,7 @@ def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
     from diagnosis.context import ManifestPathUnresolvable
 
     with pytest.raises(ManifestPathUnresolvable):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             build_diagnosis_context(deps, fault)
         )
 
@@ -617,7 +617,7 @@ def test_build_diagnosis_context_read_file_failure_degrades() -> None:
         return_value="apps/vigil-app.yaml",
     ):
         with pytest.raises(ManifestPathUnresolvable):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 build_diagnosis_context(deps, fault)
             )
 
@@ -687,7 +687,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.get_event_loop().run_until_complete(
+    ctx = asyncio.run(
         build_diagnosis_context(deps, fault)
     )
     assert ctx.manifest_path == "infra/nixos/hosts/hetzner-worker-1.nix"
@@ -759,7 +759,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.get_event_loop().run_until_complete(
+    ctx = asyncio.run(
         build_diagnosis_context(deps, fault)
     )
     assert ctx.live_yaml == "live-systemd-status"
@@ -832,7 +832,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
         flux_mcp=mock_flux,
     )
 
-    asyncio.get_event_loop().run_until_complete(build_diagnosis_context(deps, fault))
+    asyncio.run(build_diagnosis_context(deps, fault))
     journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
     assert journal_call is not None
     assert journal_call[1].get("host") == "hetzner-worker-1"
@@ -985,7 +985,7 @@ def test_build_diagnosis_context_constructed_path_missing_raises() -> None:
     from diagnosis.context import ManifestPathUnresolvable
 
     with pytest.raises(ManifestPathUnresolvable):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             build_diagnosis_context(deps, fault)
         )
 
@@ -1102,7 +1102,7 @@ def test_build_diagnosis_context_kustomization_apply_error_enrichment() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.get_event_loop().run_until_complete(
+    ctx = asyncio.run(
         build_diagnosis_context(deps, fault)
     )
 
@@ -1199,7 +1199,7 @@ def test_build_diagnosis_context_kustomization_dependency_fallback() -> None:
         flux_mcp=mock_flux,
     )
 
-    ctx = asyncio.get_event_loop().run_until_complete(
+    ctx = asyncio.run(
         build_diagnosis_context(deps, fault)
     )
 
