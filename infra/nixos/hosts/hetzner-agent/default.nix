@@ -32,11 +32,11 @@ let
   };
   ssh-mcp = mkMcpServer {
     name = "ssh-mcp";
-    vendorHash = "sha256-i1ly56wybIRV+GN7JzBWIJrC4bHppMHXEKrwq2JlfdY=";
+    vendorHash = "sha256-juvcOgXWOFu0iW2yD1UX/wxmFixKtRR/xlCU9vtencI=";
   };
   nixos-mcp = mkMcpServer {
     name = "nixos-mcp";
-    vendorHash = "sha256-i1ly56wybIRV+GN7JzBWIJrC4bHppMHXEKrwq2JlfdY=";
+    vendorHash = "sha256-juvcOgXWOFu0iW2yD1UX/wxmFixKtRR/xlCU9vtencI=";
   };
   git-mcp = mkMcpServer {
     name = "git-mcp";
