@@ -28,7 +28,7 @@ let
   };
   flux-mcp = mkMcpServer {
     name = "flux-mcp";
-    vendorHash = "sha256-oN7RL+ajrVCOSaRcrVBKfRcziNA7zfwxVn64EEcf8Ew=";
+    vendorHash = "sha256-/2SRkLmkxKttxTxvMApYAhr2yvAGzt+OgQoPvYbqXyo=";
   };
   ssh-mcp = mkMcpServer {
     name = "ssh-mcp";
