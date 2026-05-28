@@ -73,10 +73,7 @@ func HandleGetJournal(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
 		if !ok || host == "" {
 			return mcp.NewToolResultError("host: missing or wrong type"), nil
 		}
-		unit, ok := args["unit"].(string)
-		if !ok || unit == "" {
-			return mcp.NewToolResultError("unit: missing or wrong type"), nil
-		}
+		unit, _ := args["unit"].(string)
 		lines := 100
 		if lf, ok := args["lines"].(float64); ok {
 			lines = int(lf)

@@ -33,6 +33,7 @@ type fakeNixOSClient struct {
 	reconcileOut     string
 	reconcileErr     error
 	lastSwitchGen    int
+	lastJournalUnit  string
 	lastJournalLines int
 }
 
@@ -49,7 +50,8 @@ func (f *fakeNixOSClient) RebuildTest(_ context.Context, _ string) (string, erro
 	return f.rebuildOut, f.rebuildErr
 }
 
-func (f *fakeNixOSClient) GetJournal(_ context.Context, _, _ string, lines int) (string, error) {
+func (f *fakeNixOSClient) GetJournal(_ context.Context, _ string, unit string, lines int) (string, error) {
+	f.lastJournalUnit = unit
 	f.lastJournalLines = lines
 	return f.journalOut, f.journalErr
 }
@@ -95,7 +97,7 @@ func newTestServer(t *testing.T, client nixos.NixOSClient) *mcptest.Server {
 		server.ServerTool{
 			Tool: mcp.NewTool("get_journal",
 				mcp.WithString("host", mcp.Required()),
-				mcp.WithString("unit", mcp.Required()),
+				mcp.WithString("unit"),
 				mcp.WithNumber("lines"),
 			),
 			Handler: nixos.HandleGetJournal(client, 2048),
@@ -280,6 +282,27 @@ func TestGetJournalHandler_Success(t *testing.T) {
 	}
 	if !strings.Contains(resultText(result), "k3s") {
 		t.Errorf("expected journal output, got: %s", resultText(result))
+	}
+}
+
+func TestGetJournalHandler_NoUnit(t *testing.T) {
+	fake := &fakeNixOSClient{journalOut: "May 28 kernel: boot complete"}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_journal", map[string]any{
+		"host":  "192.168.1.10",
+		"lines": float64(25),
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success without unit arg, got IsError=true: %s", resultText(result))
+	}
+	if fake.lastJournalUnit != "" {
+		t.Errorf("expected empty unit forwarded to client, got %q", fake.lastJournalUnit)
+	}
+	if fake.lastJournalLines != 25 {
+		t.Errorf("expected lines=25, got %d", fake.lastJournalLines)
 	}
 }
 

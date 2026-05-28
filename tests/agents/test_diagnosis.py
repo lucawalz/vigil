@@ -826,6 +826,9 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
     assert journal_call is not None
     assert journal_call[1].get("host") == "hetzner-worker-1"
+    assert "unit" not in journal_call[1], (
+        "unit must not be passed when no systemd_unit label"
+    )
 
 
 def _make_fault(labels: dict):

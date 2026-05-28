@@ -49,7 +49,7 @@ func NewServer(client nixos.NixOSClient, cfg *config.Config) *server.MCPServer {
 		mcp.NewTool("get_journal",
 			mcp.WithDescription("Get systemd journal entries for a unit on a remote host"),
 			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),
-			mcp.WithString("unit", mcp.Required(), mcp.Description("Systemd unit name")),
+			mcp.WithString("unit", mcp.Description("Systemd unit name (omit for node-wide tail)")),
 			mcp.WithNumber("lines", mcp.Description("Number of log lines (default 100)")),
 			mcp.WithOutputSchema[TextResult](),
 		),

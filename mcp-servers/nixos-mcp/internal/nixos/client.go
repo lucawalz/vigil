@@ -137,10 +137,13 @@ func (c *realNixOSClient) RebuildTest(_ context.Context, host string) (string, e
 }
 
 func (c *realNixOSClient) GetJournal(_ context.Context, host, unit string, lines int) (string, error) {
-	if err := validateArg("unit", unit); err != nil {
-		return "", err
+	if unit != "" {
+		if err := validateArg("unit", unit); err != nil {
+			return "", err
+		}
+		return c.runSSH(host, fmt.Sprintf("journalctl -u %s -n %d --no-pager", unit, lines))
 	}
-	return c.runSSH(host, fmt.Sprintf("journalctl -u %s -n %d --no-pager", unit, lines))
+	return c.runSSH(host, fmt.Sprintf("journalctl -n %d --no-pager", lines))
 }
 
 func (c *realNixOSClient) GetSystemdStatus(_ context.Context, host, unit string) (string, error) {
