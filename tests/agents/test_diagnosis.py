@@ -661,7 +661,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
     mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
 
     async def nixos_side_effect(tool_name, args=None):
-        if tool_name == "lookup_os_manifest_path":
+        if tool_name == "get_nix_path":
             return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
         return {"content": "nixos-state"}
 
