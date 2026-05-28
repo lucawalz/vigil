@@ -13,6 +13,6 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "printf '{ }\n' > ${CONFIG_DIR}/bad-module.nix && sed -i '/bad-module.nix/d' ${CONFIG_DIR}/default.nix || true"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-2"
+  "flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-2"
 
 echo "reset.sh: os-stale-generation seed=${SEED} — node at baseline"

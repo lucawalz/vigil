@@ -14,7 +14,7 @@ in
   config = lib.mkIf cfg.enable {
     systemd.services.vigil-auto-reconcile = {
       description = "Vigil NixOS auto-reconciler";
-      path = [ pkgs.git pkgs.hostname pkgs.nixos-rebuild ];
+      path = [ pkgs.git pkgs.hostname pkgs.nixos-rebuild pkgs.util-linux ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = false;
@@ -28,7 +28,7 @@ in
           git -C /opt/nixos-config reset --hard "origin/$BRANCH"
           OLD=$(cat "$STATE_FILE" 2>/dev/null || echo "")
           if [ "$NEW" != "$OLD" ]; then
-            nixos-rebuild switch --flake "/opt/nixos-config#$(hostname)"
+            flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake "/opt/nixos-config#$(hostname)"
             echo "$NEW" > "$STATE_FILE"
           fi
         '';

@@ -37,7 +37,7 @@ if [ "$GROUP" = "cross" ] || [ "$GROUP" = "os" ]; then
   for host in hetzner-worker-1 hetzner-worker-2; do
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
       "$SSH_USER@$host" \
-      "git -C /opt/nixos-config fetch origin && git -C /opt/nixos-config reset --hard origin/chore/eval-cluster-baseline && nixos-rebuild switch --flake /opt/nixos-config#$host" \
+      "git -C /opt/nixos-config fetch origin && git -C /opt/nixos-config reset --hard origin/chore/eval-cluster-baseline && flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake /opt/nixos-config#$host" \
       || echo "between-scenarios: nixos-rebuild on $host failed, continuing" >&2
   done
 else
