@@ -1,0 +1,21 @@
+{
+  "run_id": "os-1_1_claude-sonnet-4-6_bab051a",
+  "scenario": "os-1",
+  "seed": 1,
+  "model": "claude-sonnet-4-6",
+  "outcome": "setup_error",
+  "success_rate": false,
+  "diagnosis_accuracy": null,
+  "MTTR_s": null,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "total_tool_calls": 0,
+  "iteration_count": 0,
+  "autonomy_level": "full",
+  "actions_taken": [],
+  "started_at": "2026-05-28T18:14:04Z",
+  "ended_at": "2026-05-28T18:14:04Z",
+  "error_message": "/root/vigil/eval/scenarios/os-1/reset.sh exited 1: Warning: Permanently added 'hetzner-worker-1' (ED25519) to the list of known hosts.\nbuilding the system configuration...\nerror (ignored): SQLite database '/root/.cache/nix/eval-cache-v6/80e4a4db2a4101aa3456f6d430490a02f525d701c4779593b502fb78d3d43a3d.sqlite' is busy\nFailed to start transient service unit: Unit nixos-rebuild-switch-to-configuration.service was already loaded or has a fragment file.\nCommand 'systemd-run -E LOCALE_ARCHIVE -E NIXOS_"
+}
