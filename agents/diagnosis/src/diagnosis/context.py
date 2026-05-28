@@ -445,7 +445,7 @@ async def build_diagnosis_context(
 
     if target_host:
         manifest_path_result = await deps.nixos_mcp.direct_call_tool(
-            "lookup_os_manifest_path",
+            "get_nix_path",
             {"hostname": target_host},
         )
         manifest_path = _extract_text(manifest_path_result)
