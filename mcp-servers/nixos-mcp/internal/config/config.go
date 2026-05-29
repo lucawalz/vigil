@@ -4,11 +4,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
 	MaxOutputBytesDescribe = 4096
 	MaxOutputBytesLogs     = 2048
+	SSHDialTimeoutSeconds  = 15
 )
 
 type Config struct {
@@ -17,6 +19,7 @@ type Config struct {
 	SSHKeyPath             string
 	MaxOutputBytesDescribe int
 	MaxOutputBytesLogs     int
+	SSHDialTimeout         time.Duration
 }
 
 func Load() *Config {
@@ -38,6 +41,7 @@ func Load() *Config {
 		SSHKeyPath:             keyPath,
 		MaxOutputBytesDescribe: envInt("MAX_OUTPUT_BYTES_DESCRIBE", MaxOutputBytesDescribe),
 		MaxOutputBytesLogs:     envInt("MAX_OUTPUT_BYTES_LOGS", MaxOutputBytesLogs),
+		SSHDialTimeout:         time.Duration(envInt("SSH_DIAL_TIMEOUT_SECONDS", SSHDialTimeoutSeconds)) * time.Second,
 	}
 }
 

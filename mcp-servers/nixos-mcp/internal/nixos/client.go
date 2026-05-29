@@ -4,14 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 )
+
+const defaultSSHDialTimeout = 15 * time.Second
 
 func expandTilde(path string) (string, error) {
 	if !strings.HasPrefix(path, "~/") {
@@ -29,6 +33,12 @@ var shellMetaRE = regexp.MustCompile(`[;&|$` + "`" + `(){}<>\n\r]`)
 func validateArg(name, value string) error {
 	if shellMetaRE.MatchString(value) {
 		return fmt.Errorf("%s: contains disallowed shell metacharacter", name)
+	}
+	if strings.ContainsAny(value, " \t") {
+		return fmt.Errorf("%s: contains whitespace; flag injection rejected", name)
+	}
+	if strings.HasPrefix(value, "-") {
+		return fmt.Errorf("%s: leading dash rejected to prevent flag injection", name)
 	}
 	return nil
 }
@@ -49,9 +59,10 @@ type realNixOSClient struct {
 	user         string
 	signer       gossh.Signer
 	allowedHosts []string
+	dialTimeout  time.Duration
 }
 
-func NewRealNixOSClient(user, keyPath string, allowedHosts []string) (NixOSClient, error) {
+func NewRealNixOSClient(user, keyPath string, allowedHosts []string, dialTimeout time.Duration) (NixOSClient, error) {
 	expanded, err := expandTilde(keyPath)
 	if err != nil {
 		return nil, err
@@ -64,7 +75,15 @@ func NewRealNixOSClient(user, keyPath string, allowedHosts []string) (NixOSClien
 	if err != nil {
 		return nil, fmt.Errorf("parse SSH key: %w", err)
 	}
-	return &realNixOSClient{user: user, signer: signer, allowedHosts: allowedHosts}, nil
+	if dialTimeout <= 0 {
+		dialTimeout = defaultSSHDialTimeout
+	}
+	return &realNixOSClient{
+		user:         user,
+		signer:       signer,
+		allowedHosts: allowedHosts,
+		dialTimeout:  dialTimeout,
+	}, nil
 }
 
 func validateHost(host string, allowed []string) error {
@@ -79,22 +98,34 @@ func validateHost(host string, allowed []string) error {
 	return fmt.Errorf("host %q is not in SSH_HOSTS allow-list", host)
 }
 
-func (c *realNixOSClient) runSSH(host, cmd string) (string, error) {
+func (c *realNixOSClient) runSSH(ctx context.Context, host, cmd string) (string, error) {
 	if strings.ContainsAny(host, ":/ \t\n\r") {
 		return "", fmt.Errorf("host contains invalid character")
 	}
 	if err := validateHost(host, c.allowedHosts); err != nil {
 		return "", err
 	}
+	if err := validateCommand(cmd); err != nil {
+		return "", err
+	}
 	cfg := &gossh.ClientConfig{
 		User:            c.user,
 		Auth:            []gossh.AuthMethod{gossh.PublicKeys(c.signer)},
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(), //nolint:gosec
+		Timeout:         c.dialTimeout,
 	}
-	conn, err := gossh.Dial("tcp", host+":22", cfg)
+
+	dialer := net.Dialer{Timeout: c.dialTimeout}
+	netConn, err := dialer.DialContext(ctx, "tcp", host+":22")
 	if err != nil {
 		return "", fmt.Errorf("ssh dial %s: %w", host, err)
 	}
+	sshConn, chans, reqs, err := gossh.NewClientConn(netConn, host+":22", cfg)
+	if err != nil {
+		_ = netConn.Close()
+		return "", fmt.Errorf("ssh handshake %s: %w", host, err)
+	}
+	conn := gossh.NewClient(sshConn, chans, reqs)
 	defer func() { _ = conn.Close() }()
 
 	session, err := conn.NewSession()
@@ -107,50 +138,50 @@ func (c *realNixOSClient) runSSH(host, cmd string) (string, error) {
 	return string(out), err
 }
 
-func (c *realNixOSClient) GetGenerations(_ context.Context, host string) (string, error) {
-	return c.runSSH(host, "nix-env -p /nix/var/nix/profiles/system --list-generations")
+func (c *realNixOSClient) GetGenerations(ctx context.Context, host string) (string, error) {
+	return c.runSSH(ctx, host, "nix-env -p /nix/var/nix/profiles/system --list-generations")
 }
 
-func (c *realNixOSClient) SwitchGeneration(_ context.Context, host string, generation int) (string, error) {
+func (c *realNixOSClient) SwitchGeneration(ctx context.Context, host string, generation int) (string, error) {
 	cmd := fmt.Sprintf(
 		"sudo nix-env --switch-generation %d -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
 		generation,
 	)
-	return c.runSSH(host, cmd)
+	return c.runSSH(ctx, host, cmd)
 }
 
-func (c *realNixOSClient) RebuildTest(_ context.Context, host string) (string, error) {
-	_, rebuildErr := c.runSSH(host, fmt.Sprintf("sudo nixos-rebuild test --flake /opt/vigil/infra/nixos#%s", host))
+func (c *realNixOSClient) RebuildTest(ctx context.Context, host string) (string, error) {
+	_, rebuildErr := c.runSSH(ctx, host, fmt.Sprintf("sudo nixos-rebuild test --flake /opt/vigil/infra/nixos#%s", host))
 	exitCode := 0
 	if rebuildErr != nil {
 		exitCode = 1
 	}
 
-	healthGate, _ := c.runSSH(host, "systemctl is-active rollback-gate.service")
+	healthGate, _ := c.runSSH(ctx, host, "systemctl is-active rollback-gate.service")
 	healthGate = strings.TrimSpace(healthGate)
 
-	k8sReady, _ := c.runSSH(host, `kubectl get node $(hostname) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`)
+	k8sReady, _ := c.runSSH(ctx, host, `kubectl get node $(hostname) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`)
 	k8sReady = strings.TrimSpace(k8sReady)
 
 	result := fmt.Sprintf("nixos-rebuild exit: %d\nhealth-gate: %s\nk8s-node-ready: %s", exitCode, healthGate, k8sReady)
 	return result, nil
 }
 
-func (c *realNixOSClient) GetJournal(_ context.Context, host, unit string, lines int) (string, error) {
+func (c *realNixOSClient) GetJournal(ctx context.Context, host, unit string, lines int) (string, error) {
 	if unit != "" {
 		if err := validateArg("unit", unit); err != nil {
 			return "", err
 		}
-		return c.runSSH(host, fmt.Sprintf("journalctl -u %s -n %d --no-pager", unit, lines))
+		return c.runSSH(ctx, host, fmt.Sprintf("journalctl -u %s -n %d --no-pager", unit, lines))
 	}
-	return c.runSSH(host, fmt.Sprintf("journalctl -n %d --no-pager", lines))
+	return c.runSSH(ctx, host, fmt.Sprintf("journalctl -n %d --no-pager", lines))
 }
 
-func (c *realNixOSClient) GetSystemdStatus(_ context.Context, host, unit string) (string, error) {
+func (c *realNixOSClient) GetSystemdStatus(ctx context.Context, host, unit string) (string, error) {
 	if err := validateArg("unit", unit); err != nil {
 		return "", err
 	}
-	out, err := c.runSSH(host, fmt.Sprintf("systemctl status %s --no-pager", unit))
+	out, err := c.runSSH(ctx, host, fmt.Sprintf("systemctl status %s --no-pager", unit))
 	var exitErr *gossh.ExitError
 	if errors.As(err, &exitErr) {
 		return out, nil
@@ -158,11 +189,11 @@ func (c *realNixOSClient) GetSystemdStatus(_ context.Context, host, unit string)
 	return out, err
 }
 
-func (c *realNixOSClient) EtcdSnapshotSave(_ context.Context, host, destPath string) (string, error) {
+func (c *realNixOSClient) EtcdSnapshotSave(ctx context.Context, host, destPath string) (string, error) {
 	if err := validateArg("dest_path", destPath); err != nil {
 		return "", err
 	}
-	return c.runSSH(host, fmt.Sprintf("sudo etcdctl snapshot save %s", destPath))
+	return c.runSSH(ctx, host, fmt.Sprintf("sudo etcdctl snapshot save %s", destPath))
 }
 
 var knownNixOSHosts = map[string]bool{
@@ -182,13 +213,13 @@ func (c *realNixOSClient) GetNixPath(_ context.Context, hostname string) (string
 	return fmt.Sprintf("infra/nixos/hosts/%s/default.nix", hostname), nil
 }
 
-func (c *realNixOSClient) DryBuild(_ context.Context, host string) (string, error) {
-	return c.runSSH(host, fmt.Sprintf("sudo nixos-rebuild dry-activate --flake /opt/vigil/infra/nixos#%s", host))
+func (c *realNixOSClient) DryBuild(ctx context.Context, host string) (string, error) {
+	return c.runSSH(ctx, host, fmt.Sprintf("sudo nixos-rebuild dry-activate --flake /opt/vigil/infra/nixos#%s", host))
 }
 
-func (c *realNixOSClient) TriggerReconcile(_ context.Context, host string) (string, error) {
+func (c *realNixOSClient) TriggerReconcile(ctx context.Context, host string) (string, error) {
 	cmd := "systemctl start --no-block vigil-auto-reconcile.service"
-	out, err := c.runSSH(host, cmd)
+	out, err := c.runSSH(ctx, host, cmd)
 	if err != nil {
 		return "", fmt.Errorf("trigger_reconcile: %w", err)
 	}
