@@ -331,6 +331,7 @@ resource "null_resource" "vigil_agent_setup" {
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.agent.ipv4_address} \
         "chmod 600 /etc/vigil/env && systemctl start --no-block vigil-orchestrator.service"
+      rm -f ${local_sensitive_file.vigil_env.filename}
       %{if var.operator_ssh_pubkey != ""}
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.agent.ipv4_address} \
