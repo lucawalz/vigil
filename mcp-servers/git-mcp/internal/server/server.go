@@ -132,7 +132,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.CommitResult](),
 		),
-		git.HandleCommitFiles(client, s, cfg.MaxOutputBytes),
+		git.HandleCommitFiles(client, s),
 	)
 
 	mcpServer.AddTool(
@@ -156,7 +156,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.PRNumberResult](),
 		),
-		git.HandleCreatePR(client, s, cfg.MaxOutputBytes),
+		git.HandleCreatePR(client, s),
 	)
 
 	mcpServer.AddTool(
@@ -168,7 +168,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.PRStatusResult](),
 		),
-		git.HandleGetPRStatus(client, s, cfg.MaxOutputBytes),
+		git.HandleGetPRStatus(client, s),
 	)
 
 	mcpServer.AddTool(
@@ -183,7 +183,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.GatePassedResult](),
 		),
-		git.HandleWaitForGate(client, s, cfg.MaxOutputBytes, git.DefaultPollInterval),
+		git.HandleWaitForGate(client, s, git.DefaultPollInterval),
 	)
 
 	mcpServer.AddTool(
@@ -195,7 +195,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.CommitResult](),
 		),
-		git.HandleRevertCommit(client, s, cfg.MaxOutputBytes),
+		git.HandleRevertCommit(client, s),
 	)
 
 	mcpServer.AddTool(
@@ -207,7 +207,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.PRNumberResult](),
 		),
-		git.HandleClosePR(client, s, cfg.MaxOutputBytes),
+		git.HandleClosePR(client, s),
 	)
 
 	mcpServer.AddTool(
@@ -252,7 +252,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.ManifestPathResult](),
 		),
-		git.HandleResolveManifestPath(client, s, cfg.MaxOutputBytes),
+		git.HandleResolveManifestPath(client, s),
 	)
 
 	return mcpServer

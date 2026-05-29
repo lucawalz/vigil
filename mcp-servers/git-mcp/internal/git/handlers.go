@@ -220,7 +220,7 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 	}
 }
 
-func HandleCommitFiles(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleCommitFiles(client GitClient, state SessionState) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		message, ok := args["message"].(string)
@@ -256,7 +256,7 @@ func HandlePushBranch(client GitClient, state SessionState, maxBytes int) server
 	}
 }
 
-func HandleCreatePR(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleCreatePR(client GitClient, state SessionState) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		title, ok := args["title"].(string)
@@ -288,7 +288,7 @@ func HandleCreatePR(client GitClient, state SessionState, maxBytes int) server.T
 	}
 }
 
-func HandleGetPRStatus(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleGetPRStatus(client GitClient, state SessionState) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		prNumF, ok := args["pr_number"].(float64)
@@ -307,7 +307,7 @@ func HandleGetPRStatus(client GitClient, state SessionState, maxBytes int) serve
 	}
 }
 
-func HandleWaitForGate(client GitClient, state SessionState, maxBytes int, pollInterval time.Duration) server.ToolHandlerFunc {
+func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.Duration) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		prNumF, ok := args["pr_number"].(float64)
@@ -357,7 +357,7 @@ func HandleWaitForGate(client GitClient, state SessionState, maxBytes int, pollI
 	}
 }
 
-func HandleClosePR(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleClosePR(client GitClient, state SessionState) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		prNumF, ok := args["pr_number"].(float64)
@@ -428,7 +428,7 @@ func HandleReadFile(client GitClient, state SessionState, authURL string, maxByt
 	}
 }
 
-func HandleResolveManifestPath(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleResolveManifestPath(client GitClient, state SessionState) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		kustomizePath, ok := args["kustomize_path"].(string)
@@ -458,7 +458,7 @@ func HandleResolveManifestPath(client GitClient, state SessionState, maxBytes in
 	}
 }
 
-func HandleRevertCommit(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleRevertCommit(client GitClient, state SessionState) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		mergeCommitSHA, ok := args["merge_commit_sha"].(string)

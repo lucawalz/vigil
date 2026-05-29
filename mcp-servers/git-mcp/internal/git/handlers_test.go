@@ -767,7 +767,7 @@ func TestCommitFilesHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{commitSHA: "abc1234"}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("commit_files", mcp.WithString("message", mcp.Required()))
-	handler := git.HandleCommitFiles(fake, state, testMaxBytes)
+	handler := git.HandleCommitFiles(fake, state)
 
 	result, err := callHandler(t, "commit_files", tool, handler, map[string]any{"message": "fix: reduce replicas"})
 	if err != nil {
@@ -787,7 +787,7 @@ func TestCommitFilesHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{err: fmt.Errorf("nothing to commit")}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("commit_files", mcp.WithString("message", mcp.Required()))
-	handler := git.HandleCommitFiles(fake, state, testMaxBytes)
+	handler := git.HandleCommitFiles(fake, state)
 
 	result, err := callHandler(t, "commit_files", tool, handler, map[string]any{"message": "fix: reduce replicas"})
 	if err != nil {
@@ -803,7 +803,7 @@ func TestCommitFilesHandler_MissingArgument(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("commit_files", mcp.WithString("message", mcp.Required()))
-	handler := git.HandleCommitFiles(fake, state, testMaxBytes)
+	handler := git.HandleCommitFiles(fake, state)
 
 	result, err := callHandler(t, "commit_files", tool, handler, map[string]any{})
 	if err != nil {
@@ -874,7 +874,7 @@ func TestCreatePRHandler_Success(t *testing.T) {
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
 	)
-	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+	handler := git.HandleCreatePR(fake, state)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: reduce OOMKilled replicas",
@@ -904,7 +904,7 @@ func TestCreatePRHandler_UsesSessionBaseBranch(t *testing.T) {
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
 	)
-	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+	handler := git.HandleCreatePR(fake, state)
 
 	_, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: bad image tag",
@@ -926,7 +926,7 @@ func TestCreatePRHandler_FailsWhenBaseBranchUnset(t *testing.T) {
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
 	)
-	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+	handler := git.HandleCreatePR(fake, state)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: bad image tag",
@@ -949,7 +949,7 @@ func TestCreatePRHandler_DomainError(t *testing.T) {
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
 	)
-	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+	handler := git.HandleCreatePR(fake, state)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: reduce replicas",
@@ -972,7 +972,7 @@ func TestCreatePRHandler_AutoMergeError(t *testing.T) {
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
 	)
-	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+	handler := git.HandleCreatePR(fake, state)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
 		"title": "fix: reduce OOMKilled replicas",
@@ -995,7 +995,7 @@ func TestCreatePRHandler_MissingArgument(t *testing.T) {
 		mcp.WithString("title", mcp.Required()),
 		mcp.WithString("body", mcp.Required()),
 	)
-	handler := git.HandleCreatePR(fake, state, testMaxBytes)
+	handler := git.HandleCreatePR(fake, state)
 
 	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{"title": "t"})
 	if err != nil {
@@ -1010,7 +1010,7 @@ func TestGetPRStatusHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{prState: "open", prMerged: false, prMergeSHA: ""}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("get_pr_status", mcp.WithNumber("pr_number", mcp.Required()))
-	handler := git.HandleGetPRStatus(fake, state, testMaxBytes)
+	handler := git.HandleGetPRStatus(fake, state)
 
 	result, err := callHandler(t, "get_pr_status", tool, handler, map[string]any{"pr_number": float64(42)})
 	if err != nil {
@@ -1029,7 +1029,7 @@ func TestGetPRStatusHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{err: fmt.Errorf("rate limited")}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("get_pr_status", mcp.WithNumber("pr_number", mcp.Required()))
-	handler := git.HandleGetPRStatus(fake, state, testMaxBytes)
+	handler := git.HandleGetPRStatus(fake, state)
 
 	result, err := callHandler(t, "get_pr_status", tool, handler, map[string]any{"pr_number": float64(42)})
 	if err != nil {
@@ -1044,7 +1044,7 @@ func TestGetPRStatusHandler_MissingArgument(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("get_pr_status", mcp.WithNumber("pr_number", mcp.Required()))
-	handler := git.HandleGetPRStatus(fake, state, testMaxBytes)
+	handler := git.HandleGetPRStatus(fake, state)
 
 	result, err := callHandler(t, "get_pr_status", tool, handler, map[string]any{})
 	if err != nil {
@@ -1062,7 +1062,7 @@ func TestWaitForGateHandler_Success(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number": float64(42),
 	})
@@ -1085,7 +1085,7 @@ func TestWaitForGateHandler_DomainError(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number":       float64(42),
@@ -1106,7 +1106,7 @@ func TestWaitForGateHandler_TimeoutRespected(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
 
 	start := time.Now()
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
@@ -1134,7 +1134,7 @@ func TestWaitForGateHandler_MissingArgument(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{})
 	if err != nil {
@@ -1157,7 +1157,7 @@ func TestWaitForGateHandler_GateCheckFailed(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, testMaxBytes, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number":       float64(42),
@@ -1184,7 +1184,7 @@ func TestRevertCommitHandler_Success(t *testing.T) {
 	state := preloadedState(cloneDir, "remediation/run-001")
 	state.SetBaseBranch("main")
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+	handler := git.HandleRevertCommit(fake, state)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1206,7 +1206,7 @@ func TestRevertCommitHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{err: fmt.Errorf("revert conflict")}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+	handler := git.HandleRevertCommit(fake, state)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1224,7 +1224,7 @@ func TestRevertCommitHandler_InvalidSHA(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+	handler := git.HandleRevertCommit(fake, state)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "not-a-sha!",
@@ -1241,7 +1241,7 @@ func TestClosePRHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("close_pr", mcp.WithNumber("pr_number", mcp.Required()))
-	handler := git.HandleClosePR(fake, state, testMaxBytes)
+	handler := git.HandleClosePR(fake, state)
 
 	result, err := callHandler(t, "close_pr", tool, handler, map[string]any{"pr_number": float64(42)})
 	if err != nil {
@@ -1260,7 +1260,7 @@ func TestClosePRHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{closePRErr: fmt.Errorf("gh: failed")}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("close_pr", mcp.WithNumber("pr_number", mcp.Required()))
-	handler := git.HandleClosePR(fake, state, testMaxBytes)
+	handler := git.HandleClosePR(fake, state)
 
 	result, err := callHandler(t, "close_pr", tool, handler, map[string]any{"pr_number": float64(42)})
 	if err != nil {
@@ -1282,7 +1282,7 @@ func TestClosePRHandler_MissingArgument(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("close_pr", mcp.WithNumber("pr_number", mcp.Required()))
-	handler := git.HandleClosePR(fake, state, testMaxBytes)
+	handler := git.HandleClosePR(fake, state)
 
 	result, err := callHandler(t, "close_pr", tool, handler, map[string]any{})
 	if err != nil {
@@ -1771,7 +1771,7 @@ func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
 	state.SetBaseBranch("chore/eval-cluster-baseline")
 
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+	handler := git.HandleRevertCommit(fake, state)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1797,7 +1797,7 @@ func TestHandleRevertCommit_FailsWhenBaseBranchUnset(t *testing.T) {
 	state := preloadedState(cloneDir, "remediation/run-001")
 
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, testMaxBytes)
+	handler := git.HandleRevertCommit(fake, state)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
