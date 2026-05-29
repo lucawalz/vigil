@@ -17,7 +17,7 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
-from pydantic_ai.usage import Usage, UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from .context import DiagnosisContext
 from .manifest_paths import lookup_os_manifest_path as _lookup_os_manifest_path
@@ -283,7 +283,7 @@ async def run_diagnosis(
     blocked_tools: frozenset[str] = frozenset(),
     retry_hint: str | None = None,
     breaker: Breaker | None = None,
-) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
+) -> tuple[DiagnosisReport, RunUsage, list[ModelMessage]]:
     kubectl_readonly = _build_readonly_toolset(
         deps.kubectl_mcp, DIAGNOSIS_KUBECTL_READ_TOOLS, blocked_tools
     )

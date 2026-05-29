@@ -21,7 +21,7 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
-from pydantic_ai.usage import Usage, UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from .models import GitCommitBudgetExceeded, RemediationDeps, RemediationResult
 
@@ -163,7 +163,7 @@ async def run_remediation(
     run_id: str = "",
     blocked_tools: frozenset[str] = frozenset(),
     breaker: Breaker | None = None,
-) -> tuple[RemediationResult, Usage, list[ModelMessage]]:
+) -> tuple[RemediationResult, RunUsage, list[ModelMessage]]:
     if source_branch in PROTECTED_BRANCHES:
         refused = RemediationResult(
             success=False,
@@ -171,7 +171,7 @@ async def run_remediation(
             tool_calls_count=0,
             destructive_repair=False,
         )
-        return refused, Usage(), []
+        return refused, RunUsage(), []
 
     def _allow(tool_name: str) -> bool:
         return tool_name not in blocked_tools

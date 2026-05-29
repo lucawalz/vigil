@@ -31,7 +31,7 @@ from orchestrator.agent import (
 )
 from orchestrator.models import CircuitBreakerTripped, FaultEvent, RunRecord
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
-from pydantic_ai.usage import Usage
+from pydantic_ai.usage import RunUsage
 from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
 
@@ -125,8 +125,8 @@ async def test_run_orchestration_happy_path(
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -174,8 +174,8 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -231,8 +231,8 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -289,7 +289,7 @@ async def test_run_orchestration_run_id_format(
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
-        AsyncMock(return_value=(_canned_report(), Usage(), [])),
+        AsyncMock(return_value=(_canned_report(), RunUsage(), [])),
     )
     monkeypatch.setattr(
         orch_mod,
@@ -299,7 +299,7 @@ async def test_run_orchestration_run_id_format(
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
-        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+        AsyncMock(return_value=(_canned_remediation(), RunUsage(), [])),
     )
     monkeypatch.setattr(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
@@ -391,7 +391,7 @@ async def test_run_orchestration_forwards_seed_to_run_id(
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
-        AsyncMock(return_value=(_canned_report(), Usage(), [])),
+        AsyncMock(return_value=(_canned_report(), RunUsage(), [])),
     )
     monkeypatch.setattr(
         orch_mod,
@@ -401,7 +401,7 @@ async def test_run_orchestration_forwards_seed_to_run_id(
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
-        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+        AsyncMock(return_value=(_canned_remediation(), RunUsage(), [])),
     )
     monkeypatch.setattr(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
@@ -481,8 +481,8 @@ def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "build_diagnosis_context",
         AsyncMock(return_value=_canned_diagnosis_context()),
     )
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -803,8 +803,8 @@ async def test_outcome_rollback_succeeded(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -855,8 +855,8 @@ async def test_outcome_rollback_failed(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -900,7 +900,7 @@ async def test_sequential_watchdog_k8s_path(
     rem_done_at: list[float] = []
     wtch_started_at: list[float] = []
 
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -910,7 +910,7 @@ async def test_sequential_watchdog_k8s_path(
 
     async def _rem_side_effect(*args, **kwargs):
         rem_done_at.append(time.monotonic())
-        return (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+        return (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
 
     async def _wtch_side_effect(*args, **kwargs):
         wtch_started_at.append(time.monotonic())
@@ -942,7 +942,7 @@ async def test_outcome_gate_failed(
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
     failed_rem = RemediationResult(
         success=False,
         actions_taken=[
@@ -957,7 +957,7 @@ async def test_outcome_gate_failed(
         destructive_repair=False,
         gate_status="closed",
     )
-    rem_rv = (failed_rem, Usage(input_tokens=100, output_tokens=30), [])
+    rem_rv = (failed_rem, RunUsage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -1142,8 +1142,8 @@ async def test_no_rollback_when_watchdog_clears_within_settle_window(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -1187,8 +1187,8 @@ async def test_rollback_when_watchdog_still_degraded_after_settle(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod,
@@ -1273,7 +1273,7 @@ async def test_run_record_forbidden_action_violations_populated_on_success_path(
     )
     rem_rv = (
         _canned_remediation(),
-        Usage(input_tokens=200, output_tokens=80),
+        RunUsage(input_tokens=200, output_tokens=80),
         [violation_msg],
     )
     monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
@@ -1307,9 +1307,11 @@ async def test_escalate_action_returns_escalated_record(
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     escalate_report = _canned_report_with_action("escalate")
-    diag_rv = (escalate_report, Usage(input_tokens=100, output_tokens=50), [])
+    diag_rv = (escalate_report, RunUsage(input_tokens=100, output_tokens=50), [])
     fetch_snapshot_mock = AsyncMock(return_value=_canned_baseline())
-    run_remediation_mock = AsyncMock(return_value=(_canned_remediation(), Usage(), []))
+    run_remediation_mock = AsyncMock(
+        return_value=(_canned_remediation(), RunUsage(), [])
+    )
     run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(orch_mod, "capture_health_snapshot", fetch_snapshot_mock)
@@ -1342,8 +1344,8 @@ async def test_flux_reconcile_action_skips_precheck(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     flux_report = _canned_report_with_action("flux_reconcile")
-    diag_rv = (flux_report, Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (flux_report, RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
@@ -1384,8 +1386,8 @@ async def test_nixos_rebuild_action_routes_to_remediation(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     nixos_report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-1")
-    diag_rv = (nixos_report, Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (nixos_report, RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     run_remediation_mock = AsyncMock(return_value=rem_rv)
     run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -1426,8 +1428,8 @@ async def test_git_commit_nix_action_routes_to_remediation(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     nix_report = _canned_report_with_action("git_commit_nix", target_host="hetzner-1")
-    diag_rv = (nix_report, Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (nix_report, RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     run_remediation_mock = AsyncMock(return_value=rem_rv)
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
@@ -1601,7 +1603,7 @@ async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
     from diagnosis.context import ManifestPathUnresolvable
 
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), Usage(), []))
+    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), RunUsage(), []))
     monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
     monkeypatch.setattr(
         orch_mod,
@@ -1633,7 +1635,7 @@ async def test_orchestrator_escalates_on_resource_kind_unresolvable(
     from diagnosis.context import ResourceKindUnresolvable
 
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), Usage(), []))
+    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), RunUsage(), []))
     monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
     monkeypatch.setattr(
         orch_mod,
@@ -1678,7 +1680,7 @@ async def test_orchestrator_passes_base_branch_to_create_branch(
     monkeypatch.setattr(
         orch_mod, "build_diagnosis_context", AsyncMock(return_value=ctx)
     )
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
@@ -1686,7 +1688,7 @@ async def test_orchestrator_passes_base_branch_to_create_branch(
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
-        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+        AsyncMock(return_value=(_canned_remediation(), RunUsage(), [])),
     )
     monkeypatch.setattr(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
@@ -1739,7 +1741,7 @@ async def test_orchestrator_base_branch_falls_back_to_main_when_source_branch_em
     monkeypatch.setattr(
         orch_mod, "build_diagnosis_context", AsyncMock(return_value=ctx)
     )
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
@@ -1747,7 +1749,7 @@ async def test_orchestrator_base_branch_falls_back_to_main_when_source_branch_em
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
-        AsyncMock(return_value=(_canned_remediation(), Usage(), [])),
+        AsyncMock(return_value=(_canned_remediation(), RunUsage(), [])),
     )
     monkeypatch.setattr(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
@@ -1789,8 +1791,8 @@ async def test_success_rate_false_when_forbidden_action_taken(
         orch_mod, "_extract_tool_names", lambda _msgs: ["commit_files", "create_pr"]
     )
 
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
@@ -1829,8 +1831,8 @@ async def test_success_rate_true_when_no_forbidden_actions(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
 
-    diag_rv = (_canned_report(), Usage(input_tokens=100, output_tokens=50), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=200, output_tokens=80), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
@@ -1867,8 +1869,8 @@ async def test_retry_succeeds_on_second_attempt(
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
 
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
     run_diagnosis_mock = AsyncMock(return_value=diag_rv)
     monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
     monkeypatch.setattr(
@@ -1921,8 +1923,8 @@ async def test_all_retries_exhausted_triggers_rollback_on_last_attempt(
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
     monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
 
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (_canned_remediation(), Usage(input_tokens=100, output_tokens=30), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
     run_diagnosis_mock = AsyncMock(return_value=diag_rv)
     monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
     monkeypatch.setattr(
@@ -1975,7 +1977,7 @@ async def test_gate_failed_does_not_retry(
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
 
-    diag_rv = (_canned_report(), Usage(input_tokens=50, output_tokens=20), [])
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
     failed_rem = RemediationResult(
         success=False,
         actions_taken=["create_branch", "write_manifest", "commit_files", "create_pr"],
@@ -1983,7 +1985,7 @@ async def test_gate_failed_does_not_retry(
         destructive_repair=False,
         gate_status="closed",
     )
-    rem_rv = (failed_rem, Usage(input_tokens=100, output_tokens=30), [])
+    rem_rv = (failed_rem, RunUsage(input_tokens=100, output_tokens=30), [])
     run_diagnosis_mock = AsyncMock(return_value=diag_rv)
     monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
     monkeypatch.setattr(

@@ -26,7 +26,7 @@ from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.messages import ModelMessage
-from pydantic_ai.usage import Usage
+from pydantic_ai.usage import RunUsage
 from remediation.agent import run_remediation
 from remediation.models import RemediationDeps
 from watchdog.agent import capture_health_snapshot, run_watchdog
@@ -405,7 +405,7 @@ async def run_orchestration(
             attempts=attempts_count,
         )
 
-    total_usage = Usage()
+    total_usage = RunUsage()
 
     log.info("run %s started (scenario=%s model=%s)", run_id, scenario, model_name)
 

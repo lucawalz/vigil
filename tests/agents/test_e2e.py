@@ -20,7 +20,7 @@ from diagnosis.models import DiagnosisReport
 from fastapi import FastAPI
 from orchestrator import agent as orch_mod
 from orchestrator import main as main_mod
-from pydantic_ai.usage import Usage
+from pydantic_ai.usage import RunUsage
 from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
 
@@ -92,7 +92,7 @@ async def test_webhook_to_audit_log_end_to_end(
         AsyncMock(
             return_value=(
                 _canned_report(),
-                Usage(input_tokens=100, output_tokens=50),
+                RunUsage(input_tokens=100, output_tokens=50),
                 [],
             )
         ),
@@ -108,7 +108,7 @@ async def test_webhook_to_audit_log_end_to_end(
         AsyncMock(
             return_value=(
                 _canned_remediation(),
-                Usage(input_tokens=200, output_tokens=80),
+                RunUsage(input_tokens=200, output_tokens=80),
                 [],
             )
         ),
