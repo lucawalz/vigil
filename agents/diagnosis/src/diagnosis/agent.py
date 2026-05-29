@@ -4,6 +4,12 @@ import os
 from typing import TYPE_CHECKING
 
 from common import trace
+from common.constants import (
+    DIAGNOSIS_FLUX_READ_TOOLS,
+    DIAGNOSIS_GIT_READ_TOOLS,
+    DIAGNOSIS_KUBECTL_READ_TOOLS,
+    DIAGNOSIS_NIXOS_READ_TOOLS,
+)
 from common.provider import build_model
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -18,6 +24,7 @@ from .models import DiagnosisDeps, DiagnosisReport
 
 if TYPE_CHECKING:
     from orchestrator.models import FaultEvent
+    from pydantic_ai.mcp import MCPServerStdio
 
 
 _SYSTEM_PROMPT = """GitOps four-quadrant fault classification agent.
@@ -246,6 +253,27 @@ def _build_user_message(
     )
 
 
+def is_diagnosis_tool_allowed(
+    tool_name: str,
+    allowed_tools: frozenset[str],
+    blocked_tools: frozenset[str],
+) -> bool:
+    return tool_name in allowed_tools and tool_name not in blocked_tools
+
+
+def _build_readonly_toolset(
+    server: MCPServerStdio,
+    allowed_tools: frozenset[str],
+    blocked_tools: frozenset[str],
+) -> FilteredToolset:
+    return FilteredToolset(
+        server,
+        filter_func=lambda _ctx, tool_def: is_diagnosis_tool_allowed(
+            tool_def.name, allowed_tools, blocked_tools
+        ),
+    )
+
+
 async def run_diagnosis(
     deps: DiagnosisDeps,
     fault: FaultEvent,
@@ -254,37 +282,17 @@ async def run_diagnosis(
     blocked_tools: frozenset[str] = frozenset(),
     retry_hint: str | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
-    _nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
-    # Blocks delete_resource; expand if kubectl-mcp gains additional write tools.
-    _kubectl_write_tools = frozenset({"delete_resource"})
-    _git_write_tools: frozenset[str] = frozenset()
-    _flux_write_tools = frozenset({"reconcile_kustomization"})
-    kubectl_readonly = FilteredToolset(
-        deps.kubectl_mcp,
-        filter_func=lambda _ctx, tool_def: (
-            tool_def.name not in _kubectl_write_tools
-            and tool_def.name not in blocked_tools
-        ),
+    kubectl_readonly = _build_readonly_toolset(
+        deps.kubectl_mcp, DIAGNOSIS_KUBECTL_READ_TOOLS, blocked_tools
     )
-    nixos_readonly = FilteredToolset(
-        deps.nixos_mcp,
-        filter_func=lambda _ctx, tool_def: (
-            tool_def.name not in _nixos_write_tools
-            and tool_def.name not in blocked_tools
-        ),
+    nixos_readonly = _build_readonly_toolset(
+        deps.nixos_mcp, DIAGNOSIS_NIXOS_READ_TOOLS, blocked_tools
     )
-    git_readonly = FilteredToolset(
-        deps.git_mcp,
-        filter_func=lambda _ctx, tool_def: (
-            tool_def.name not in _git_write_tools and tool_def.name not in blocked_tools
-        ),
+    git_readonly = _build_readonly_toolset(
+        deps.git_mcp, DIAGNOSIS_GIT_READ_TOOLS, blocked_tools
     )
-    flux_readonly = FilteredToolset(
-        deps.flux_mcp,
-        filter_func=lambda _ctx, tool_def: (
-            tool_def.name not in _flux_write_tools
-            and tool_def.name not in blocked_tools
-        ),
+    flux_readonly = _build_readonly_toolset(
+        deps.flux_mcp, DIAGNOSIS_FLUX_READ_TOOLS, blocked_tools
     )
     constraint_block = ""
     if blocked_tools:

@@ -176,9 +176,10 @@ def test_lookup_manifest_path_helpers_registered_as_tools() -> None:
     assert "def lookup_os_manifest_path" in source
 
 
-def test_kubectl_write_tools_blocks_delete_resource() -> None:
-    source = inspect.getsource(_diag_module)
-    assert "delete_resource" in source
+def test_kubectl_allow_list_excludes_delete_resource() -> None:
+    from common.constants import DIAGNOSIS_KUBECTL_READ_TOOLS
+
+    assert "delete_resource" not in DIAGNOSIS_KUBECTL_READ_TOOLS
 
 
 def test_system_prompt_has_three_axis_labels() -> None:
@@ -275,22 +276,25 @@ def test_run_diagnosis_signature_requires_context() -> None:
     )
 
 
-def test_kubectl_write_tools_resolved() -> None:
-    import diagnosis.agent as _mod
+def test_diagnosis_toolsets_use_allow_list_filter() -> None:
+    from diagnosis.agent import is_diagnosis_tool_allowed
 
-    source = inspect.getsource(_mod)
-    non_empty = "_kubectl_write_tools = frozenset({" in source
-    has_comment = "kubectl-mcp write tools" in source
-    assert non_empty or has_comment, (
-        "_kubectl_write_tools must be non-empty or have explanatory comment"
-    )
+    module_source = inspect.getsource(_diag_module)
+    assert "is_diagnosis_tool_allowed" in module_source
+    assert "READ_TOOLS" in module_source
+    assert callable(is_diagnosis_tool_allowed)
 
 
-def test_flux_write_tools_blocks_reconcile_kustomization() -> None:
-    source = inspect.getsource(_diag_module)
-    assert "_flux_write_tools" in source
-    assert '"reconcile_kustomization"' in source
+def test_flux_allow_list_excludes_reconcile_kustomization() -> None:
+    from common.constants import DIAGNOSIS_FLUX_READ_TOOLS
+    from diagnosis.agent import is_diagnosis_tool_allowed
+
+    source = inspect.getsource(run_diagnosis)
     assert "flux_readonly" in source
+    assert "reconcile_kustomization" not in DIAGNOSIS_FLUX_READ_TOOLS
+    assert not is_diagnosis_tool_allowed(
+        "reconcile_kustomization", DIAGNOSIS_FLUX_READ_TOOLS, frozenset()
+    )
 
 
 def test_diagnosis_context_is_frozen() -> None:
