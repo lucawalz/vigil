@@ -1,14 +1,14 @@
 # Vigil — MCP Servers
 
-Five Go MCP servers run as long-lived child processes of the agent host, communicating with the Python agent layer over stdio JSON-RPC 2.0 [1]. These servers (`kubectl-mcp`, `flux-mcp`, `git-mcp`, `ssh-mcp`, and `nixos-mcp`) form the only interface through which agents touch external systems. No Python agent code ever calls `subprocess`, invokes the Kubernetes API directly, or opens an SSH connection; all such operations are mediated by a typed MCP tool call that crosses the process boundary.
+Four Go MCP servers run as long-lived child processes of the agent host, communicating with the Python agent layer over stdio JSON-RPC 2.0 [1]. These servers (`kubectl-mcp`, `flux-mcp`, `git-mcp`, and `nixos-mcp`) form the only interface through which agents touch external systems. No Python agent code ever calls `subprocess`, invokes the Kubernetes API directly, or opens a git or SSH connection; all such operations are mediated by a typed MCP tool call that crosses the process boundary.
 
-Each server is started once per FastAPI lifespan via Pydantic AI's `MCPServerStdio` context manager, which spawns the Go binary as a child process and maintains the stdio pipe for the lifetime of the application. The parent Python process and the Go child share no memory; the only communication channel is the JSON-RPC 2.0 message stream over stdin/stdout. This process boundary is the primary trust boundary of the Vigil system: the Python layer expresses intent through typed MCP tool arguments, and the Go layer performs the actual operations against cluster infrastructure, SSH targets, and NixOS nodes.
+Each server is started once per FastAPI lifespan via Pydantic AI's `MCPServerStdio` context manager, which spawns the Go binary as a child process and maintains the stdio pipe for the lifetime of the application. The parent Python process and the Go child share no memory; the only communication channel is the JSON-RPC 2.0 message stream over stdin/stdout. This process boundary is the primary trust boundary of the Vigil system: the Python layer expresses intent through typed MCP tool arguments, and the Go layer performs the actual operations against cluster infrastructure, the git remote, and NixOS nodes.
 
 ## Why Go and Why MCP-Only
 
 The decision to expose a single MCP-only tool surface is justified in [ADR-0002](../adr/0002-mcp-exclusive-tool-surface.md): typed argument validation prevents injection from string-interpolated shell commands, every mutation is traceable to a named operation in the audit log, and servers can be unit-tested with `io.Pipe()` fake stdio transports without a live cluster.
 
-The choice of Go for all five servers is justified in [ADR-0003](../adr/0003-go-mcp-servers.md): a single static binary requires no runtime on the agent host, the Go standard library provides `crypto/ssh` and `net/http` without external dependencies, and the servers are entirely decoupled from the Python virtualenv. The `mark3labs/mcp-go` SDK [2] provides the stdio server scaffolding and handles MCP protocol framing, tool registration, and JSON-RPC dispatch.
+The choice of Go for all four servers is justified in [ADR-0003](../adr/0003-go-mcp-servers.md): a single static binary requires no runtime on the agent host, the Go standard library provides `crypto/ssh` and `net/http` without external dependencies, and the servers are entirely decoupled from the Python virtualenv. The `mark3labs/mcp-go` SDK [2] provides the stdio server scaffolding and handles MCP protocol framing, tool registration, and JSON-RPC dispatch.
 
 An alternative where the Python agents invoke shell commands via `subprocess`, or call `kubectl` and `ssh` directly, satisfies none of the three requirements: argument arrays constructed at runtime from LLM-generated strings are susceptible to injection; direct subprocess calls produce no structured audit record; and verifying such calls in tests requires either a live cluster or a mock that mirrors the full CLI behaviour of the targeted commands. The Go MCP boundary resolves all three concerns simultaneously, at the cost of a Go toolchain in CI and the modest per-call overhead of JSON-RPC serialization over a local pipe.
 
@@ -23,19 +23,18 @@ The boundary is enforced by process isolation, not by policy. The Python agent h
 
 ## Server Inventory
 
-All five servers implement the MCP specification (revision 2024-11-05) [1] using `mark3labs/mcp-go` [2] at version v0.48.0.
+All four servers implement the MCP specification (revision 2024-11-05) [1] using `mark3labs/mcp-go` [2] at version v0.48.0.
 
 | Server | Language | SDK | go.mod version | Tools |
 |--------|----------|-----|----------------|-------|
-| kubectl-mcp | Go | mark3labs/mcp-go | v0.48.0 | `get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_status` |
+| kubectl-mcp | Go | mark3labs/mcp-go | v0.48.0 | `get_nodes`, `get_pods`, `describe_pod`, `describe_node`, `get_logs`, `get_events`, `get_taints`, `get_resource_yaml`, `rollout_status`, `delete_resource` |
 | flux-mcp | Go | mark3labs/mcp-go | v0.48.0 | `reconcile_kustomization`, `get_kustomization_status`, `get_gitrepository_status` |
 | git-mcp | Go | mark3labs/mcp-go | v0.48.0 | `create_branch`, `write_manifest`, `commit_files`, `push_branch`, `create_pr`, `get_pr_status`, `wait_for_gate`, `revert_commit`, `close_pr`, `delete_branch` |
-| ssh-mcp | Go | mark3labs/mcp-go | v0.48.0 | `run_allowed_command` (with static allowlist) |
-| nixos-mcp | Go | mark3labs/mcp-go | v0.48.0 | `get_generations`, `switch_generation`, `rebuild_test`, `get_journal`, `get_systemd_status`, `etcd_snapshot_save` |
+| nixos-mcp | Go | mark3labs/mcp-go | v0.48.0 | `get_generations`, `switch_generation`, `rebuild_test`, `trigger_reconcile`, `get_journal`, `get_systemd_status`, `get_nix_path`, `dry_build`, `etcd_snapshot_save` |
 
 ## kubectl-mcp
 
-`kubectl-mcp` exposes read-only access to the Kubernetes API via the `client-go` library. The five read tools (`get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_status`) are available to both the Diagnosis and Remediation agents. Cluster mutations are performed exclusively through the GitOps path documented in [ADR-0005](../adr/0005-multi-agent-architecture.md): the Remediation agent writes manifests via git-mcp and Flux reconciles the merged commit, so kubectl-mcp carries no write surface.
+`kubectl-mcp` exposes read access to the Kubernetes API via the `client-go` library. The read tools (`get_nodes`, `get_pods`, `describe_pod`, `describe_node`, `get_logs`, `get_events`, `get_taints`, `get_resource_yaml`, `rollout_status`) are the Diagnosis agent's primary evidence source and are also used by the Orchestrator pre-checks and the Watchdog. Cluster repairs are performed exclusively through the GitOps path documented in [ADR-0013](../adr/0013-gitops-k8s-remediation.md): the Remediation agent writes manifests via git-mcp and Flux reconciles the merged commit. The only mutating kubectl tool is `delete_resource`, reserved for removing out-of-band live objects that no GitOps commit can address.
 
 Output from every `kubectl-mcp` tool is passed through `truncateOutput` before returning to the agent. The general context limit (4 KB) applies to `describe_pod` and most reads; `get_logs` is capped separately at 2 KB because log streams are typically unbounded. See [Output Truncation](#output-truncation) for the full table and implementation detail.
 
@@ -63,30 +62,9 @@ On Watchdog-detected regression, the Orchestrator calls `git-mcp.revert_commit(m
 
 `revert_commit` checks out `main` in the existing session clone, runs `git revert --no-edit <merge_sha>`, and pushes the result to `origin/main` directly. The Orchestrator immediately calls `flux-mcp.reconcile_kustomization` after the revert push to force Flux to pull the reverted state without waiting for the next reconciliation tick. `close_pr` and `delete_branch` — used on gate failure only — keep the repo state clean across eval campaigns by ensuring no orphan open PRs accumulate between runs.
 
-## ssh-mcp and the Allowlist
-
-`ssh-mcp` exposes a single tool: `run_allowed_command`. The tool accepts a binary name and an argument list, validates both against a static allowlist, and executes via `exec.Command(binary, args...)` over an SSH connection to the target node using Go's `crypto/ssh` library. No shell is involved at any point in the execution path.
-
-The static allowlist enforced in `validateCommand` is:
-
-```
-journalctl: (any args)
-systemctl:  status, is-active, is-failed, stop, start
-free, df, uptime, ss: (any args)
-ip: addr, route, link
-fallocate: (any args)
-nixos-rebuild: switch
-```
-
-Validation is two-stage. Shell metacharacters (``[;&|$`(){}<>\n\r]``) are rejected before the allowlist lookup: any argument matching that character class causes `validateCommand` to return an error immediately, regardless of which binary was requested. Only after the metacharacter check passes does the allowlist lookup proceed. For binaries with a restricted sub-command set (`systemctl` and `ip`), the first argument is checked against the permitted sub-command list. Execution uses `exec.Command(binary, args...)` directly: the argument list is passed as a slice to the OS, bypassing any shell, and no shell expansion or globbing occurs.
-
-The vigil-agent process runs as a non-root user on the agent host. Privilege escalation for operations such as `nixos-rebuild switch` must come from the allowed commands themselves via explicit `sudo` configuration on the target node, not from shell expansion. The allowlist is the boundary between what the Remediation agent can request and what can reach the node's operating system.
-
-The SSH connection to each target node is established using Go's `crypto/ssh` standard library package, which provides a pure-Go SSH client without a dependency on the system OpenSSH installation. SSH credentials are supplied at server startup via environment variables and held for the lifetime of the process; connections are established per-call rather than pooled, so a transient SSH failure affects only the in-flight call and does not corrupt shared connection state. The `target` parameter on each `run_allowed_command` call specifies which cluster node receives the command, allowing the single `ssh-mcp` instance to reach any node the agent host has SSH access to.
-
 ## nixos-mcp
 
-`nixos-mcp` exposes six tools: `get_generations`, `switch_generation`, `rebuild_test`, `get_journal`, `get_systemd_status`, and `etcd_snapshot_save`. All six operations are executed over an SSH connection to the target NixOS node, with the `host` parameter (propagated from the Diagnosis agent's `target_host` field in `DiagnosisReport`) determining which node receives each command.
+`nixos-mcp` exposes `get_generations`, `switch_generation`, `rebuild_test`, `trigger_reconcile`, `get_journal`, `get_systemd_status`, `get_nix_path`, `dry_build`, and `etcd_snapshot_save`. All operations are executed over an SSH connection to the target NixOS node, with the `host` parameter (propagated from the Diagnosis agent's `target_host` field in `DiagnosisReport`) determining which node receives each command.
 
 The NixOS remediation path follows a staged protocol designed around the NixOS generations model. `rebuild_test` activates the current NixOS configuration in a trial mode (equivalent to `nixos-rebuild test` on the node) and returns the rebuild exit code alongside the systemd health gate status. If the health gate indicates a passing state, the trial activation stands and the agent can exit the OS remediation path. If the health gate fails or the rebuild exits non-zero, `get_generations` retrieves the available generation list and `switch_generation` rolls the node back to a prior generation. `switch_generation` is the primary OS remediation verb validated during evaluation: agents reliably converge on generation switching when `rebuild_test` indicates a health-gate failure, making it the correct verb to invoke rather than repeated rebuild attempts.
 
@@ -113,7 +91,7 @@ The `rebuild_test` tool is the only nixos-mcp tool classified as read-like rathe
 
 ## Output Truncation
 
-Every tool in all five MCP servers passes its string output through `truncateOutput` before returning a `CallToolResult`. The motivation is context-window protection: unrestricted log output or `kubectl describe` dumps can easily exceed the token budget of the downstream LLM, corrupting the agent's working context or triggering a request failure due to token limits.
+Every tool in all four MCP servers passes its string output through `truncateOutput` before returning a `CallToolResult`. The motivation is context-window protection: unrestricted log output or `kubectl describe` dumps can easily exceed the token budget of the downstream LLM, corrupting the agent's working context or triggering a request failure due to token limits.
 
 The byte limits are defined as named constants in each server's `internal/config/config.go` and are overridable via environment variables at server startup:
 
@@ -141,27 +119,27 @@ func truncateOutput(s string, maxBytes int) string {
 
 The function clips the output at the byte boundary first, then counts the omitted lines relative to the total line count of the original string. The resulting suffix `[TRUNCATED: N lines omitted]` serves a specific purpose for downstream agent reasoning: it tells the LLM that the output was clipped and quantifies the omission, preventing silent truncation from causing the agent to treat a partial resource description as complete. Without this suffix, an agent receiving a clipped `kubectl describe` output has no mechanism to distinguish a full response from one that was cut off mid-field.
 
-The same `truncateOutput` function (or a local equivalent) is used by `flux-mcp`, `ssh-mcp`, and `nixos-mcp` for their respective output contexts. The Prometheus byte limit (10 KB) is higher than the general limit because Prometheus metric dumps are expected to be larger and are consumed by the Orchestrator's polling path rather than fed directly into the agent's reasoning context.
+The same `truncateOutput` function (or a local equivalent) is used by `flux-mcp`, `git-mcp`, and `nixos-mcp` for their respective output contexts. The Prometheus byte limit (10 KB) is higher than the general limit because Prometheus metric dumps are expected to be larger and are consumed by the Orchestrator's polling path rather than fed directly into the agent's reasoning context.
 
 ## Server Lifecycle
 
-All five servers are started once during the FastAPI application lifespan and remain running for the duration of the process. The boot-once pattern is critical: starting a new MCP server subprocess per agent request would incur the full Go binary startup cost on each call, and more importantly would lose any per-session state in git-mcp (the session clone directory path). By keeping the servers alive for the full lifespan, the session state persists across all tool calls within a single Orchestrator run.
+All four servers are started once during the FastAPI application lifespan and remain running for the duration of the process. The boot-once pattern is critical: starting a new MCP server subprocess per agent request would incur the full Go binary startup cost on each call, and more importantly would lose any per-session state in git-mcp (the session clone directory path). By keeping the servers alive for the full lifespan, the session state persists across all tool calls within a single Orchestrator run.
 
 The Pydantic AI `MCPServerStdio` context manager handles the subprocess lifecycle: on entry it spawns the Go binary and performs the MCP `initialize` handshake; on exit it sends a termination signal and waits for the child to exit cleanly. If the Go server crashes during a run, `MCPServerStdio` surfaces the error as a tool call failure, which the circuit breaker counts as a consecutive error toward the trip threshold.
 
-The five servers are independent processes with no shared state. The only coordination between servers happens at the Python layer, where the Remediation agent sequences tool calls across servers in a defined order (git operations via git-mcp, then Flux reconciliation via flux-mcp).
+The four servers are independent processes with no shared state. The only coordination between servers happens at the Python layer, where the Remediation agent sequences tool calls across servers in a defined order (git operations via git-mcp, then Flux reconciliation via flux-mcp).
 
-Error handling follows a consistent pattern across all five servers: when an operation against an external system fails, the handler returns a `mcp.NewToolResultError(...)` rather than an error return value. The MCP specification [1] distinguishes tool errors (failures within the tool's domain, reported as `isError: true` in the result) from protocol errors (failures in the JSON-RPC transport itself). Vigil uses tool errors for all cluster-side failures (Kubernetes API errors, SSH connection failures, NixOS rebuild failures) so that the LLM receives a structured description of what went wrong rather than an opaque transport failure. The circuit breaker in the Orchestrator counts consecutive tool errors (not transport errors) toward the trip threshold.
+Error handling follows a consistent pattern across all four servers: when an operation against an external system fails, the handler returns a `mcp.NewToolResultError(...)` rather than an error return value. The MCP specification [1] distinguishes tool errors (failures within the tool's domain, reported as `isError: true` in the result) from protocol errors (failures in the JSON-RPC transport itself). Vigil uses tool errors for all cluster-side failures (Kubernetes API errors, git push failures, NixOS rebuild failures) so that the LLM receives a structured description of what went wrong rather than an opaque transport failure. The circuit breaker in the Orchestrator counts consecutive tool errors (not transport errors) toward the trip threshold.
 
 ## Testing Strategy
 
 Each MCP server has a Go unit test suite that runs entirely without a live cluster. The stdio transport layer is replaced with `io.Pipe()` fakes: one end of the pipe drives the MCP JSON-RPC protocol as a test client, the other end runs the real server handler under test. This approach verifies that JSON-RPC framing, argument parsing, typed argument validation, and error handling all behave correctly without any network dependency.
 
-The `validateCommand` allowlist logic in ssh-mcp is tested with both permitted and forbidden binaries, permitted and forbidden sub-commands, and arguments containing shell metacharacters. The `truncateOutput` byte limits are tested with strings that are exactly at the limit, one byte over, and significantly over. The git-mcp session model is tested with fake git clients that return deterministic responses, verifying that `create_branch` initialises the session and that subsequent calls within the same session use the stored clone path.
+The `truncateOutput` byte limits are tested with strings that are exactly at the limit, one byte over, and significantly over. The git-mcp session model is tested with fake git clients that return deterministic responses, verifying that `create_branch` initialises the session and that subsequent calls within the same session use the stored clone path.
 
 Integration tests run against the local K3s homelab cluster and exercise the full call path including the Kubernetes API via `client-go`, the Flux REST API, and the SSH connection to a real node. These tests are not required to pass in CI environments without cluster access; the unit-test suite is the CI gate.
 
-The CI pipeline runs two independent lint and test stages: `ruff` and `pytest` for the Python agent layer, and `golangci-lint` plus `go test ./...` for the five Go MCP servers. The Go test stage covers all five servers and runs without cluster access, relying entirely on the `io.Pipe()` fake transport. A test that requires a live cluster is a test that cannot run in CI; this constraint is by design and is enforced by the test suite structure, not by convention.
+The CI pipeline runs two independent lint and test stages: `ruff` and `pytest` for the Python agent layer, and `golangci-lint` plus `go test ./...` for the four Go MCP servers. The Go test stage covers all four servers and runs without cluster access, relying entirely on the `io.Pipe()` fake transport. A test that requires a live cluster is a test that cannot run in CI; this constraint is by design and is enforced by the test suite structure, not by convention.
 
 The `io.Pipe()` approach also validates a property that cannot be tested against a real cluster: the JSON-RPC framing itself. A real cluster call succeeds or fails based on cluster state, not on whether the MCP message was correctly serialised. The fake transport lets the test assert on the exact bytes exchanged, catching protocol-level regressions in tool definitions, argument schemas, and result encoding that would be invisible in a live integration test.
 
@@ -169,7 +147,7 @@ The `io.Pipe()` approach also validates a property that cannot be tested against
 
 - [ADR-0002](../adr/0002-mcp-exclusive-tool-surface.md) — decision record for the MCP-only tool surface, including the alternatives considered and their failure modes in the Vigil context
 - [ADR-0003](../adr/0003-go-mcp-servers.md) — decision record for Go as the MCP server implementation language
-- `docs/architecture/overview.md` — system topology, showing how the five MCP servers fit within the full component graph including the Python agent layer, K8s cluster, and Flux GitOps controller
+- `docs/architecture/overview.md` — system topology, showing how the four MCP servers fit within the full component graph including the Python agent layer, K8s cluster, and Flux GitOps controller
 - `docs/architecture/agent-design.md` — agent responsibilities and the sequential K8s remediation sequencing (git-mcp GitOps sequence, then Watchdog) and the concurrent OS remediation pattern
 
 ## References

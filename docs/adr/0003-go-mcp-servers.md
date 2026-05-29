@@ -52,7 +52,7 @@ Chosen option: "Go", because it produces standalone binaries decoupled from the 
 ### Confirmation
 
 The decision holds as long as:
-- All four MCP servers (`kubectl-mcp`, `flux-mcp`, `ssh-mcp`, `nixos-mcp`) build with `go build ./...` to single static binaries
+- All four MCP servers (`kubectl-mcp`, `flux-mcp`, `git-mcp`, `nixos-mcp`) build with `go build ./...` to single static binaries; the original `ssh-mcp` server was removed once OS remediation moved to the GitOps and NixOS-generation path
 - Each server has a passing Go test suite using `io.Pipe()` transport without a live cluster
 - No MCP server imports from the Python agent packages or depends on the `uv` virtualenv
 

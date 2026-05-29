@@ -50,7 +50,7 @@ Chosen option: "MCP-only tool surface", because it makes command injection struc
 
 The decision holds as long as:
 - No agent module contains a direct call to `subprocess`, `os.system`, or any shell invocation
-- All cluster mutations are routed through one of the four typed MCP servers (`kubectl-mcp`, `flux-mcp`, `ssh-mcp`, `nixos-mcp`)
+- All cluster mutations are routed through one of the four typed MCP servers (`kubectl-mcp`, `flux-mcp`, `git-mcp`, `nixos-mcp`); the original `ssh-mcp` server was removed once OS remediation moved to the GitOps and NixOS-generation path, leaving no separate command-execution surface
 - Each MCP server maintains a passing test suite using `io.Pipe()` fake transport without requiring a live cluster
 
 ### Pros and Cons of the Options

@@ -7,13 +7,13 @@ Vigil decomposes autonomous fault diagnosis and remediation into four agents wit
 | Agent | Package | Entry Point | Output Type | Tool Scope | LLM? |
 |-------|---------|-------------|-------------|------------|------|
 | Orchestrator | `agents/orchestrator` | `run_orchestration()` | `RunRecord` | None directly; delegates | No (control only) |
-| Diagnosis | `agents/diagnosis` | `run_diagnosis()` | `DiagnosisReport` | kubectl-mcp (read-only via FilteredToolset), nixos-mcp (read-only via FilteredToolset) | Yes — ReAct, 25-request cap |
-| Remediation | `agents/remediation` | `run_remediation()` | `RemediationResult` | kubectl-mcp, flux-mcp, nixos-mcp | Yes — 20-request cap |
-| Watchdog | `agents/watchdog` | `run_watchdog()` + `capture_health_snapshot()` | `WatchdogResult` | kubectl-mcp (`get_pods` only) | No — deterministic poll loop |
+| Diagnosis | `agents/diagnosis` | `run_diagnosis()` | `DiagnosisReport` | kubectl-mcp, nixos-mcp, git-mcp, flux-mcp — all read-only via allow-list `FilteredToolset` | Yes — ReAct, 25-request cap |
+| Remediation | `agents/remediation` | `run_remediation()` | `RemediationResult` | git-mcp, flux-mcp, nixos-mcp | Yes — 20-request cap |
+| Watchdog | `agents/watchdog` | `run_watchdog()` + `capture_health_snapshot()` | `WatchdogResult` | kubectl-mcp (`get_pods`), flux-mcp (`get_kustomization_status`) | No — deterministic poll loop |
 
 ## Orchestrator
 
-The Orchestrator receives `FaultEvent` objects from two sources: an Alertmanager webhook on the fast path (`POST /alert`) and a Prometheus poller that queries `GET /api/v1/alerts` every `PROM_POLL_INTERVAL_S` seconds (default 120). Fingerprint-based deduplication with a `PROM_HANDLED_TTL_S` TTL (default 600 seconds) prevents duplicate dispatch when both paths detect the same alert.
+The Orchestrator exposes exactly two FastAPI routes: `GET /healthz` and `POST /webhook`. It receives `FaultEvent` objects from two sources: an Alertmanager-shaped webhook on the fast path (`POST /webhook`) and a Prometheus poller that queries `GET /api/v1/alerts` every `PROM_POLL_INTERVAL_S` seconds (default 120). Fingerprint-based deduplication with a `PROM_HANDLED_TTL_S` TTL (default 600 seconds) prevents duplicate dispatch when both paths detect the same alert.
 
 The `run_orchestration()` function drives the complete fault-to-record lifecycle:
 
@@ -21,32 +21,36 @@ The `run_orchestration()` function drives the complete fault-to-record lifecycle
 2. Run the Diagnosis agent to produce a `DiagnosisReport`.
 3. Call `capture_health_snapshot()` via Watchdog deps to record the pre-remediation baseline.
 4. Launch Remediation and Watchdog in parallel via `asyncio.TaskGroup`.
-5. Inspect `WatchdogResult.degraded`: if `True`, issue `rollout_undo` through kubectl-mcp. The Orchestrator owns this rollback decision; the Watchdog only observes.
+5. Inspect `WatchdogResult.degraded`: if the cluster remains degraded after a settle window, issue a GitOps rollback through git-mcp `revert_commit` (followed by `flux-mcp.reconcile_kustomization`) for K8s repairs, or `nixos-mcp.switch_generation` for OS repairs. The Orchestrator owns this rollback decision; the Watchdog only observes. See [ADR-0013](../adr/0013-gitops-k8s-remediation.md).
 6. Write the final `RunRecord` to `eval/runs/{run_id}.json`.
 
 The Orchestrator holds no LLM agent; it is pure control flow. The decomposition rationale is documented in [ADR-0005](../adr/0005-multi-agent-architecture.md).
 
 ## Diagnosis
 
-The Diagnosis agent operates a ReAct [1] loop over read-only Kubernetes and OS state. Its tool scope is enforced by `FilteredToolset`, which filters out write-capable tools before they reach the agent:
+The Diagnosis agent operates a ReAct [1] loop over read-only cluster, OS, git, and Flux state. Its tool scope is enforced by allow-list `FilteredToolset` wrappers — one per MCP server — that admit only an explicit set of read tools, so any tool not on the list is absent from the agent's tool surface at construction time:
 
 ```python
 # agents/diagnosis/src/diagnosis/agent.py
-_nixos_write_tools = frozenset({"switch_generation", "etcd_snapshot_save"})
-_kubectl_write_tools = frozenset({"apply_patch", "rollout_undo"})
-kubectl_readonly = FilteredToolset(
-    deps.kubectl_mcp,
-    filter_func=lambda _ctx, tool_def: tool_def.name not in _kubectl_write_tools,
-)
-nixos_readonly = FilteredToolset(
-    deps.nixos_mcp,
-    filter_func=lambda _ctx, tool_def: tool_def.name not in _nixos_write_tools,
-)
+def _build_readonly_toolset(server, allowed_tools, blocked_tools):
+    return FilteredToolset(
+        server,
+        filter_func=lambda _ctx, tool_def: is_diagnosis_tool_allowed(
+            tool_def.name, allowed_tools, blocked_tools
+        ),
+    )
 ```
 
-This makes read-only enforcement a structural property, not a prompt convention: the write tools are absent from the agent's tool list at construction time.
+The four allow-lists are defined in `agents/common/src/common/constants.py`:
 
-The Diagnosis agent implements two-tier escalation. It begins with kubectl-mcp tools (`get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_status`). When kubectl evidence is insufficient and the fault implicates a node condition or NixOS service, the agent sets `requires_os_level=True` in the `DiagnosisReport` and records the `target_host` value from the alert's `node` label. The `target_host` field then propagates to all nixos-mcp calls in the Remediation phase. The Diagnosis agent is capped at 25 requests (`DIAGNOSIS_REQUEST_LIMIT` env var, default 25).
+- `DIAGNOSIS_KUBECTL_READ_TOOLS`: `get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_status`, `get_events`, `describe_node`, `get_taints`, `get_resource_yaml`
+- `DIAGNOSIS_NIXOS_READ_TOOLS`: `get_generations`, `get_journal`, `get_systemd_status`, `get_nix_path`, `dry_build`
+- `DIAGNOSIS_GIT_READ_TOOLS`: `clone_repo`, `read_file`, `resolve_manifest_path`
+- `DIAGNOSIS_FLUX_READ_TOOLS`: `get_kustomization_status`, `get_gitrepository_status`
+
+This makes read-only enforcement a structural property, not a prompt convention: a tool name absent from the allow-list never reaches the agent, so the diagnosis phase cannot mutate cluster, git, or OS state regardless of what the model requests.
+
+The Diagnosis agent begins with kubectl-mcp reads and consults nixos-mcp, git-mcp, and flux-mcp as the evidence demands. When the fault implicates a node condition or NixOS service, the agent records the `target_host` value from the alert's `node` label so OS remediation targets the correct node. The Diagnosis agent is capped at 25 requests (`DIAGNOSIS_REQUEST_LIMIT` env var, default 25).
 
 ### ReAct Background
 
@@ -58,11 +62,9 @@ This interleaved trace structure is what distinguishes a ReAct agent from a one-
 
 The Remediation agent selects and executes repair actions based on the `DiagnosisReport.requires_os_level` flag. The Pydantic AI `UsageLimits` mechanism enforces a hard cap of 20 requests (see [ADR-0001](../adr/0001-pydantic-ai-agent-framework.md) for the framework choice that supplies this capability).
 
-**K8s path** (`requires_os_level=False`):
+**K8s path** (`recommended_action=git_commit_k8s`):
 
-1. `suspend_kustomization` — mandatory first call; the flux-mcp `guardMutation` middleware rejects any subsequent mutation unless the named Kustomization is registered in the server's `suspendedNames` map.
-2. `apply_patch` or `rollout_undo` — the repair action per `recommended_action`.
-3. `resume_kustomization` — closes the suspension window so Flux reconciliation resumes on the corrected manifest.
+The repair is a commit on the manifest in git; Flux reconciliation is the application mechanism. The agent runs the GitOps round-trip `create_branch → write_manifest → commit_files → push_branch → create_pr → wait_for_gate → reconcile_kustomization` via git-mcp and flux-mcp. `wait_for_gate` blocks until the `remediation-gate.yml` workflow merges or rejects the PR; on merge the agent calls `reconcile_kustomization(namespace="flux-system", name="cluster-apps")` to force immediate Flux reconciliation against the merged commit. When the declared state in git is already correct and only the live cluster drifted, the action is `flux_reconcile` and the agent triggers reconciliation without a commit.
 
 **OS path** (`requires_os_level=True`):
 
@@ -76,11 +78,11 @@ The `target_host` value (from the alert `node` label) is threaded from `Diagnosi
 
 The Watchdog agent runs a deterministic poll loop with no LLM involvement. Its operation divides into two phases within a single run.
 
-Before remediation starts, `capture_health_snapshot()` records the pre-remediation baseline: a single `get_pods` call to kubectl-mcp produces a `HealthSnapshot` with `ready_pods`, `total_pods`, and `endpoints_healthy`. This baseline is passed into `run_watchdog()`.
+Before remediation starts, `capture_health_snapshot()` records the pre-remediation baseline: a `get_pods` call to kubectl-mcp plus a flux-mcp `get_kustomization_status` read produce a `HealthSnapshot` with `ready_pods`, `total_pods`, `endpoints_healthy`, and `flux_ready`. This baseline is passed into `run_watchdog()`.
 
 During remediation, `run_watchdog()` polls `get_pods` every `WATCHDOG_POLL_INTERVAL_S` seconds (default 5) for a window of `WATCHDOG_WINDOW_S` seconds (default 120). Each observation is compared to the baseline: `WatchdogResult(degraded=True)` is returned on the first poll where `ready_pods` falls below baseline or `endpoints_healthy` transitions from `True` to `False`.
 
-Watchdog observes only. It does not call mutation tools and does not issue rollbacks. When `degraded=True` is returned, the Orchestrator is the decision-maker: it calls `rollout_undo` through kubectl-mcp for each resource in `DiagnosisReport.affected_resources`.
+Watchdog observes only. It does not call mutation tools and does not issue rollbacks. When `degraded=True` persists past the settle window, the Orchestrator is the decision-maker: it reverts the merged remediation commit via git-mcp `revert_commit` (then `flux-mcp.reconcile_kustomization`) for K8s repairs, or activates the prior NixOS generation via `nixos-mcp.switch_generation` for OS repairs.
 
 ## Parallel Remediation and Watchdog
 
@@ -133,10 +135,11 @@ sequenceDiagram
     participant Watch as Watchdog
     participant KM as kubectl-mcp
     participant FM as flux-mcp
+    participant GM as git-mcp
     participant NM as nixos-mcp
 
     Prom->>AM: alert fires
-    AM->>Orch: POST /alert (FaultEvent)
+    AM->>Orch: POST /webhook (FaultEvent)
     Orch->>Diag: run_diagnosis(FaultEvent)
 
     alt Happy path — K8s fault
@@ -144,16 +147,16 @@ sequenceDiagram
             Diag->>KM: get_pods / describe_pod / get_logs
             KM-->>Diag: tool output
         end
-        Diag-->>Orch: DiagnosisReport(requires_os_level=False)
+        Diag-->>Orch: DiagnosisReport(recommended_action=git_commit_k8s)
         Orch->>KM: capture_health_snapshot (get_pods)
         KM-->>Orch: HealthSnapshot (baseline)
         par asyncio.TaskGroup
             Orch->>Rem: run_remediation(report)
-            Rem->>FM: suspend_kustomization
-            FM-->>Rem: ok
-            Rem->>KM: apply_patch
-            KM-->>Rem: ok
-            Rem->>FM: resume_kustomization
+            Rem->>GM: create_branch / write_manifest / commit_files / push_branch / create_pr
+            GM-->>Rem: PR opened (auto-merge)
+            Rem->>GM: wait_for_gate
+            GM-->>Rem: merged sha
+            Rem->>FM: reconcile_kustomization
             FM-->>Rem: ok
             Rem-->>Orch: RemediationResult(success=True)
         and
@@ -177,9 +180,9 @@ sequenceDiagram
         KM-->>Orch: HealthSnapshot
         par asyncio.TaskGroup
             Orch->>Rem: run_remediation(report)
-            Rem->>KM: apply_patch (error 1)
-            Rem->>KM: apply_patch (error 2)
-            Rem->>KM: apply_patch (error 3)
+            Rem->>GM: commit_files (error 1)
+            Rem->>GM: commit_files (error 2)
+            Rem->>GM: commit_files (error 3)
             Rem-->>Orch: CircuitBreakerTripped
         and
             Orch->>Watch: run_watchdog(baseline)
@@ -201,8 +204,10 @@ sequenceDiagram
             KM-->>Watch: ready_pods < baseline
             Watch-->>Orch: WatchdogResult(degraded=True)
         end
-        Orch->>KM: rollout_undo(affected_resources)
-        KM-->>Orch: ok
+        Orch->>GM: revert_commit(merge_commit_sha)
+        GM-->>Orch: ok
+        Orch->>FM: reconcile_kustomization
+        FM-->>Orch: ok
         Orch->>Orch: write RunRecord(rollback_triggered=True)
     end
 

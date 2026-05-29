@@ -30,7 +30,7 @@ graph TD
         COMMON["Common library\n(provider, trace)"]
         KUBECTL["kubectl-mcp\n(Go subprocess)"]
         FLUX["flux-mcp\n(Go subprocess)"]
-        SSH["ssh-mcp\n(Go subprocess)"]
+        GITMCP["git-mcp\n(Go subprocess)"]
         NIXOS["nixos-mcp\n(Go subprocess)"]
     end
 
@@ -45,7 +45,7 @@ graph TD
 
     GIT["Git repository\n(GitHub)"]
 
-    AM -->|"HTTP webhook\nPOST /alert"| ORCH
+    AM -->|"HTTP webhook\nPOST /webhook"| ORCH
     PROM -->|"HTTP /api/v1/alerts\nevery 120 s"| ORCH
 
     ORCH --> DIAG
@@ -56,19 +56,22 @@ graph TD
     COMMON -.->|"shared library"| REM
     COMMON -.->|"shared library"| WTCH
 
-    DIAG -->|"stdio JSON-RPC"| KUBECTL
-    DIAG -->|"stdio JSON-RPC"| NIXOS
-    REM -->|"stdio JSON-RPC"| KUBECTL
+    DIAG -->|"stdio JSON-RPC (read-only)"| KUBECTL
+    DIAG -->|"stdio JSON-RPC (read-only)"| NIXOS
+    DIAG -->|"stdio JSON-RPC (read-only)"| GITMCP
+    DIAG -->|"stdio JSON-RPC (read-only)"| FLUX
+    REM -->|"stdio JSON-RPC"| GITMCP
     REM -->|"stdio JSON-RPC"| FLUX
     REM -->|"stdio JSON-RPC"| NIXOS
     WTCH -->|"stdio JSON-RPC"| KUBECTL
-    ORCH -->|"stdio JSON-RPC"| KUBECTL
+    WTCH -->|"stdio JSON-RPC"| FLUX
+    ORCH -->|"stdio JSON-RPC"| GITMCP
+    ORCH -->|"stdio JSON-RPC"| FLUX
+    ORCH -->|"stdio JSON-RPC"| NIXOS
 
     KUBECTL -->|"HTTPS\nclient-go"| MASTER
     FLUX -->|"HTTPS\nFlux REST API"| FLUXCTRL
-    SSH -->|"SSH\ncrypto/ssh"| MASTER
-    SSH -->|"SSH\ncrypto/ssh"| WORKER1
-    SSH -->|"SSH\ncrypto/ssh"| WORKER2
+    GITMCP -->|"HTTPS/SSH\ngit + gh CLI"| GIT
     NIXOS -->|"SSH wrapping\nnixos-rebuild"| MASTER
     NIXOS -->|"SSH wrapping\nnixos-rebuild"| WORKER1
     NIXOS -->|"SSH wrapping\nnixos-rebuild"| WORKER2
@@ -110,23 +113,23 @@ graph LR
         GM["Go MCP server"]
         GUARD["guardMutation\n(flux-mcp)\nsuspendedNames map[string]bool\nsync.Mutex protected"]
         TRUNC["truncateOutput\n4 KB describe / 2 KB logs / 10 KB Prometheus"]
-        ALLOW["ssh-mcp allowlist\nvalidateCommand() rejects shell metacharacters\nexec.Command, not shell"]
+        TYPED["Typed MCP arguments\nno shell interpolation\nexec.Command, not shell"]
     end
 
     subgraph "External systems"
         K8S["K8s API\n(client-go)"]
         FLUXAPI["Flux REST API\n(net/http)"]
-        SSHSYS["SSH transport\n(crypto/ssh, no shell)"]
+        GITSYS["Git remote\n(git + gh CLI)"]
         NIXOSCLI["NixOS CLI\n(nixos-rebuild via SSH)"]
     end
 
     PA -->|"stdio (JSON-RPC 2.0)\nTRUST BOUNDARY"| GM
     GM --> GUARD
     GM --> TRUNC
-    GM --> ALLOW
+    GM --> TYPED
     GM --> K8S
     GM --> FLUXAPI
-    GM --> SSHSYS
+    GM --> GITSYS
     GM --> NIXOSCLI
 ```
 
@@ -143,7 +146,7 @@ verbose tool responses [1].
 ## End-to-End Fault Handling
 
 Vigil operates in one of two trigger modes. The fast path is an Alertmanager webhook: when
-Alertmanager fires, it sends `POST /alert` to the Orchestrator's FastAPI endpoint, which
+Alertmanager fires, it sends `POST /webhook` to the Orchestrator's FastAPI endpoint, which
 immediately constructs a `FaultEvent` and enters `run_orchestration()`. The slow path is the
 Prometheus poller: an `asyncio.Task` running inside the FastAPI lifespan issues `GET /api/v1/alerts`
 every 120 seconds (configurable via `PROM_POLL_INTERVAL_S`) and dispatches any alert whose
@@ -151,16 +154,16 @@ fingerprint has not been seen within the deduplication TTL. The poller catches a
 Alertmanager may have delivered during a restart window, making the trigger reliable under
 transient connectivity failures between Alertmanager and the agent host.
 
-`run_orchestration()` first calls `run_diagnosis()` with a `DiagnosisDeps` dataclass containing
-`kubectl_mcp` and `nixos_mcp` clients. The Diagnosis agent runs a ReAct [2] loop capped at 25
-requests (`DIAGNOSIS_REQUEST_LIMIT`). During the K8s phase it uses a `FilteredToolset` that
-excludes write tools (`apply_patch`, `rollout_undo`, `switch_generation`, `etcd_snapshot_save`),
-making the diagnosis phase structurally read-only regardless of what the model requests. If the
-Diagnosis agent determines that OS-level evidence is required (signalled by
-`requires_os_level=True` in the returned `DiagnosisReport`), the `target_host` field (populated
-from the alert's `node` label) is propagated to all subsequent `nixos-mcp` calls in the diagnosis
-and remediation phases. The two-tier escalation is a design-time separation: K8s-layer faults are
-resolved without touching NixOS; OS-layer faults require the escalated path
+`run_orchestration()` first calls `run_diagnosis()` with a `DiagnosisDeps` dataclass carrying all
+four read-only clients: `kubectl_mcp`, `nixos_mcp`, `git_mcp`, and `flux_mcp`. The Diagnosis agent
+runs a ReAct [2] loop capped at 25 requests (`DIAGNOSIS_REQUEST_LIMIT`). Each client is wrapped in
+an allow-list `FilteredToolset` that admits only the read tools enumerated in
+`agents/common/src/common/constants.py`; any tool not on the allow-list is absent from the agent's
+surface, making the diagnosis phase structurally read-only regardless of what the model requests.
+When the fault implicates a node condition or NixOS service, the `target_host` field (populated
+from the alert's `node` label) is propagated to all subsequent `nixos-mcp` calls in the remediation
+phase. The two-tier escalation is a design-time separation: K8s-layer faults are resolved without
+touching NixOS; OS-layer faults require the escalated path
 (see [ADR-0005](../adr/0005-multi-agent-architecture.md) for the multi-agent decomposition
 rationale).
 
@@ -180,22 +183,24 @@ blocking indefinitely after a Remediation abort. Per-agent design rationale and 
 sequence diagram appear in `agent-design.md`.
 
 The Remediation agent follows two distinct paths depending on the `DiagnosisReport`. On the K8s
-path, `suspend_kustomization` (via `flux-mcp`) is the mandatory first call before any Kubernetes mutation.
-This is enforced at the Go layer by `guardMutation`: attempting `reconcile_kustomization` or
-`resume_kustomization` for a resource that has not been suspended returns a `ToolResultError`
-immediately. After the K8s mutation (`apply_patch` or `rollout_undo`), Remediation calls
-`resume_kustomization` to restore Flux reconciliation. On the OS path, the Remediation agent calls
-`rebuild_test` via `nixos-mcp`, which invokes `nixos-rebuild test` on the target host via SSH. If
-the health gate indicates the test build is healthy, no further action is taken; if not,
-`switch_generation` reverts to the previous NixOS generation. The dead-man's switch that enforces
-this flow at the OS level is treated in depth in [gitops-nixos.md](gitops-nixos.md).
+path, the repair is a commit to the manifest in git, applied by Flux. The agent runs the GitOps
+round-trip via `git-mcp` and `flux-mcp` — `create_branch → write_manifest → commit_files →
+push_branch → create_pr → wait_for_gate → reconcile_kustomization` — so cluster state converges to
+the merged commit on `main` (see [ADR-0013](../adr/0013-gitops-k8s-remediation.md)). On the OS
+path, the agent corrects either the live host (via a NixOS rebuild) or the declared config in git
+(via a commit on the NixOS manifest), targeting the host named in `target_host`. The dead-man's
+switch that enforces this flow at the OS level is treated in depth in
+[gitops-nixos.md](gitops-nixos.md).
 
 The Watchdog runs a deterministic poll loop (5-second interval, 120-second window) using
-`kubectl get pods` via `kubectl-mcp`. It carries no LLM and makes no decisions; it observes. When
-the window expires or degradation is detected, it returns a `WatchdogResult`. If
-`WatchdogResult.degraded=True`, the Orchestrator (not the Watchdog) issues the rollback by
-calling `rollout_undo` via `kubectl-mcp`. This separation of observation from decision is intentional:
-the Orchestrator has full context of the remediation attempt; the Watchdog does not.
+`kubectl get pods` via `kubectl-mcp` and a `flux-mcp` Kustomization-status read. It carries no LLM
+and makes no decisions; it observes. When the window expires or degradation is detected, it returns
+a `WatchdogResult`. If `WatchdogResult.degraded=True` persists past the settle window, the
+Orchestrator (not the Watchdog) issues the rollback: for K8s repairs it reverts the merged commit
+via `git-mcp.revert_commit` followed by `flux-mcp.reconcile_kustomization`; for OS repairs it
+activates the prior NixOS generation via `nixos-mcp.switch_generation`. This separation of
+observation from decision is intentional: the Orchestrator has full context of the remediation
+attempt; the Watchdog does not.
 
 Two abort mechanisms interrupt the normal flow. The circuit breaker (`_CircuitBreaker` class in
 `orchestrator/agent.py`) counts consecutive MCP tool errors; at 3, it raises
@@ -211,14 +216,14 @@ that hits its ceiling. Both aborts produce a `RunRecord` written to
 | Component | Language | Tools / Role | LLM-bearing |
 |-----------|----------|-------------|-------------|
 | Orchestrator | Python 3.12 | Workflow control, circuit breaker, FastAPI webhook | No |
-| Diagnosis | Python 3.12 | ReAct loop, `FilteredToolset` read-only scope | Yes (25 req limit) |
-| Remediation | Python 3.12 | K8s path + OS path execution | Yes (20 req limit) |
+| Diagnosis | Python 3.12 | ReAct loop, allow-list `FilteredToolset` read-only scope over all four servers | Yes (25 req limit) |
+| Remediation | Python 3.12 | GitOps K8s path + OS path execution | Yes (20 req limit) |
 | Watchdog | Python 3.12 | Deterministic health poll, baseline delta | No |
 | Common | Python 3.12 | Shared provider, trace utilities | — |
-| kubectl-mcp | Go (mcp-go v0.48.0) | `get_nodes`, `get_pods`, `describe_pod`, `get_logs`, `rollout_undo`, `apply_patch`, `rollout_status` | No |
-| flux-mcp | Go (mcp-go v0.48.0) | `suspend_kustomization`, `resume_kustomization`, `reconcile_kustomization`, `get_kustomization_status` | No |
-| ssh-mcp | Go (mcp-go v0.48.0) | `run_allowed_command` (static allowlist, no shell) | No |
-| nixos-mcp | Go (mcp-go v0.48.0) | `get_generations`, `switch_generation`, `rebuild_test`, `get_journal`, `get_systemd_status`, `etcd_snapshot_save` | No |
+| kubectl-mcp | Go (mcp-go v0.48.0) | `get_nodes`, `get_pods`, `describe_pod`, `describe_node`, `get_logs`, `get_events`, `get_taints`, `get_resource_yaml`, `rollout_status`, `delete_resource` | No |
+| flux-mcp | Go (mcp-go v0.48.0) | `reconcile_kustomization`, `get_kustomization_status`, `get_gitrepository_status` | No |
+| git-mcp | Go (mcp-go v0.48.0) | `create_branch`, `write_manifest`, `commit_files`, `push_branch`, `create_pr`, `get_pr_status`, `wait_for_gate`, `revert_commit`, `close_pr`, `delete_branch` — GitOps remediation and rollback | No |
+| nixos-mcp | Go (mcp-go v0.48.0) | `get_generations`, `switch_generation`, `rebuild_test`, `trigger_reconcile`, `get_journal`, `get_systemd_status`, `get_nix_path`, `dry_build`, `etcd_snapshot_save` | No |
 
 The choice of Go for all four MCP servers is justified in
 [ADR-0003](../adr/0003-go-mcp-servers.md): single static binary, no Python runtime dependency,
