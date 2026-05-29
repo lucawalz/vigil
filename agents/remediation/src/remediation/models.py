@@ -6,6 +6,10 @@ from pydantic import BaseModel
 from pydantic_ai.mcp import MCPServerStdio
 
 
+class GitCommitBudgetExceeded(Exception):
+    """Raised when a run exceeds its allotted commit_files invocations."""
+
+
 class RemediationResult(BaseModel):
     """Remediation agent output.
 

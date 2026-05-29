@@ -4,6 +4,16 @@ import os
 
 GIT_COMMIT_BUDGET: int = int(os.environ.get("GIT_COMMIT_BUDGET", "1"))
 
+_DEFAULT_PROTECTED_BRANCHES = "main,master"
+
+PROTECTED_BRANCHES: frozenset[str] = frozenset(
+    branch.strip()
+    for branch in os.environ.get(
+        "VIGIL_PROTECTED_BRANCHES", _DEFAULT_PROTECTED_BRANCHES
+    ).split(",")
+    if branch.strip()
+)
+
 DIAGNOSIS_KUBECTL_READ_TOOLS: frozenset[str] = frozenset(
     {
         "get_nodes",

@@ -9,8 +9,12 @@ Tool scope: git, flux, and nixos MCP clients only.
 
 from __future__ import annotations
 
+import os
+
 from common import trace
+from common.constants import GIT_COMMIT_BUDGET, PROTECTED_BRANCHES
 from common.provider import build_model
+from common.toolset_guards import CallBudgetToolset
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -19,7 +23,13 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import Usage, UsageLimits
 
-from .models import RemediationDeps, RemediationResult
+from .models import GitCommitBudgetExceeded, RemediationDeps, RemediationResult
+
+REMEDIATION_REQUEST_LIMIT: int = int(
+    os.environ.get("REMEDIATION_REQUEST_LIMIT", "20")
+)
+
+_COMMIT_TOOL_NAME = "commit_files"
 
 _SYSTEM_PROMPT = """\
 You are the Remediation stage of the vigil fault-response pipeline. Execute one of
@@ -153,10 +163,10 @@ async def run_remediation(
     run_id: str = "",
     blocked_tools: frozenset[str] = frozenset(),
 ) -> tuple[RemediationResult, Usage, list[ModelMessage]]:
-    if source_branch == "main":
+    if source_branch in PROTECTED_BRANCHES:
         refused = RemediationResult(
             success=False,
-            actions_taken=["refused_main_branch"],
+            actions_taken=["refused_protected_branch"],
             tool_calls_count=0,
             destructive_repair=False,
         )
@@ -165,10 +175,16 @@ async def run_remediation(
     def _allow(tool_name: str) -> bool:
         return tool_name not in blocked_tools
 
-    git_toolset = (
+    filtered_git = (
         FilteredToolset(deps.git_mcp, filter_func=lambda _ctx, td: _allow(td.name))
         if blocked_tools
         else deps.git_mcp
+    )
+    git_toolset = CallBudgetToolset(
+        wrapped=filtered_git,
+        tool_name=_COMMIT_TOOL_NAME,
+        budget=GIT_COMMIT_BUDGET,
+        on_exceeded=GitCommitBudgetExceeded,
     )
     flux_toolset = (
         FilteredToolset(deps.flux_mcp, filter_func=lambda _ctx, td: _allow(td.name))
@@ -201,12 +217,24 @@ async def run_remediation(
         task,
         deps=deps,
         toolsets=[git_toolset, flux_toolset, nixos_toolset],
-        usage_limits=UsageLimits(request_limit=20),
+        usage_limits=UsageLimits(request_limit=REMEDIATION_REQUEST_LIMIT),
         model=model,
     ) as agent_run:
         try:
             async for _ in agent_run:
                 pass
+        except GitCommitBudgetExceeded:
+            if run_id:
+                partial_msgs = agent_run.all_messages()
+                if partial_msgs:
+                    trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+            budget_refused = RemediationResult(
+                success=False,
+                actions_taken=["commit_budget_exceeded"],
+                tool_calls_count=0,
+                destructive_repair=False,
+            )
+            return budget_refused, agent_run.usage, agent_run.all_messages()
         except (UnexpectedModelBehavior, UsageLimitExceeded):
             if run_id:
                 partial_msgs = agent_run.all_messages()
