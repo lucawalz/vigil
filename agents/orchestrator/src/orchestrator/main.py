@@ -12,7 +12,7 @@ from pydantic_ai.mcp import MCPServerStdio
 
 from .agent import build_run_id, run_orchestration
 from .models import FaultEvent
-from .poller import prometheus_poller
+from .poller import log_task_exception, prometheus_poller
 
 log = logging.getLogger("vigil.orchestrator")
 
@@ -152,4 +152,5 @@ async def webhook(
     )
     _active_tasks.add(task)
     task.add_done_callback(_active_tasks.discard)
+    task.add_done_callback(lambda t: log_task_exception(t, log))
     return {"run_id": run_id}

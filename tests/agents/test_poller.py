@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from orchestrator.agent import run_orchestration
 from orchestrator.models import FaultEvent
 
 # These imports will fail until poller.py is created — that is the RED gate.
@@ -114,6 +116,42 @@ async def test_poller_deduplicates_by_fingerprint(monkeypatch):
             except asyncio.CancelledError:
                 pass
         assert mock_run.call_count <= 1
+
+
+@pytest.mark.asyncio
+async def test_poller_passes_all_mcp_servers_to_run_orchestration(monkeypatch):
+    monkeypatch.setenv("PROM_POLLER_ENABLED", "true")
+    monkeypatch.setenv("PROM_POLL_INTERVAL_S", "0")
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"data": {"alerts": [SAMPLE_ALERT]}}
+
+    app = MagicMock()
+    app.state.kubectl_mcp = MagicMock()
+    app.state.flux_mcp = MagicMock()
+    app.state.ssh_mcp = MagicMock()
+    app.state.nixos_mcp = MagicMock()
+    app.state.git_mcp = MagicMock()
+
+    run_patch = patch("orchestrator.poller.run_orchestration", new_callable=AsyncMock)
+    client_patch = patch("orchestrator.poller.httpx.AsyncClient")
+    sleep_calls = [None, asyncio.CancelledError]
+    sleep_patch = patch("orchestrator.poller.asyncio.sleep", side_effect=sleep_calls)
+    with run_patch as mock_run, client_patch as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=mock_response)
+        with sleep_patch:
+            try:
+                await prometheus_poller(app)
+            except asyncio.CancelledError:
+                pass
+
+    mock_run.assert_called_once()
+    args, kwargs = mock_run.call_args
+    assert "git_mcp" in kwargs
+    sig = inspect.signature(run_orchestration)
+    sig.bind(*args, **kwargs)
 
 
 @pytest.mark.asyncio

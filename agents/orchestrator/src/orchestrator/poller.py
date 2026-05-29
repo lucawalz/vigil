@@ -15,6 +15,14 @@ log = logging.getLogger("vigil.orchestrator.poller")
 _DEFAULT_PROM_URL = "http://10.0.0.10:9090"
 
 
+def log_task_exception(task: asyncio.Task, logger: logging.Logger) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("background orchestration task failed: %s", exc, exc_info=exc)
+
+
 def _alert_to_fault_event(alert: dict) -> FaultEvent:
     labels = alert.get("labels", {})
     annotations = alert.get("annotations", {})
@@ -90,6 +98,7 @@ async def prometheus_poller(app) -> None:
                         flux_mcp=app.state.flux_mcp,
                         ssh_mcp=app.state.ssh_mcp,
                         nixos_mcp=app.state.nixos_mcp,
+                        git_mcp=app.state.git_mcp,
                         scenario="autonomous",
                         seed=None,
                         model_name=model_name,
@@ -97,3 +106,4 @@ async def prometheus_poller(app) -> None:
                 )
                 _active_tasks.add(task)
                 task.add_done_callback(_active_tasks.discard)
+                task.add_done_callback(lambda t: log_task_exception(t, log))
