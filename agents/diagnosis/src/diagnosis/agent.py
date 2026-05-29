@@ -11,6 +11,7 @@ from common.constants import (
     DIAGNOSIS_NIXOS_READ_TOOLS,
 )
 from common.provider import build_model
+from common.toolset_guards import Breaker, CircuitBreakerToolset
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage
@@ -281,6 +282,7 @@ async def run_diagnosis(
     model: OpenAIChatModel | None = None,
     blocked_tools: frozenset[str] = frozenset(),
     retry_hint: str | None = None,
+    breaker: Breaker | None = None,
 ) -> tuple[DiagnosisReport, Usage, list[ModelMessage]]:
     kubectl_readonly = _build_readonly_toolset(
         deps.kubectl_mcp, DIAGNOSIS_KUBECTL_READ_TOOLS, blocked_tools
@@ -294,6 +296,16 @@ async def run_diagnosis(
     flux_readonly = _build_readonly_toolset(
         deps.flux_mcp, DIAGNOSIS_FLUX_READ_TOOLS, blocked_tools
     )
+    toolsets: list[object] = [
+        kubectl_readonly,
+        nixos_readonly,
+        git_readonly,
+        flux_readonly,
+    ]
+    if breaker is not None:
+        toolsets = [
+            CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in toolsets
+        ]
     constraint_block = ""
     if blocked_tools:
         constraint_block = (
@@ -306,7 +318,7 @@ async def run_diagnosis(
     async with diagnosis_agent.iter(
         user_message,
         deps=deps,
-        toolsets=[kubectl_readonly, nixos_readonly, git_readonly, flux_readonly],
+        toolsets=toolsets,
         usage_limits=UsageLimits(
             request_limit=int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
         ),

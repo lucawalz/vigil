@@ -64,4 +64,8 @@ class RunRecord(BaseModel):
 
 
 class CircuitBreakerTripped(Exception):
-    """Raised by the Orchestrator when 3 consecutive MCP tool errors accumulate."""
+    """Raised when consecutive failed MCP tool calls reach the breaker threshold.
+
+    Counted per run across diagnosis and remediation; a successful tool call
+    resets the count. Propagates out of the agent loop to abort the run.
+    """

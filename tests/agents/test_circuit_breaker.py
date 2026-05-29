@@ -15,17 +15,21 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+from pydantic_ai.exceptions import (
+    ModelRetry,
+    UnexpectedModelBehavior,
+    UsageLimitExceeded,
+)
 
 os.environ.setdefault("LLM_MODEL_NAME", "test-model")
 os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
+from common.constants import CIRCUIT_BREAKER_THRESHOLD
+from common.toolset_guards import CircuitBreakerToolset
 from orchestrator import agent as orch_mod
 from orchestrator.agent import _CircuitBreaker, run_orchestration
 from orchestrator.models import CircuitBreakerTripped, FaultEvent
-
-# --- Unit tests for _CircuitBreaker -----------------------------------
 
 
 def test_circuit_breaker_does_not_trip_before_three_errors() -> None:
@@ -53,7 +57,71 @@ def test_circuit_breaker_success_resets_counter() -> None:
     assert cb.consecutive == 2
 
 
-# --- Integration tests for ABORT paths --------------------------------
+def _make_toolset(
+    breaker: _CircuitBreaker, wrapped: AsyncMock
+) -> CircuitBreakerToolset:
+    return CircuitBreakerToolset(wrapped=wrapped, breaker=breaker)
+
+
+async def test_toolset_calls_success_on_successful_tool_call() -> None:
+    cb = _CircuitBreaker()
+    cb.error()
+    wrapped = AsyncMock()
+    wrapped.call_tool = AsyncMock(return_value={"content": "ok"})
+    toolset = _make_toolset(cb, wrapped)
+
+    result = await toolset.call_tool("get_pods", {}, None, None)
+
+    assert result == {"content": "ok"}
+    assert cb.consecutive == 0
+
+
+async def test_toolset_calls_error_and_reraises_on_failed_tool_call() -> None:
+    cb = _CircuitBreaker()
+    wrapped = AsyncMock()
+    wrapped.call_tool = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+    toolset = _make_toolset(cb, wrapped)
+
+    with pytest.raises(ModelRetry):
+        await toolset.call_tool("get_pods", {}, None, None)
+    assert cb.consecutive == 1
+
+
+async def test_toolset_trips_after_threshold_consecutive_failures() -> None:
+    cb = _CircuitBreaker()
+    wrapped = AsyncMock()
+    wrapped.call_tool = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+    toolset = _make_toolset(cb, wrapped)
+
+    for _ in range(CIRCUIT_BREAKER_THRESHOLD - 1):
+        with pytest.raises(ModelRetry):
+            await toolset.call_tool("get_pods", {}, None, None)
+
+    with pytest.raises(CircuitBreakerTripped):
+        await toolset.call_tool("get_pods", {}, None, None)
+
+
+async def test_toolset_success_between_failures_resets_count() -> None:
+    cb = _CircuitBreaker()
+    failing = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+    ok = AsyncMock(return_value={"content": "ok"})
+    wrapped = AsyncMock()
+    toolset = _make_toolset(cb, wrapped)
+
+    wrapped.call_tool = failing
+    for _ in range(CIRCUIT_BREAKER_THRESHOLD - 1):
+        with pytest.raises(ModelRetry):
+            await toolset.call_tool("get_pods", {}, None, None)
+
+    wrapped.call_tool = ok
+    await toolset.call_tool("get_pods", {}, None, None)
+    assert cb.consecutive == 0
+
+    wrapped.call_tool = failing
+    for _ in range(CIRCUIT_BREAKER_THRESHOLD - 1):
+        with pytest.raises(ModelRetry):
+            await toolset.call_tool("get_pods", {}, None, None)
+    assert cb.consecutive == CIRCUIT_BREAKER_THRESHOLD - 1
 
 
 def _mock_diagnosis_context() -> AsyncMock:
@@ -155,3 +223,45 @@ async def test_run_orchestration_abort_on_circuit_breaker_tripped(
         git_mcp=mock_git_mcp,
     )
     assert record.outcome == "abort"
+
+
+async def test_run_orchestration_aborts_when_wired_breaker_trips(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
+
+    failing_tool = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+
+    async def _drive_breaker_until_trip(
+        *_args: object, breaker=None, **_kwargs: object
+    ):
+        wrapped = AsyncMock()
+        wrapped.call_tool = failing_tool
+        toolset = CircuitBreakerToolset(wrapped=wrapped, breaker=breaker)
+        while True:
+            try:
+                await toolset.call_tool("get_pods", {}, None, None)
+            except ModelRetry:
+                continue
+
+    monkeypatch.setattr(
+        orch_mod, "run_diagnosis", AsyncMock(side_effect=_drive_breaker_until_trip)
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "abort"
+    assert record.setup_error == "circuit_breaker_3_consecutive_errors"
+    assert failing_tool.await_count == CIRCUIT_BREAKER_THRESHOLD

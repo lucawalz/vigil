@@ -4,6 +4,10 @@ import os
 
 GIT_COMMIT_BUDGET: int = int(os.environ.get("GIT_COMMIT_BUDGET", "1"))
 
+CIRCUIT_BREAKER_THRESHOLD: int = int(
+    os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "3")
+)
+
 _DEFAULT_PROTECTED_BRANCHES = "main,master"
 
 PROTECTED_BRANCHES: frozenset[str] = frozenset(

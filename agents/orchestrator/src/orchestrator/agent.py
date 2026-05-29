@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from common import trace
-from common.constants import GIT_COMMIT_BUDGET
+from common.constants import CIRCUIT_BREAKER_THRESHOLD, GIT_COMMIT_BUDGET
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.context import (
@@ -45,7 +45,14 @@ _MAX_DIAGNOSIS_ATTEMPTS = 3
 
 
 class _CircuitBreaker:
-    """Counts consecutive MCP tool errors; trips at 3."""
+    """Counts consecutive failed MCP tool calls in a run; trips at the threshold.
+
+    One instance is created per run_orchestration and shared across the diagnosis
+    and remediation stages via CircuitBreakerToolset. error() is called on each
+    failed MCP tool call and success() on each successful one; a single success
+    resets the consecutive count. Reaching CIRCUIT_BREAKER_THRESHOLD consecutive
+    failures raises CircuitBreakerTripped to abort the run.
+    """
 
     def __init__(self) -> None:
         self._consecutive = 0
@@ -55,8 +62,10 @@ class _CircuitBreaker:
 
     def error(self) -> None:
         self._consecutive += 1
-        if self._consecutive >= 3:
-            raise CircuitBreakerTripped("3 consecutive MCP errors")
+        if self._consecutive >= CIRCUIT_BREAKER_THRESHOLD:
+            raise CircuitBreakerTripped(
+                f"{CIRCUIT_BREAKER_THRESHOLD} consecutive MCP errors"
+            )
 
     @property
     def consecutive(self) -> int:
@@ -269,6 +278,7 @@ async def _dispatch_remediation_and_watchdog(
     model,
     run_id: str,
     blocked: frozenset[str],
+    breaker: _CircuitBreaker,
 ):
     if report.recommended_action == "git_commit_k8s":
         async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
@@ -279,6 +289,7 @@ async def _dispatch_remediation_and_watchdog(
                 model=model,
                 run_id=run_id,
                 blocked_tools=blocked,
+                breaker=breaker,
             )
         await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
         watchdog_result = await run_watchdog(watchdog_deps, baseline)
@@ -294,6 +305,7 @@ async def _dispatch_remediation_and_watchdog(
                             model=model,
                             run_id=run_id,
                             blocked_tools=blocked,
+                            breaker=breaker,
                         )
                     )
                     wtch_task = tg.create_task(run_watchdog(watchdog_deps, baseline))
@@ -439,6 +451,7 @@ async def run_orchestration(
                             model=model,
                             blocked_tools=blocked,
                             retry_hint=retry_hint,
+                            breaker=breaker,
                         )
                 except asyncio.TimeoutError:
                     log.error(
@@ -498,7 +511,6 @@ async def run_orchestration(
 
                 trace.log_messages(run_id, "diagnosis", diag_msgs)
                 trace.write_trace(run_id, "diagnosis", diag_msgs)
-                breaker.success()
                 iteration_count += 1
 
                 if report.recommended_action == "escalate":
@@ -558,6 +570,7 @@ async def run_orchestration(
                         model,
                         run_id,
                         blocked,
+                        breaker,
                     )
                 except asyncio.TimeoutError:
                     log.error(

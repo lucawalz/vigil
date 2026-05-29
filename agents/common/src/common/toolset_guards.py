@@ -9,11 +9,25 @@ the dataclass copies that WrapperToolset.for_run / for_run_step produce per step
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic_ai._run_context import AgentDepsT, RunContext
+from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_ai.toolsets.wrapper import WrapperToolset
+
+
+@runtime_checkable
+class Breaker(Protocol):
+    """Minimal failure-counting contract a CircuitBreakerToolset drives.
+
+    Decoupling from the orchestrator's concrete breaker avoids a circular import:
+    the guard depends only on success()/error(), not on orchestrator internals.
+    """
+
+    def success(self) -> None: ...
+
+    def error(self) -> None: ...
 
 
 @dataclass
@@ -49,3 +63,35 @@ class CallBudgetToolset(WrapperToolset[AgentDepsT]):
                 )
             self._counter.count += 1
         return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+
+
+@dataclass
+class CircuitBreakerToolset(WrapperToolset[AgentDepsT]):
+    """Drives a shared Breaker from real MCP tool-call outcomes within one run.
+
+    pydantic-ai surfaces an MCP tool failure as ModelRetry out of the wrapped
+    call_tool; a successful call returns normally. Each ModelRetry counts as a
+    failure and each success resets the run-wide consecutive count. The same
+    instance must back every wrapped toolset so failures accumulate across stages.
+
+    Wrap this on the outside of FilteredToolset/CallBudgetToolset so the breaker
+    observes the delegated MCP outcome. Non-ModelRetry exceptions (e.g. a budget
+    guard's rejection) pass through untouched and never count as MCP failures.
+    """
+
+    breaker: Breaker
+
+    async def call_tool(
+        self,
+        name: str,
+        tool_args: dict[str, Any],
+        ctx: RunContext[AgentDepsT],
+        tool: ToolsetTool[AgentDepsT],
+    ) -> Any:
+        try:
+            result = await self.wrapped.call_tool(name, tool_args, ctx, tool)
+        except ModelRetry:
+            self.breaker.error()
+            raise
+        self.breaker.success()
+        return result

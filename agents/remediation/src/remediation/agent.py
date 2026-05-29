@@ -14,7 +14,7 @@ import os
 from common import trace
 from common.constants import GIT_COMMIT_BUDGET, PROTECTED_BRANCHES
 from common.provider import build_model
-from common.toolset_guards import CallBudgetToolset
+from common.toolset_guards import Breaker, CallBudgetToolset, CircuitBreakerToolset
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -162,6 +162,7 @@ async def run_remediation(
     model: OpenAIChatModel | None = None,
     run_id: str = "",
     blocked_tools: frozenset[str] = frozenset(),
+    breaker: Breaker | None = None,
 ) -> tuple[RemediationResult, Usage, list[ModelMessage]]:
     if source_branch in PROTECTED_BRANCHES:
         refused = RemediationResult(
@@ -197,6 +198,12 @@ async def run_remediation(
         else deps.nixos_mcp
     )
 
+    toolsets: list[object] = [git_toolset, flux_toolset, nixos_toolset]
+    if breaker is not None:
+        toolsets = [
+            CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in toolsets
+        ]
+
     constraint_block = ""
     if blocked_tools:
         constraint_block = (
@@ -216,7 +223,7 @@ async def run_remediation(
     async with remediation_agent.iter(
         task,
         deps=deps,
-        toolsets=[git_toolset, flux_toolset, nixos_toolset],
+        toolsets=toolsets,
         usage_limits=UsageLimits(request_limit=REMEDIATION_REQUEST_LIMIT),
         model=model,
     ) as agent_run:
