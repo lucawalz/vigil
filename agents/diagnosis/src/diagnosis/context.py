@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
     from diagnosis.models import DiagnosisDeps
 
+log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class AdmissionObject:
@@ -165,8 +167,13 @@ async def _walk_pod_to_deployment(
                         },
                     )
                     return dep_name, _extract_text(dep_result)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(
+                        "label-based Deployment lookup failed for %s, "
+                        "falling back to ownerReferences: %s",
+                        dep_name,
+                        exc,
+                    )
         owner_refs = (pod_data.get("metadata") or {}).get("ownerReferences") or []
         rs_ref = next((r for r in owner_refs if r.get("kind") == "ReplicaSet"), None)
         if not rs_ref:
@@ -248,7 +255,7 @@ async def _resolve_manifest_path_k8s(
             return result["path"]
         return _extract_text(result)
     except Exception as exc:
-        logging.getLogger(__name__).warning(
+        log.warning(
             "resolve_manifest_path failed for %s/%s under %s: %s",
             kind,
             name,
@@ -320,7 +327,13 @@ async def _get_kustomize_spec_path(deps: DiagnosisDeps, live_text: str) -> str |
         kust_data = yaml.safe_load(_extract_text(kust_result))
         spec_path = (kust_data.get("spec") or {}).get("path", "").lstrip("./")
         return spec_path or None
-    except Exception:
+    except Exception as exc:
+        log.debug(
+            "kustomize spec.path lookup failed for %s/%s: %s",
+            kust_ns,
+            kust_name,
+            exc,
+        )
         return None
 
 
@@ -370,7 +383,6 @@ async def _fetch_admission_objects(
     kustomize_path: str | None,
 ) -> list[AdmissionObject]:
     """Discover ResourceQuota objects from namespace events and check git."""
-    log = logging.getLogger(__name__)
     objects: list[AdmissionObject] = []
 
     try:
@@ -380,7 +392,12 @@ async def _fetch_admission_objects(
             {"namespace": namespace, "field_selector": ""},
         )
         events_text = _extract_text(events_result)
-    except Exception:
+    except Exception as exc:
+        log.warning(
+            "namespace events unavailable for %s, skipping admission discovery: %s",
+            namespace,
+            exc,
+        )
         return objects
 
     for quota_name in _extract_quota_names_from_events(events_text):
@@ -391,7 +408,8 @@ async def _fetch_admission_objects(
                 {"kind": "ResourceQuota", "namespace": namespace, "name": quota_name},
             )
             rq_text = _extract_text(rq_result)
-        except Exception:
+        except Exception as exc:
+            log.debug("ResourceQuota/%s fetch failed, skipping: %s", quota_name, exc)
             continue
 
         declared_in_git = False
@@ -414,10 +432,11 @@ async def _fetch_admission_objects(
                     else _extract_text(path_result)
                 )
                 declared_in_git = bool(git_path)
-            except Exception:
+            except Exception as exc:
                 log.debug(
-                    "resolve_manifest_path failed for ResourceQuota/%s: skipping",
+                    "resolve_manifest_path failed for ResourceQuota/%s, skipping: %s",
                     quota_name,
+                    exc,
                 )
 
         objects.append(
@@ -549,7 +568,13 @@ async def build_diagnosis_context(
                     },
                 )
                 failing_live_yaml = _extract_text(failing_live_result)
-            except Exception:
+            except Exception as exc:
+                log.debug(
+                    "failing %s/%s live state unavailable: %s",
+                    failing_kind,
+                    failing_name,
+                    exc,
+                )
                 failing_live_yaml = ""
 
             kust_data = yaml.safe_load(kust_raw_text) if kust_raw_text else {}
@@ -583,7 +608,14 @@ async def build_diagnosis_context(
                         {"branch": source_branch, "path": child_manifest_path},
                     )
                     child_declared_yaml = _extract_text(declared_result)
-                except Exception:
+                except Exception as exc:
+                    log.debug(
+                        "child manifest resolution failed for %s/%s under %s: %s",
+                        failing_kind,
+                        failing_name,
+                        spec_path,
+                        exc,
+                    )
                     child_manifest_path = None
 
             live_yaml_parts = [kust_status_text]
@@ -621,7 +653,6 @@ async def build_diagnosis_context(
     )
     live_yaml = _extract_text(live_result)
 
-    log = logging.getLogger(__name__)
     resource_name_override: str | None = None
     resolved_kind = kind
     if kind == "Pod":
