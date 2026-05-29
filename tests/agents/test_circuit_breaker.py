@@ -73,7 +73,6 @@ async def test_run_orchestration_abort_on_usage_limit_exceeded(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
     mock_git_mcp: AsyncMock,
     tmp_path: Path,
@@ -91,7 +90,6 @@ async def test_run_orchestration_abort_on_usage_limit_exceeded(
         sample_fault_event,
         kubectl_mcp=mock_kubectl_mcp,
         flux_mcp=mock_flux_mcp,
-        ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
         git_mcp=mock_git_mcp,
     )
@@ -106,7 +104,6 @@ async def test_run_orchestration_abort_on_unexpected_model_behavior(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
     mock_git_mcp: AsyncMock,
     tmp_path: Path,
@@ -126,7 +123,6 @@ async def test_run_orchestration_abort_on_unexpected_model_behavior(
         sample_fault_event,
         kubectl_mcp=mock_kubectl_mcp,
         flux_mcp=mock_flux_mcp,
-        ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
         git_mcp=mock_git_mcp,
     )
@@ -138,7 +134,6 @@ async def test_run_orchestration_abort_on_circuit_breaker_tripped(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
-    mock_ssh_mcp: AsyncMock,
     mock_nixos_mcp: AsyncMock,
     mock_git_mcp: AsyncMock,
     tmp_path: Path,
@@ -156,7 +151,6 @@ async def test_run_orchestration_abort_on_circuit_breaker_tripped(
         sample_fault_event,
         kubectl_mcp=mock_kubectl_mcp,
         flux_mcp=mock_flux_mcp,
-        ssh_mcp=mock_ssh_mcp,
         nixos_mcp=mock_nixos_mcp,
         git_mcp=mock_git_mcp,
     )

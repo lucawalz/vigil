@@ -24,7 +24,7 @@ from .models import RemediationDeps, RemediationResult
 _SYSTEM_PROMPT = """\
 You are the Remediation stage of the vigil fault-response pipeline. Execute one of
 four action classes, determined by recommended_action from the DiagnosisReport.
-Operate through MCP tool calls only. Do not call ssh-mcp; it is not in the toolset.
+Operate through MCP tool calls only.
 
 MANDATORY BRANCHING ON recommended_action:
 

@@ -5,5 +5,4 @@ use (
 	./mcp-servers/git-mcp
 	./mcp-servers/kubectl-mcp
 	./mcp-servers/nixos-mcp
-	./mcp-servers/ssh-mcp
 )

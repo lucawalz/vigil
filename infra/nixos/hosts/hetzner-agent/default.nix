@@ -30,10 +30,6 @@ let
     name = "flux-mcp";
     vendorHash = "sha256-/2SRkLmkxKttxTxvMApYAhr2yvAGzt+OgQoPvYbqXyo=";
   };
-  ssh-mcp = mkMcpServer {
-    name = "ssh-mcp";
-    vendorHash = "sha256-juvcOgXWOFu0iW2yD1UX/wxmFixKtRR/xlCU9vtencI=";
-  };
   nixos-mcp = mkMcpServer {
     name = "nixos-mcp";
     vendorHash = "sha256-juvcOgXWOFu0iW2yD1UX/wxmFixKtRR/xlCU9vtencI=";
@@ -79,7 +75,6 @@ in
     git
     kubectl-mcp
     flux-mcp
-    ssh-mcp
     nixos-mcp
     git-mcp
   ];
@@ -134,7 +129,6 @@ in
     environment = {
       KUBECTL_MCP_CMD = "${kubectl-mcp}/bin/kubectl-mcp";
       FLUX_MCP_CMD = "${flux-mcp}/bin/flux-mcp";
-      SSH_MCP_CMD = "${ssh-mcp}/bin/ssh-mcp";
       NIXOS_MCP_CMD = "${nixos-mcp}/bin/nixos-mcp";
       GIT_MCP_CMD = "${git-mcp}/bin/git-mcp";
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";

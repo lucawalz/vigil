@@ -96,7 +96,6 @@ async def prometheus_poller(app) -> None:
                         event,
                         kubectl_mcp=app.state.kubectl_mcp,
                         flux_mcp=app.state.flux_mcp,
-                        ssh_mcp=app.state.ssh_mcp,
                         nixos_mcp=app.state.nixos_mcp,
                         git_mcp=app.state.git_mcp,
                         scenario="autonomous",

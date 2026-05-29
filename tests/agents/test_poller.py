@@ -100,7 +100,6 @@ async def test_poller_deduplicates_by_fingerprint(monkeypatch):
     app = MagicMock()
     app.state.kubectl_mcp = MagicMock()
     app.state.flux_mcp = MagicMock()
-    app.state.ssh_mcp = MagicMock()
     app.state.nixos_mcp = MagicMock()
 
     run_patch = patch("orchestrator.poller.run_orchestration", new_callable=AsyncMock)
@@ -130,7 +129,6 @@ async def test_poller_passes_all_mcp_servers_to_run_orchestration(monkeypatch):
     app = MagicMock()
     app.state.kubectl_mcp = MagicMock()
     app.state.flux_mcp = MagicMock()
-    app.state.ssh_mcp = MagicMock()
     app.state.nixos_mcp = MagicMock()
     app.state.git_mcp = MagicMock()
 

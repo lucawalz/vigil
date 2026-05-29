@@ -1,10 +1,8 @@
 """Typed contracts for the Orchestrator: webhook input, run record, circuit breaker."""
 
-from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel
-from pydantic_ai.mcp import MCPServerStdio
 
 
 class FaultEvent(BaseModel):
@@ -67,13 +65,3 @@ class RunRecord(BaseModel):
 
 class CircuitBreakerTripped(Exception):
     """Raised by the Orchestrator when 3 consecutive MCP tool errors accumulate."""
-
-
-@dataclass(frozen=True)
-class OrchestratorDeps:
-    """MCP client references for the Orchestrator. Frozen; no shared mutable state."""
-
-    kubectl_mcp: MCPServerStdio
-    flux_mcp: MCPServerStdio
-    ssh_mcp: MCPServerStdio
-    nixos_mcp: MCPServerStdio

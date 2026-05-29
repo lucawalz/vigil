@@ -135,7 +135,7 @@ class DiagnosisDeps:
     git-mcp session is warmed via clone_repo before the LLM runs, so read_file
     is available for declared-state lookups. nixos-mcp is the typed NixOS
     interface for OS-layer observation. flux-mcp provides read access to
-    Kustomization state. ssh-mcp is intentionally excluded.
+    Kustomization state.
     """
 
     kubectl_mcp: MCPServerStdio

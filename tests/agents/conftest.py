@@ -63,13 +63,6 @@ def mock_flux_mcp() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_ssh_mcp() -> AsyncMock:
-    m = AsyncMock()
-    m.call_tool = AsyncMock(return_value={"content": "ssh ok"})
-    return m
-
-
-@pytest.fixture
 def mock_nixos_mcp() -> AsyncMock:
     m = AsyncMock()
     m.call_tool = AsyncMock(return_value={"content": "nixos rebuild ok"})

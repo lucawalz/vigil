@@ -36,7 +36,6 @@ def _mcp_commands() -> dict[str, list[str]]:
     return {
         "kubectl": os.environ.get("KUBECTL_MCP_CMD", "kubectl-mcp").split(),
         "flux": os.environ.get("FLUX_MCP_CMD", "flux-mcp").split(),
-        "ssh": os.environ.get("SSH_MCP_CMD", "ssh-mcp").split(),
         "nixos": os.environ.get("NIXOS_MCP_CMD", "nixos-mcp").split(),
         "git": os.environ.get("GIT_MCP_CMD", "git-mcp").split(),
     }
@@ -52,7 +51,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     kubectl_argv = cmds["kubectl"]
     flux_argv = cmds["flux"]
-    ssh_argv = cmds["ssh"]
     nixos_argv = cmds["nixos"]
     git_argv = cmds["git"]
 
@@ -61,7 +59,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             command=kubectl_argv[0], args=kubectl_argv[1:], env=env, max_retries=3
         ) as kubectl_mcp,
         MCPServerStdio(command=flux_argv[0], args=flux_argv[1:], env=env) as flux_mcp,
-        MCPServerStdio(command=ssh_argv[0], args=ssh_argv[1:], env=env) as ssh_mcp,
         MCPServerStdio(
             command=nixos_argv[0], args=nixos_argv[1:], env=env
         ) as nixos_mcp,
@@ -71,10 +68,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ):
         app.state.kubectl_mcp = kubectl_mcp
         app.state.flux_mcp = flux_mcp
-        app.state.ssh_mcp = ssh_mcp
         app.state.nixos_mcp = nixos_mcp
         app.state.git_mcp = git_mcp
-        log.info("MCP servers booted: kubectl, flux, ssh, nixos, git")
+        log.info("MCP servers booted: kubectl, flux, nixos, git")
         poll_task = asyncio.create_task(prometheus_poller(app))
         yield
         poll_task.cancel()
@@ -142,7 +138,6 @@ async def webhook(
             event,
             kubectl_mcp=request.app.state.kubectl_mcp,
             flux_mcp=request.app.state.flux_mcp,
-            ssh_mcp=request.app.state.ssh_mcp,
             nixos_mcp=request.app.state.nixos_mcp,
             git_mcp=request.app.state.git_mcp,
             scenario=scenario,

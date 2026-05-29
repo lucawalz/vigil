@@ -312,7 +312,6 @@ async def run_orchestration(
     event: FaultEvent,
     kubectl_mcp: MCPServerStdio,
     flux_mcp: MCPServerStdio,
-    ssh_mcp: MCPServerStdio,
     nixos_mcp: MCPServerStdio,
     git_mcp: MCPServerStdio,
     *,
