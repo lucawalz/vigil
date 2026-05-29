@@ -7,9 +7,8 @@ import (
 )
 
 const (
-	MaxOutputBytesDescribe   = 4096
-	MaxOutputBytesLogs       = 2048
-	MaxOutputBytesPrometheus = 10240
+	MaxOutputBytesDescribe = 4096
+	MaxOutputBytesLogs     = 2048
 )
 
 type Config struct {
