@@ -123,6 +123,23 @@ def test_watchdog_source_has_no_mutation_tool_names() -> None:
         assert forbidden not in src, f"Watchdog must not reference {forbidden}"
 
 
+async def test_capture_health_snapshot_uses_deps_namespace() -> None:
+    mock = AsyncMock()
+    mock.direct_call_tool = AsyncMock(return_value={"content": "pod/a Running"})
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    deps = WatchdogDeps(kubectl_mcp=mock, flux_mcp=mock_flux, namespace="payments")
+
+    await capture_health_snapshot(deps)
+
+    mock.direct_call_tool.assert_awaited_with("get_pods", {"namespace": "payments"})
+
+
+def test_watchdog_deps_defaults_namespace() -> None:
+    deps = WatchdogDeps(kubectl_mcp=AsyncMock(), flux_mcp=AsyncMock())
+    assert deps.namespace == "default"
+
+
 async def test_capture_health_snapshot_propagates_flux_ready() -> None:
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(

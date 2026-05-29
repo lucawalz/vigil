@@ -4,6 +4,8 @@ import os
 
 GIT_COMMIT_BUDGET: int = int(os.environ.get("GIT_COMMIT_BUDGET", "1"))
 
+WATCHDOG_NAMESPACE: str = os.environ.get("WATCHDOG_NAMESPACE", "default")
+
 CIRCUIT_BREAKER_THRESHOLD: int = int(
     os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "3")
 )

@@ -77,7 +77,7 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
     inside run_watchdog's poll loop.
     """
     pods_result = await deps.kubectl_mcp.direct_call_tool(
-        "get_pods", {"namespace": "default"}
+        "get_pods", {"namespace": deps.namespace}
     )
     ready, total = _parse_pod_counts(pods_result)
     endpoints_healthy = ready > 0

@@ -869,6 +869,20 @@ def test_extract_kind_pvc() -> None:
     assert name == "data-pvc"
 
 
+def test_extract_alert_namespace_from_labels() -> None:
+    from diagnosis.context import extract_alert_namespace
+
+    fault = _make_fault({"deployment": "api", "namespace": "payments"})
+    assert extract_alert_namespace(fault, "default") == "payments"
+
+
+def test_extract_alert_namespace_falls_back_to_default() -> None:
+    from diagnosis.context import extract_alert_namespace
+
+    fault = _make_fault({"node": "worker-1"})
+    assert extract_alert_namespace(fault, "default") == "default"
+
+
 def test_extract_kind_daemonset() -> None:
     from diagnosis.context import _extract_k8s_kind_namespace_name
 

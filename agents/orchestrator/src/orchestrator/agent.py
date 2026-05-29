@@ -8,13 +8,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from common import trace
-from common.constants import CIRCUIT_BREAKER_THRESHOLD, GIT_COMMIT_BUDGET
+from common.constants import (
+    CIRCUIT_BREAKER_THRESHOLD,
+    GIT_COMMIT_BUDGET,
+    WATCHDOG_NAMESPACE,
+)
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.context import (
     ManifestPathUnresolvable,
     ResourceKindUnresolvable,
     build_diagnosis_context,
+    extract_alert_namespace,
 )
 from diagnosis.models import DiagnosisDeps
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -350,7 +355,11 @@ async def run_orchestration(
     remediation_deps = RemediationDeps(
         git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
     )
-    watchdog_deps = WatchdogDeps(kubectl_mcp=kubectl_mcp, flux_mcp=flux_mcp)
+    watchdog_deps = WatchdogDeps(
+        kubectl_mcp=kubectl_mcp,
+        flux_mcp=flux_mcp,
+        namespace=extract_alert_namespace(event, WATCHDOG_NAMESPACE),
+    )
 
     destructive_repair = False
     rollback_triggered = False

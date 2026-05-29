@@ -97,6 +97,15 @@ async def _resolve_source_branch(deps: DiagnosisDeps) -> str:
         return "main"
 
 
+def extract_alert_namespace(fault: FaultEvent, default: str) -> str:
+    """Return the namespace named in alert labels, else commonLabels, else default."""
+    for alert in fault.alerts:
+        namespace = alert.get("labels", {}).get("namespace")
+        if namespace:
+            return namespace
+    return fault.commonLabels.get("namespace") or default
+
+
 def _extract_target_host(fault: FaultEvent) -> str | None:
     for alert in fault.alerts:
         labels = alert.get("labels", {})

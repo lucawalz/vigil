@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from common.constants import WATCHDOG_NAMESPACE
 from pydantic import BaseModel
 from pydantic_ai.mcp import MCPServerStdio
 
@@ -29,3 +30,4 @@ class WatchdogDeps:
 
     kubectl_mcp: MCPServerStdio
     flux_mcp: MCPServerStdio
+    namespace: str = WATCHDOG_NAMESPACE
