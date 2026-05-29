@@ -21,6 +21,7 @@ import os
 from datetime import datetime, timezone
 
 from common.flux_status import extract_mcp_text, parse_kust_text
+from common.mcp_call import call_tool
 
 from .models import HealthSnapshot, WatchdogDeps, WatchdogResult
 
@@ -76,21 +77,22 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
     Called once to capture the pre-remediation baseline, then repeatedly
     inside run_watchdog's poll loop.
     """
-    pods_result = await deps.kubectl_mcp.direct_call_tool(
-        "get_pods", {"namespace": deps.namespace}
+    pods_result = await call_tool(
+        deps.kubectl_mcp, "get_pods", {"namespace": deps.namespace}
     )
     ready, total = _parse_pod_counts(pods_result)
     endpoints_healthy = ready > 0
 
     flux_ready: bool | None = None
     try:
-        kust_result = await deps.flux_mcp.direct_call_tool(
+        kust_result = await call_tool(
+            deps.flux_mcp,
             "get_kustomization_status",
             {"namespace": "flux-system", "name": "cluster-apps"},
         )
         kust_data = parse_kust_text(extract_mcp_text(kust_result))
         flux_ready = kust_data.get("ready") == "True"
-    except (RuntimeError, ValueError, AttributeError) as exc:
+    except (RuntimeError, ValueError, AttributeError, TimeoutError) as exc:
         log.warning("flux kustomization status unavailable: %s", exc)
         flux_ready = False
 

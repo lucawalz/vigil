@@ -13,6 +13,7 @@ from common.constants import (
     GIT_COMMIT_BUDGET,
     WATCHDOG_NAMESPACE,
 )
+from common.mcp_call import call_tool
 from common.provider import build_model
 from diagnosis.agent import run_diagnosis
 from diagnosis.context import (
@@ -217,30 +218,36 @@ async def _issue_rollback(
     """Dispatch rollback by recommended_action class. Returns True on full success."""
     try:
         if recommended_action == "flux_reconcile":
-            await flux_mcp.direct_call_tool(
+            await call_tool(
+                flux_mcp,
                 "reconcile_kustomization",
                 {"namespace": "flux-system", "name": "cluster-apps"},
             )
         elif recommended_action == "git_commit_k8s":
-            await git_mcp.direct_call_tool(
+            await call_tool(
+                git_mcp,
                 "revert_commit",
                 {"merge_commit_sha": merge_commit_sha},
             )
-            await flux_mcp.direct_call_tool(
+            await call_tool(
+                flux_mcp,
                 "reconcile_kustomization",
                 {"namespace": "flux-system", "name": "cluster-apps"},
             )
         elif recommended_action == "nixos_rebuild":
-            await nixos_mcp.direct_call_tool(
+            await call_tool(
+                nixos_mcp,
                 "switch_generation",
                 {"host": target_host},
             )
         elif recommended_action == "git_commit_nix":
-            await git_mcp.direct_call_tool(
+            await call_tool(
+                git_mcp,
                 "revert_commit",
                 {"merge_commit_sha": merge_commit_sha},
             )
-            await nixos_mcp.direct_call_tool(
+            await call_tool(
+                nixos_mcp,
                 "trigger_reconcile",
                 {"host": target_host},
             )
@@ -555,13 +562,16 @@ async def run_orchestration(
 
                 base_branch = diagnosis_context.source_branch or "main"
                 try:
-                    await git_mcp.direct_call_tool(
+                    await call_tool(
+                        git_mcp,
                         "create_branch",
                         {"run_id": run_id, "base_branch": base_branch},
                     )
-                except Exception:
+                except Exception as exc:
                     log.debug(
-                        "run %s: base_branch pre-call skipped (non-fatal)", run_id
+                        "run %s: base_branch pre-call skipped (non-fatal): %s",
+                        run_id,
+                        exc,
                     )
 
                 try:

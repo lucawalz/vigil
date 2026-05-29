@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import yaml
+from common.mcp_call import call_tool
 
 if TYPE_CHECKING:
     from orchestrator.models import FaultEvent
@@ -84,7 +85,8 @@ def _extract_text(result: object) -> str:
 
 
 async def _resolve_source_branch(deps: DiagnosisDeps) -> str:
-    result = await deps.kubectl_mcp.direct_call_tool(
+    result = await call_tool(
+        deps.kubectl_mcp,
         "get_resource_yaml",
         {"kind": "GitRepository", "namespace": "flux-system", "name": "flux-system"},
     )
@@ -153,7 +155,8 @@ async def _walk_pod_to_deployment(
             dep_name = labels.get(label_key)
             if dep_name:
                 try:
-                    dep_result = await deps.kubectl_mcp.direct_call_tool(
+                    dep_result = await call_tool(
+                        deps.kubectl_mcp,
                         "get_resource_yaml",
                         {
                             "kind": "Deployment",
@@ -168,7 +171,8 @@ async def _walk_pod_to_deployment(
         rs_ref = next((r for r in owner_refs if r.get("kind") == "ReplicaSet"), None)
         if not rs_ref:
             raise ManifestPathUnresolvable("Pod has no ReplicaSet ownerReference")
-        rs_result = await deps.kubectl_mcp.direct_call_tool(
+        rs_result = await call_tool(
+            deps.kubectl_mcp,
             "get_resource_yaml",
             {"kind": "ReplicaSet", "namespace": namespace, "name": rs_ref["name"]},
         )
@@ -179,7 +183,8 @@ async def _walk_pod_to_deployment(
             raise ManifestPathUnresolvable(
                 "ReplicaSet has no Deployment ownerReference"
             )
-        dep_result = await deps.kubectl_mcp.direct_call_tool(
+        dep_result = await call_tool(
+            deps.kubectl_mcp,
             "get_resource_yaml",
             {"kind": "Deployment", "namespace": namespace, "name": dep_ref["name"]},
         )
@@ -206,7 +211,8 @@ async def _resolve_manifest_path_k8s(
             "live resource has no Flux Kustomization annotations"
         )
 
-    kust_result = await deps.kubectl_mcp.direct_call_tool(
+    kust_result = await call_tool(
+        deps.kubectl_mcp,
         "get_resource_yaml",
         {"kind": "Kustomization", "namespace": kust_ns, "name": kust_name},
     )
@@ -228,7 +234,8 @@ async def _resolve_manifest_path_k8s(
         else _extract_resource_name(fault)
     )
     try:
-        result = await deps.git_mcp.direct_call_tool(
+        result = await call_tool(
+            deps.git_mcp,
             "resolve_manifest_path",
             {
                 "kustomize_path": spec_path,
@@ -305,7 +312,8 @@ async def _get_kustomize_spec_path(deps: DiagnosisDeps, live_text: str) -> str |
     if not kust_name or not kust_ns:
         return None
     try:
-        kust_result = await deps.kubectl_mcp.direct_call_tool(
+        kust_result = await call_tool(
+            deps.kubectl_mcp,
             "get_resource_yaml",
             {"kind": "Kustomization", "namespace": kust_ns, "name": kust_name},
         )
@@ -366,8 +374,10 @@ async def _fetch_admission_objects(
     objects: list[AdmissionObject] = []
 
     try:
-        events_result = await deps.kubectl_mcp.direct_call_tool(
-            "get_events", {"namespace": namespace, "field_selector": ""}
+        events_result = await call_tool(
+            deps.kubectl_mcp,
+            "get_events",
+            {"namespace": namespace, "field_selector": ""},
         )
         events_text = _extract_text(events_result)
     except Exception:
@@ -375,7 +385,8 @@ async def _fetch_admission_objects(
 
     for quota_name in _extract_quota_names_from_events(events_text):
         try:
-            rq_result = await deps.kubectl_mcp.direct_call_tool(
+            rq_result = await call_tool(
+                deps.kubectl_mcp,
                 "get_resource_yaml",
                 {"kind": "ResourceQuota", "namespace": namespace, "name": quota_name},
             )
@@ -387,7 +398,8 @@ async def _fetch_admission_objects(
         git_path: str | None = None
         if kustomize_path:
             try:
-                path_result = await deps.git_mcp.direct_call_tool(
+                path_result = await call_tool(
+                    deps.git_mcp,
                     "resolve_manifest_path",
                     {
                         "kustomize_path": kustomize_path,
@@ -426,15 +438,17 @@ async def _fetch_pod_status(deps: DiagnosisDeps, namespace: str) -> str:
     """Pre-fetch pods and namespace events for K8s workload alerts."""
     parts: list[str] = []
     try:
-        pods_result = await deps.kubectl_mcp.direct_call_tool(
-            "get_pods", {"namespace": namespace}
+        pods_result = await call_tool(
+            deps.kubectl_mcp, "get_pods", {"namespace": namespace}
         )
         parts.append("=== Pods ===\n" + _extract_text(pods_result))
     except Exception as exc:
         parts.append(f"=== Pods (error) ===\n{exc}")
     try:
-        events_result = await deps.kubectl_mcp.direct_call_tool(
-            "get_events", {"namespace": namespace, "field_selector": ""}
+        events_result = await call_tool(
+            deps.kubectl_mcp,
+            "get_events",
+            {"namespace": namespace, "field_selector": ""},
         )
         parts.append("=== Events ===\n" + _extract_text(events_result))
     except Exception as exc:
@@ -446,14 +460,16 @@ async def build_diagnosis_context(
     deps: DiagnosisDeps, fault: FaultEvent
 ) -> DiagnosisContext:
     source_branch = await _resolve_source_branch(deps)
-    await deps.git_mcp.direct_call_tool(
+    await call_tool(
+        deps.git_mcp,
         "clone_repo",
         {"run_id": deps.run_id, "base_branch": source_branch},
     )
     target_host = _extract_target_host(fault)
 
     if target_host:
-        manifest_path_result = await deps.nixos_mcp.direct_call_tool(
+        manifest_path_result = await call_tool(
+            deps.nixos_mcp,
             "get_nix_path",
             {"hostname": target_host},
         )
@@ -461,18 +477,21 @@ async def build_diagnosis_context(
 
         systemd_unit = _extract_systemd_unit(fault)
         if systemd_unit:
-            live_result = await deps.nixos_mcp.direct_call_tool(
+            live_result = await call_tool(
+                deps.nixos_mcp,
                 "get_systemd_status",
                 {"host": target_host, "unit": systemd_unit},
             )
         else:
-            live_result = await deps.nixos_mcp.direct_call_tool(
+            live_result = await call_tool(
+                deps.nixos_mcp,
                 "get_journal",
                 {"host": target_host, "lines": 50},
             )
         live_yaml = _extract_text(live_result)
 
-        declared_result = await deps.git_mcp.direct_call_tool(
+        declared_result = await call_tool(
+            deps.git_mcp,
             "read_file",
             {"branch": source_branch, "path": manifest_path},
         )
@@ -501,12 +520,14 @@ async def build_diagnosis_context(
         )
 
     if kind == "Kustomization":
-        kust_raw_result = await deps.kubectl_mcp.direct_call_tool(
+        kust_raw_result = await call_tool(
+            deps.kubectl_mcp,
             "get_resource_yaml",
             {"kind": "Kustomization", "namespace": namespace, "name": name},
         )
         kust_raw_text = _extract_text(kust_raw_result)
-        kust_status_result = await deps.flux_mcp.direct_call_tool(
+        kust_status_result = await call_tool(
+            deps.flux_mcp,
             "get_kustomization_status",
             {"namespace": namespace, "name": name},
         )
@@ -518,7 +539,8 @@ async def build_diagnosis_context(
 
         if failing_kind and failing_name:
             try:
-                failing_live_result = await deps.kubectl_mcp.direct_call_tool(
+                failing_live_result = await call_tool(
+                    deps.kubectl_mcp,
                     "get_resource_yaml",
                     {
                         "kind": failing_kind,
@@ -540,7 +562,8 @@ async def build_diagnosis_context(
             child_declared_yaml = ""
             if spec_path and failing_live_yaml:
                 try:
-                    path_result = await deps.git_mcp.direct_call_tool(
+                    path_result = await call_tool(
+                        deps.git_mcp,
                         "resolve_manifest_path",
                         {
                             "kustomize_path": spec_path,
@@ -554,7 +577,8 @@ async def build_diagnosis_context(
                         if isinstance(path_result, dict)
                         else _extract_text(path_result)
                     )
-                    declared_result = await deps.git_mcp.direct_call_tool(
+                    declared_result = await call_tool(
+                        deps.git_mcp,
                         "read_file",
                         {"branch": source_branch, "path": child_manifest_path},
                     )
@@ -590,7 +614,8 @@ async def build_diagnosis_context(
             diff="",
         )
 
-    live_result = await deps.kubectl_mcp.direct_call_tool(
+    live_result = await call_tool(
+        deps.kubectl_mcp,
         "get_resource_yaml",
         {"kind": kind, "namespace": namespace, "name": name},
     )
@@ -628,7 +653,8 @@ async def build_diagnosis_context(
         raise
 
     try:
-        declared_result = await deps.git_mcp.direct_call_tool(
+        declared_result = await call_tool(
+            deps.git_mcp,
             "read_file",
             {"branch": source_branch, "path": manifest_path},
         )
