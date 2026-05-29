@@ -8,9 +8,7 @@ WATCHDOG_NAMESPACE: str = os.environ.get("WATCHDOG_NAMESPACE", "default")
 
 MCP_CALL_TIMEOUT_S: float = float(os.environ.get("MCP_CALL_TIMEOUT_S", "60"))
 
-CIRCUIT_BREAKER_THRESHOLD: int = int(
-    os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "3")
-)
+CIRCUIT_BREAKER_THRESHOLD: int = int(os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "3"))
 
 _DEFAULT_PROTECTED_BRANCHES = "main,master"
 

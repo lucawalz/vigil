@@ -25,9 +25,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from .models import GitCommitBudgetExceeded, RemediationDeps, RemediationResult
 
-REMEDIATION_REQUEST_LIMIT: int = int(
-    os.environ.get("REMEDIATION_REQUEST_LIMIT", "20")
-)
+REMEDIATION_REQUEST_LIMIT: int = int(os.environ.get("REMEDIATION_REQUEST_LIMIT", "20"))
 
 _COMMIT_TOOL_NAME = "commit_files"
 

@@ -120,8 +120,16 @@ def test_all_git_write_tools_are_filtered_out() -> None:
     write_tools = _GIT_ALL_TOOLS - DIAGNOSIS_GIT_READ_TOOLS
     exposed = _exposed(_GIT_ALL_TOOLS, DIAGNOSIS_GIT_READ_TOOLS)
     assert write_tools & exposed == frozenset()
-    for tool in ("commit_files", "push_branch", "create_pr", "write_manifest",
-                 "create_branch", "revert_commit", "close_pr", "delete_branch"):
+    for tool in (
+        "commit_files",
+        "push_branch",
+        "create_pr",
+        "write_manifest",
+        "create_branch",
+        "revert_commit",
+        "close_pr",
+        "delete_branch",
+    ):
         assert tool not in exposed
 
 
@@ -133,8 +141,12 @@ def test_side_effecting_tools_are_filtered_out() -> None:
         _FLUX_ALL_TOOLS, DIAGNOSIS_FLUX_READ_TOOLS
     )
     nixos_exposed = _exposed(_NIXOS_ALL_TOOLS, DIAGNOSIS_NIXOS_READ_TOOLS)
-    for tool in ("switch_generation", "etcd_snapshot_save", "rebuild_test",
-                 "trigger_reconcile"):
+    for tool in (
+        "switch_generation",
+        "etcd_snapshot_save",
+        "rebuild_test",
+        "trigger_reconcile",
+    ):
         assert tool not in nixos_exposed
 
 
