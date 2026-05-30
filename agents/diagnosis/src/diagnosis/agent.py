@@ -9,9 +9,14 @@ from common.constants import (
     DIAGNOSIS_GIT_READ_TOOLS,
     DIAGNOSIS_KUBECTL_READ_TOOLS,
     DIAGNOSIS_NIXOS_READ_TOOLS,
+    DIAGNOSIS_TOOL_REPEAT_LIMIT,
 )
 from common.provider import build_model
-from common.toolset_guards import Breaker, CircuitBreakerToolset
+from common.toolset_guards import (
+    Breaker,
+    CircuitBreakerToolset,
+    ToolRepeatLimitToolset,
+)
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
@@ -298,16 +303,15 @@ async def run_diagnosis(
     flux_readonly = _build_readonly_toolset(
         deps.flux_mcp, DIAGNOSIS_FLUX_READ_TOOLS, blocked_tools
     )
-    toolsets: list[object] = [
-        kubectl_readonly,
-        nixos_readonly,
-        git_readonly,
-        flux_readonly,
-    ]
+    read_toolsets = (kubectl_readonly, nixos_readonly, git_readonly, flux_readonly)
     if breaker is not None:
-        toolsets = [
-            CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in toolsets
-        ]
+        read_toolsets = tuple(
+            CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in read_toolsets
+        )
+    toolsets: list[object] = [
+        ToolRepeatLimitToolset(wrapped=ts, limit=DIAGNOSIS_TOOL_REPEAT_LIMIT)
+        for ts in read_toolsets
+    ]
     constraint_block = ""
     if blocked_tools:
         constraint_block = (

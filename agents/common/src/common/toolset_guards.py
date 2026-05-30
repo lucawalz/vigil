@@ -66,6 +66,42 @@ class CallBudgetToolset(WrapperToolset[AgentDepsT]):
 
 
 @dataclass
+class _PerToolCounter:
+    counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class ToolRepeatLimitToolset(WrapperToolset[AgentDepsT]):
+    """Caps how often each distinct tool name may run within one run.
+
+    Unlike CallBudgetToolset (which aborts the run), exceeding the limit does not
+    end the run: it raises ModelRetry so the model is told to stop refetching and
+    reason from the context it already gathered. Counts are tracked independently
+    per tool name. Instantiate one per run so counts start fresh; the same instance
+    must be reused for the whole run.
+    """
+
+    limit: int
+    _counter: _PerToolCounter = field(default_factory=_PerToolCounter)
+
+    async def call_tool(
+        self,
+        name: str,
+        tool_args: dict[str, Any],
+        ctx: RunContext[AgentDepsT],
+        tool: ToolsetTool[AgentDepsT],
+    ) -> Any:
+        if self._counter.counts.get(name, 0) >= self.limit:
+            raise ModelRetry(
+                f"{name} has already been called {self.limit} times, the maximum "
+                f"for one run. Do not call {name} again; reason from the context "
+                f"already gathered and produce the final answer."
+            )
+        self._counter.counts[name] = self._counter.counts.get(name, 0) + 1
+        return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+
+
+@dataclass
 class CircuitBreakerToolset(WrapperToolset[AgentDepsT]):
     """Drives a shared Breaker from real MCP tool-call outcomes within one run.
 

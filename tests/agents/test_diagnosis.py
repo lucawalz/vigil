@@ -51,6 +51,17 @@ def test_run_diagnosis_enforces_request_limit() -> None:
     assert "request_limit=DIAGNOSIS_REQUEST_LIMIT" in source
 
 
+def test_run_diagnosis_wraps_read_toolsets_with_repeat_guard() -> None:
+    """Each read toolset gets the repeat cap; wiring must not silently regress."""
+    source = inspect.getsource(run_diagnosis)
+    assert "ToolRepeatLimitToolset(" in source
+    assert "limit=DIAGNOSIS_TOOL_REPEAT_LIMIT" in source
+    assert "kubectl_readonly" in source
+    assert "nixos_readonly" in source
+    assert "git_readonly" in source
+    assert "flux_readonly" in source
+
+
 def test_diagnosis_system_prompt_forbids_symptom_naming() -> None:
     """System prompt must never name a symptom as root cause."""
     source = inspect.getsource(_diag_module)
