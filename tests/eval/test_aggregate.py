@@ -548,6 +548,62 @@ def test_count_buckets_escalated_correct_counts_as_passed() -> None:
     assert counts["not-run"] == 0
 
 
+def _make_rollback_scenarios_dir(base: Path, scenario_id: str) -> Path:
+    d = base / scenario_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "scenario.yaml").write_text(
+        f"id: {scenario_id}\nname: test\nlayer: k8s\n"
+        "root_cause_component: x\nexpected_action: git_commit_k8s\n"
+        "expected_resolution_path: x\nexpected_outcome: rollback_succeeded\n"
+        "inject_params: {}\n"
+    )
+    return base
+
+
+def test_expected_outcome_marks_rollback_succeeded_as_success(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_rollback_scenarios_dir(scenarios_dir, "k8s-rollback-1")
+
+    _write_run_with_outcome(
+        runs_dir,
+        index_path,
+        run_id="k8s-rollback-1_1_test-model_abc",
+        scenario="k8s-rollback-1",
+        outcome="rollback_succeeded",
+        success_rate=False,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    assert summary["by_scenario"]["k8s-rollback-1"]["success_rate"] == 1.0
+
+
+def test_expected_outcome_does_not_mark_mismatched_outcome(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_rollback_scenarios_dir(scenarios_dir, "k8s-rollback-1")
+
+    _write_run_with_outcome(
+        runs_dir,
+        index_path,
+        run_id="k8s-rollback-1_1_test-model_abc",
+        scenario="k8s-rollback-1",
+        outcome="rollback_failed",
+        success_rate=False,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    assert summary["by_scenario"]["k8s-rollback-1"]["success_rate"] == 0.0
+
+
 def test_count_buckets_not_run_counts_unexecuted_planned_scenarios() -> None:
     from eval.aggregate import _count_buckets
 

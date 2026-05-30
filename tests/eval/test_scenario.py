@@ -233,6 +233,30 @@ def test_alert_name_missing_raises() -> None:
         )
 
 
+def test_expected_outcome_defaults_to_none() -> None:
+    s = ScenarioDefinition(
+        id="k8s-1",
+        name="x",
+        layer="k8s",
+        root_cause_component="Deployment/vigil-app",
+        expected_action="git_commit_k8s",
+        expected_resolution_path="diagnosis -> git_commit_k8s",
+        alert_name="KubeContainerOOMKilled",
+    )
+    assert s.expected_outcome is None
+
+
+def test_rollback_scenario_loads_with_expected_outcome(scenarios_dir: Path) -> None:
+    rollback_dir = scenarios_dir / "k8s-rollback-1"
+    if not (rollback_dir / "scenario.yaml").exists():
+        pytest.skip("k8s-rollback-1 scenario not present")
+    scenarios = load_scenarios(scenarios_dir)
+    rollback = next(s for s in scenarios if s.id == "k8s-rollback-1")
+    assert rollback.layer == "k8s"
+    assert rollback.expected_action == "git_commit_k8s"
+    assert rollback.expected_outcome == "rollback_succeeded"
+
+
 def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> None:
     scenario_dir = tmp_scenarios_dir / "b1"
     scenario_dir.mkdir()
