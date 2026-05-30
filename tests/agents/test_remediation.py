@@ -219,20 +219,36 @@ async def test_run_remediation_surfaces_budget_exceeded(
     mock_git_mcp: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A GitCommitBudgetExceeded inside the loop yields success=False, not a crash."""
+    """A GitCommitBudgetExceeded inside the loop yields success=False, not a crash.
+
+    pydantic-ai's iter() is an @asynccontextmanager that records the node error and
+    re-raises it from its own __aexit__, even when the body already handled it. This
+    fake reproduces that teardown re-raise so a handler placed inside the async with
+    block (which the contextmanager re-raise discards) fails this test, while a
+    handler wrapping the async with block passes it.
+    """
 
     class _FakeRun:
+        _node_error: BaseException | None = None
+
         async def __aenter__(self) -> "_FakeRun":
             return self
 
-        async def __aexit__(self, *args: object) -> bool:
+        async def __aexit__(
+            self, exc_type: object, exc: BaseException | None, tb: object
+        ) -> bool:
+            if self._node_error is not None:
+                raise self._node_error
             return False
 
         def __aiter__(self) -> "_FakeRun":
             return self
 
         async def __anext__(self) -> object:
-            raise GitCommitBudgetExceeded("commit_files call budget of 1 exhausted")
+            self._node_error = GitCommitBudgetExceeded(
+                "commit_files call budget of 1 exhausted"
+            )
+            raise self._node_error
 
         def all_messages(self) -> list[object]:
             return []

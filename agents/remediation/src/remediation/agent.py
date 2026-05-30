@@ -218,32 +218,32 @@ async def run_remediation(
         f"source_branch = {source_branch}."
         f"{constraint_block}"
     )
-    async with remediation_agent.iter(
-        task,
-        deps=deps,
-        toolsets=toolsets,
-        usage_limits=UsageLimits(request_limit=REMEDIATION_REQUEST_LIMIT),
-        model=model,
-    ) as agent_run:
-        try:
+    try:
+        async with remediation_agent.iter(
+            task,
+            deps=deps,
+            toolsets=toolsets,
+            usage_limits=UsageLimits(request_limit=REMEDIATION_REQUEST_LIMIT),
+            model=model,
+        ) as agent_run:
             async for _ in agent_run:
                 pass
-        except GitCommitBudgetExceeded:
-            if run_id:
-                partial_msgs = agent_run.all_messages()
-                if partial_msgs:
-                    trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
-            budget_refused = RemediationResult(
-                success=False,
-                actions_taken=["commit_budget_exceeded"],
-                tool_calls_count=0,
-                destructive_repair=False,
-            )
-            return budget_refused, agent_run.usage, agent_run.all_messages()
-        except (UnexpectedModelBehavior, UsageLimitExceeded):
-            if run_id:
-                partial_msgs = agent_run.all_messages()
-                if partial_msgs:
-                    trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
-            raise
+    except GitCommitBudgetExceeded:
+        if run_id:
+            partial_msgs = agent_run.all_messages()
+            if partial_msgs:
+                trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        budget_refused = RemediationResult(
+            success=False,
+            actions_taken=["commit_budget_exceeded"],
+            tool_calls_count=0,
+            destructive_repair=False,
+        )
+        return budget_refused, agent_run.usage, agent_run.all_messages()
+    except (UnexpectedModelBehavior, UsageLimitExceeded):
+        if run_id:
+            partial_msgs = agent_run.all_messages()
+            if partial_msgs:
+                trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        raise
     return agent_run.result.output, agent_run.usage, agent_run.all_messages()
