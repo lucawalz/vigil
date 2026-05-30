@@ -7,6 +7,7 @@ via EVAL_RUNS_DIR env override.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -24,6 +25,7 @@ os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 from diagnosis.models import DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
+    _RUN_LOCK,
     _issue_rollback,
     _score_diagnosis_accuracy,
     build_run_id,
@@ -532,6 +534,46 @@ def _run_orch_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
     )
+
+
+async def test_concurrent_run_orchestration_calls_do_not_overlap(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _run_orch_setup(monkeypatch, tmp_path)
+    active = 0
+    max_active = 0
+
+    async def _diagnosis_with_overlap_check(*_args, **_kwargs):
+        nonlocal active, max_active
+        assert _RUN_LOCK.locked()
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0)
+        active -= 1
+        return (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+
+    monkeypatch.setattr(
+        orch_mod, "run_diagnosis", AsyncMock(side_effect=_diagnosis_with_overlap_check)
+    )
+
+    async def _launch():
+        return await run_orchestration(
+            sample_fault_event,
+            kubectl_mcp=mock_kubectl_mcp,
+            flux_mcp=mock_flux_mcp,
+            nixos_mcp=mock_nixos_mcp,
+            git_mcp=mock_git_mcp,
+        )
+
+    records = await asyncio.gather(_launch(), _launch())
+    assert max_active == 1
+    assert all(isinstance(r, RunRecord) for r in records)
 
 
 async def test_run_record_has_actions_taken_populated(

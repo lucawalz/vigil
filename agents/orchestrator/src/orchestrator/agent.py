@@ -53,6 +53,8 @@ _MAX_DIAGNOSIS_ATTEMPTS = 3
 
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
+_RUN_LOCK = asyncio.Lock()
+
 
 class _CircuitBreaker:
     """Counts consecutive failed MCP tool calls in a run; trips at the threshold.
@@ -356,6 +358,31 @@ async def _dispatch_remediation_and_watchdog(
 
 
 async def run_orchestration(
+    event: FaultEvent,
+    kubectl_mcp: MCPServerStdio,
+    flux_mcp: MCPServerStdio,
+    nixos_mcp: MCPServerStdio,
+    git_mcp: MCPServerStdio,
+    *,
+    scenario: str = "k8s-1",
+    seed: int | None = None,
+    model_name: str | None = None,
+) -> RunRecord:
+    """Serialize orchestration runs behind the single-flight lock."""
+    async with _RUN_LOCK:
+        return await _run_orchestration(
+            event,
+            kubectl_mcp,
+            flux_mcp,
+            nixos_mcp,
+            git_mcp,
+            scenario=scenario,
+            seed=seed,
+            model_name=model_name,
+        )
+
+
+async def _run_orchestration(
     event: FaultEvent,
     kubectl_mcp: MCPServerStdio,
     flux_mcp: MCPServerStdio,
