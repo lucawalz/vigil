@@ -1260,3 +1260,62 @@ def test_build_user_message_without_hint_has_no_retry_block() -> None:
     )
     assert "Retry signal:" not in msg
     assert msg.startswith("Diagnose fault.")
+
+
+async def test_run_diagnosis_converts_budget_abort_despite_aexit_remask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Budget exhaustion must surface as DiagnosisRequestBudgetExceeded.
+
+    Reproduces the field failure: pydantic-ai's iterator context manager re-raises
+    the original UsageLimitExceeded from __aexit__, which would mask the converted
+    DiagnosisRequestBudgetExceeded if the conversion ran inside the async with.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from diagnosis.models import DiagnosisRequestBudgetExceeded
+    from pydantic_ai.exceptions import UsageLimitExceeded
+    from pydantic_ai.usage import RunUsage
+
+    monkeypatch.setattr(_diag_module.trace, "write_trace", lambda *a, **k: None)
+
+    limit_exc = UsageLimitExceeded("request_limit (25) exceeded")
+
+    class _FakeAgentRun:
+        usage = RunUsage(input_tokens=10, output_tokens=2)
+
+        def all_messages(self):
+            return ["partial"]
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise limit_exc
+
+    class _FakeIterCM:
+        def __init__(self) -> None:
+            self._run = _FakeAgentRun()
+
+        async def __aenter__(self):
+            return self._run
+
+        async def __aexit__(self, exc_type, exc, tb):
+            raise limit_exc
+
+    monkeypatch.setattr(
+        _diag_module.diagnosis_agent,
+        "iter",
+        MagicMock(return_value=_FakeIterCM()),
+    )
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=AsyncMock(),
+        nixos_mcp=AsyncMock(),
+        git_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+    )
+
+    with pytest.raises(DiagnosisRequestBudgetExceeded):
+        await run_diagnosis(deps, _canned_fault_for_msg(), _canned_context_for_msg())

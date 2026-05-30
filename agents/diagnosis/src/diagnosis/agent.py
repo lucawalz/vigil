@@ -317,24 +317,24 @@ async def run_diagnosis(
             f"set recommended_action=escalate."
         )
     user_message = _build_user_message(fault, context, retry_hint) + constraint_block
-    async with diagnosis_agent.iter(
-        user_message,
-        deps=deps,
-        toolsets=toolsets,
-        usage_limits=UsageLimits(request_limit=DIAGNOSIS_REQUEST_LIMIT),
-        model=model,
-    ) as agent_run:
-        try:
+    try:
+        async with diagnosis_agent.iter(
+            user_message,
+            deps=deps,
+            toolsets=toolsets,
+            usage_limits=UsageLimits(request_limit=DIAGNOSIS_REQUEST_LIMIT),
+            model=model,
+        ) as agent_run:
             async for _ in agent_run:
                 pass
-        except UnexpectedModelBehavior:
-            partial_msgs = agent_run.all_messages()
-            if partial_msgs:
-                trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
-            raise
-        except UsageLimitExceeded as exc:
-            partial_msgs = agent_run.all_messages()
-            if partial_msgs:
-                trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
-            raise DiagnosisRequestBudgetExceeded(agent_run.usage, partial_msgs) from exc
+    except UnexpectedModelBehavior:
+        partial_msgs = agent_run.all_messages()
+        if partial_msgs:
+            trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
+        raise
+    except UsageLimitExceeded as exc:
+        partial_msgs = agent_run.all_messages()
+        if partial_msgs:
+            trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
+        raise DiagnosisRequestBudgetExceeded(agent_run.usage, partial_msgs) from exc
     return agent_run.result.output, agent_run.usage, agent_run.all_messages()
