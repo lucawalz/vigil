@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import subprocess
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,6 +51,7 @@ _POST_REMEDIATION_SETTLE_S: float = float(
     os.environ.get("POST_REMEDIATION_SETTLE_S", "60")
 )
 _MAX_DIAGNOSIS_ATTEMPTS = 3
+_RUN_ID_SUFFIX_LEN = 8
 
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
@@ -132,12 +134,14 @@ def build_run_id(
 
     When `seed` is None — as for raw Alertmanager webhooks routed through
     `/webhook` without a `?seed=` query parameter — fall back to a UTC
-    timestamp so the run_id remains unique across concurrent webhook deliveries.
+    timestamp plus a random suffix so the run_id stays unique even for
+    sub-second concurrent webhook deliveries.
     """
     if seed is not None:
         seed_str = str(seed)
     else:
-        seed_str = f"seed-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        seed_str = f"seed-{timestamp}-{uuid.uuid4().hex[:_RUN_ID_SUFFIX_LEN]}"
     sha7 = os.environ.get("GIT_SHA7", "").strip()
     if not sha7:
         try:
@@ -367,6 +371,7 @@ async def run_orchestration(
     scenario: str = "k8s-1",
     seed: int | None = None,
     model_name: str | None = None,
+    run_id: str | None = None,
 ) -> RunRecord:
     """Serialize orchestration runs behind the single-flight lock."""
     async with _RUN_LOCK:
@@ -379,6 +384,7 @@ async def run_orchestration(
             scenario=scenario,
             seed=seed,
             model_name=model_name,
+            run_id=run_id,
         )
 
 
@@ -392,10 +398,12 @@ async def _run_orchestration(
     scenario: str = "k8s-1",
     seed: int | None = None,
     model_name: str | None = None,
+    run_id: str | None = None,
 ) -> RunRecord:
     """Drive up to _MAX_DIAGNOSIS_ATTEMPTS diagnosis-remediation-verification cycles."""
     model_name = model_name or os.environ.get("LLM_MODEL_NAME", "unknown")
-    run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
+    derived_run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
+    run_id = run_id or derived_run_id
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()

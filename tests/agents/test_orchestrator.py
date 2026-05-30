@@ -355,7 +355,7 @@ async def test_run_orchestration_run_id_format(
         git_mcp=mock_git_mcp,
         model_name="test-model",
     )
-    pattern = r"^k8s-1_seed-\d{8}T\d{6}Z_test-model_[0-9a-f]{7}$"
+    pattern = r"^k8s-1_seed-\d{8}T\d{6}Z-[a-f0-9]{8}_test-model_[0-9a-f]{7}$"
     assert re.match(pattern, record.run_id), (
         f"run_id {record.run_id!r} does not match expected pattern"
     )
@@ -375,7 +375,19 @@ def test_build_run_id_seed_kwarg_is_stringified() -> None:
 def test_build_run_id_seed_none_falls_back_to_timestamp() -> None:
     _, seed_str, _ = build_run_id("k8s-1", "m1")
     assert seed_str.startswith("seed-")
-    assert re.match(r"^seed-\d{8}T\d{6}Z$", seed_str), seed_str
+    assert re.match(r"^seed-\d{8}T\d{6}Z-[a-f0-9]{8}$", seed_str), seed_str
+
+
+def test_build_run_id_seeded_format_is_stable() -> None:
+    first = build_run_id("k8s-1", "claude-sonnet-4-6", seed=3)
+    second = build_run_id("k8s-1", "claude-sonnet-4-6", seed=3)
+    assert first == second
+
+
+def test_build_run_id_seedless_runs_are_distinct() -> None:
+    first_id, _, _ = build_run_id("k8s-1", "m1")
+    second_id, _, _ = build_run_id("k8s-1", "m1")
+    assert first_id != second_id
 
 
 def _make_run_record(**overrides) -> RunRecord:
@@ -574,6 +586,7 @@ async def test_concurrent_run_orchestration_calls_do_not_overlap(
     records = await asyncio.gather(_launch(), _launch())
     assert max_active == 1
     assert all(isinstance(r, RunRecord) for r in records)
+    assert records[0].run_id != records[1].run_id
 
 
 async def test_run_record_has_actions_taken_populated(

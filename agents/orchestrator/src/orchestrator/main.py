@@ -152,6 +152,7 @@ async def webhook(
             scenario=scenario,
             seed=seed,
             model_name=model_name,
+            run_id=run_id,
         )
     )
     _active_tasks.add(task)
