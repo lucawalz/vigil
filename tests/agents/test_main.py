@@ -95,6 +95,36 @@ def test_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     return new_app
 
 
+async def test_healthz_returns_ok_with_detection_fields(test_app: FastAPI) -> None:
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.get("/healthz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["detection"] == "ok"
+    assert body["consecutive_failures"] == 0
+    assert body["last_success_at"] is None
+
+
+async def test_healthz_reports_degraded_when_poller_unhealthy(
+    test_app: FastAPI,
+) -> None:
+    from common.constants import POLLER_UNHEALTHY_AFTER
+
+    test_app.state.poller_health = {
+        "consecutive_failures": POLLER_UNHEALTHY_AFTER,
+        "last_success_at": "2026-05-30T00:00:00Z",
+    }
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.get("/healthz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["detection"] == "degraded"
+    assert body["consecutive_failures"] == POLLER_UNHEALTHY_AFTER
+
+
 async def test_webhook_rejects_missing_auth(test_app: FastAPI) -> None:
     transport = httpx.ASGITransport(app=test_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

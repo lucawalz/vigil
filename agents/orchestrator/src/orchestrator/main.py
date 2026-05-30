@@ -6,6 +6,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncIterator
 
+from common.constants import POLLER_UNHEALTHY_AFTER
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_ai.mcp import MCPServerStdio
@@ -113,8 +114,16 @@ _active_tasks: set[asyncio.Task] = set()
 
 
 @app.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+async def healthz(request: Request) -> dict[str, object]:
+    health = getattr(request.app.state, "poller_health", None) or {}
+    consecutive_failures = health.get("consecutive_failures", 0)
+    detection = "degraded" if consecutive_failures >= POLLER_UNHEALTHY_AFTER else "ok"
+    return {
+        "status": "ok",
+        "detection": detection,
+        "consecutive_failures": consecutive_failures,
+        "last_success_at": health.get("last_success_at"),
+    }
 
 
 @app.post("/webhook", dependencies=[Depends(_check_auth)])

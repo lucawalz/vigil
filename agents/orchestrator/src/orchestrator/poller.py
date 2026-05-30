@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime, timezone
 
 import httpx
 
@@ -13,6 +14,21 @@ from .models import FaultEvent
 log = logging.getLogger("vigil.orchestrator.poller")
 
 _DEFAULT_PROM_URL = "http://10.0.0.10:9090"
+
+_AUTH_FAILURE_STATUSES = frozenset({401, 403})
+
+
+def _init_poller_health(app) -> dict:
+    health = {"consecutive_failures": 0, "last_success_at": None}
+    app.state.poller_health = health
+    return health
+
+
+def _is_auth_failure(exc: Exception) -> bool:
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and exc.response.status_code in _AUTH_FAILURE_STATUSES
+    )
 
 
 def log_task_exception(task: asyncio.Task, logger: logging.Logger) -> None:
@@ -63,6 +79,7 @@ async def prometheus_poller(app) -> None:
     model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
     handled: dict[str, float] = {}
     _active_tasks: set[asyncio.Task] = set()
+    health = _init_poller_health(app)
 
     async with httpx.AsyncClient() as client:
         while True:
@@ -75,8 +92,17 @@ async def prometheus_poller(app) -> None:
                 r.raise_for_status()
                 alerts = r.json().get("data", {}).get("alerts", [])
             except Exception as exc:
-                log.warning("poller: prometheus query failed: %s", exc)
+                health["consecutive_failures"] += 1
+                if _is_auth_failure(exc):
+                    log.error("poller: prometheus query rejected (auth): %s", exc)
+                else:
+                    log.warning("poller: prometheus query failed: %s", exc)
                 continue
+
+            health["consecutive_failures"] = 0
+            health["last_success_at"] = datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
 
             for alert in alerts:
                 if alert.get("state") != "firing":

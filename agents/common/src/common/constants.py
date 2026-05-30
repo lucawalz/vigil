@@ -22,6 +22,8 @@ CONFIDENCE_REVIEW_THRESHOLD: float = float(
     os.environ.get("CONFIDENCE_REVIEW_THRESHOLD", "0.4")
 )
 
+POLLER_UNHEALTHY_AFTER: int = int(os.environ.get("POLLER_UNHEALTHY_AFTER", "5"))
+
 _DEFAULT_PROTECTED_BRANCHES = "main,master"
 
 PROTECTED_BRANCHES: frozenset[str] = frozenset(
