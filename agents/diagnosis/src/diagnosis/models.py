@@ -5,9 +5,20 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.usage import RunUsage
 
 _LIVE_ONLY = {"flux_reconcile", "nixos_rebuild"}
 _DECLARED = {"git_commit_k8s", "git_commit_nix"}
+
+
+class DiagnosisRequestBudgetExceeded(Exception):
+    """Diagnosis exhausted its model-request budget before producing a report."""
+
+    def __init__(self, usage: RunUsage, messages: list[ModelMessage]) -> None:
+        super().__init__("diagnosis request budget exceeded")
+        self.usage = usage
+        self.messages = messages
 
 
 class DiagnosisReport(BaseModel):

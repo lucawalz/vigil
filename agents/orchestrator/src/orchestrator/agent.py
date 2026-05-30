@@ -15,14 +15,14 @@ from common.constants import (
 )
 from common.mcp_call import call_tool
 from common.provider import build_model
-from diagnosis.agent import run_diagnosis
+from diagnosis.agent import DIAGNOSIS_REQUEST_LIMIT, run_diagnosis
 from diagnosis.context import (
     ManifestPathUnresolvable,
     ResourceKindUnresolvable,
     build_diagnosis_context,
     extract_alert_namespace,
 )
-from diagnosis.models import DiagnosisDeps
+from diagnosis.models import DiagnosisDeps, DiagnosisRequestBudgetExceeded
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.messages import ModelMessage
@@ -393,8 +393,8 @@ async def run_orchestration(
             destructive_repair=destructive_repair,
             rollback_triggered=rollback_triggered,
             rollback_success=rollback_success,
-            total_input_tokens=0,
-            total_output_tokens=0,
+            total_input_tokens=total_usage.input_tokens or 0,
+            total_output_tokens=total_usage.output_tokens or 0,
             total_tool_calls=total_tool_calls,
             iteration_count=iteration_count,
             autonomy_level="full",
@@ -483,6 +483,20 @@ async def run_orchestration(
                         "run %s aborted: retry_exhausted:diagnosis: %s", run_id, exc
                     )
                     record = _abort_record(f"retry_exhausted:diagnosis: {exc}")
+                    _write_run_record(record)
+                    return record
+                except DiagnosisRequestBudgetExceeded as exc:
+                    total_usage = total_usage + exc.usage
+                    total_tool_calls += _count_tool_calls(exc.messages)
+                    iteration_count = attempts_count
+                    log.error(
+                        "run %s aborted: diagnosis_request_limit_%d",
+                        run_id,
+                        DIAGNOSIS_REQUEST_LIMIT,
+                    )
+                    record = _abort_record(
+                        f"diagnosis_request_limit_{DIAGNOSIS_REQUEST_LIMIT}"
+                    )
                     _write_run_record(record)
                     return record
 
@@ -734,7 +748,7 @@ async def run_orchestration(
         _write_run_record(record)
         return record
     except UsageLimitExceeded:
-        log.exception("run %s aborted: iteration_limit_20", run_id)
+        log.exception("run %s aborted: usage_limit_exceeded", run_id)
         ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         record = RunRecord(
             run_id=run_id,

@@ -13,7 +13,7 @@ from common.constants import (
 from common.provider import build_model
 from common.toolset_guards import Breaker, CircuitBreakerToolset
 from pydantic_ai import Agent
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
@@ -21,7 +21,9 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from .context import DiagnosisContext
 from .manifest_paths import lookup_os_manifest_path as _lookup_os_manifest_path
-from .models import DiagnosisDeps, DiagnosisReport
+from .models import DiagnosisDeps, DiagnosisReport, DiagnosisRequestBudgetExceeded
+
+DIAGNOSIS_REQUEST_LIMIT: int = int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "40"))
 
 if TYPE_CHECKING:
     from orchestrator.models import FaultEvent
@@ -319,9 +321,7 @@ async def run_diagnosis(
         user_message,
         deps=deps,
         toolsets=toolsets,
-        usage_limits=UsageLimits(
-            request_limit=int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
-        ),
+        usage_limits=UsageLimits(request_limit=DIAGNOSIS_REQUEST_LIMIT),
         model=model,
     ) as agent_run:
         try:
@@ -332,4 +332,9 @@ async def run_diagnosis(
             if partial_msgs:
                 trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
             raise
+        except UsageLimitExceeded as exc:
+            partial_msgs = agent_run.all_messages()
+            if partial_msgs:
+                trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
+            raise DiagnosisRequestBudgetExceeded(agent_run.usage, partial_msgs) from exc
     return agent_run.result.output, agent_run.usage, agent_run.all_messages()
