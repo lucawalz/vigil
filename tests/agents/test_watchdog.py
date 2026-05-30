@@ -17,7 +17,12 @@ from watchdog.agent import (
     capture_health_snapshot,
     run_watchdog,
 )
-from watchdog.models import HealthSnapshot, WatchdogDeps, WatchdogResult
+from watchdog.models import (
+    HealthSnapshot,
+    HealthSnapshotUnavailable,
+    WatchdogDeps,
+    WatchdogResult,
+)
 
 
 def _snap(ready: int, total: int, healthy: bool) -> HealthSnapshot:
@@ -172,7 +177,7 @@ async def test_health_degraded_detects_flux_not_ready() -> None:
     assert _health_degraded(baseline, current) is True
 
 
-async def test_flux_mcp_error_sets_flux_ready_false() -> None:
+async def test_flux_mcp_error_leaves_flux_ready_unknown() -> None:
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": "pod/a Running"})
     mock_flux = AsyncMock()
@@ -181,7 +186,7 @@ async def test_flux_mcp_error_sets_flux_ready_false() -> None:
 
     snap = await capture_health_snapshot(deps)
 
-    assert snap.flux_ready is False
+    assert snap.flux_ready is None
     baseline = HealthSnapshot(
         ready_pods=1,
         total_pods=1,
@@ -189,4 +194,33 @@ async def test_flux_mcp_error_sets_flux_ready_false() -> None:
         flux_ready=True,
         captured_at="2026-05-24T10:00:00Z",
     )
-    assert _health_degraded(baseline, snap) is True
+    assert _health_degraded(baseline, snap) is False
+
+
+async def test_parse_pod_counts_raises_on_unrecognised_shape() -> None:
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": 42})
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    deps = WatchdogDeps(kubectl_mcp=mock_kubectl, flux_mcp=mock_flux)
+
+    with pytest.raises(HealthSnapshotUnavailable):
+        await capture_health_snapshot(deps)
+
+
+async def test_run_watchdog_not_degraded_when_window_indeterminate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.05)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 0.3)
+
+    mock = AsyncMock()
+    mock.direct_call_tool = AsyncMock(return_value={"content": 42})  # unparseable
+    mock_flux = AsyncMock()
+    mock_flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    deps = WatchdogDeps(kubectl_mcp=mock, flux_mcp=mock_flux)
+    baseline = _snap(3, 3, True)
+
+    result = await run_watchdog(deps, baseline)
+
+    assert result.degraded is False

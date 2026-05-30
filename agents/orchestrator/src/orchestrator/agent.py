@@ -32,7 +32,7 @@ from pydantic_ai.usage import RunUsage
 from remediation.agent import run_remediation
 from remediation.models import RemediationDeps
 from watchdog.agent import capture_health_snapshot, run_watchdog
-from watchdog.models import WatchdogDeps
+from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps
 
 from .models import CircuitBreakerTripped, FaultEvent, RunRecord
 
@@ -462,7 +462,13 @@ async def run_orchestration(
 
     try:
         async with asyncio.timeout(ORCHESTRATOR_RUN_TIMEOUT_S):
-            baseline = await capture_health_snapshot(watchdog_deps)
+            try:
+                baseline = await capture_health_snapshot(watchdog_deps)
+            except HealthSnapshotUnavailable as exc:
+                log.warning("run %s: baseline unavailable: %s", run_id, exc)
+                record = _abort_record("baseline_unavailable")
+                _write_run_record(record)
+                return record
 
             retry_hint: str | None = None
             last_report = None

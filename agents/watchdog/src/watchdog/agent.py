@@ -23,7 +23,12 @@ from datetime import datetime, timezone
 from common.flux_status import extract_mcp_text, parse_kust_text
 from common.mcp_call import call_tool
 
-from .models import HealthSnapshot, WatchdogDeps, WatchdogResult
+from .models import (
+    HealthSnapshot,
+    HealthSnapshotUnavailable,
+    WatchdogDeps,
+    WatchdogResult,
+)
 
 log = logging.getLogger(__name__)
 
@@ -45,8 +50,9 @@ def _parse_pod_counts(tool_output: object) -> tuple[int, int]:
     """Extract (ready_pods, total_pods) from a kubectl-mcp get_pods response.
 
     Accepts a dict with a "content" key (string or list) or a bare string/list.
-    Falls back to (0, 0) on unrecognised shapes so the poll loop records a
-    degraded-looking state rather than crashing.
+    Raises HealthSnapshotUnavailable on unrecognised shapes: returning (0, 0)
+    would let a transient or malformed response masquerade as zero ready pods,
+    poisoning the baseline or fabricating degradation mid-poll.
     """
     if isinstance(tool_output, dict):
         content: object = tool_output.get("content", tool_output)
@@ -68,7 +74,9 @@ def _parse_pod_counts(tool_output: object) -> tuple[int, int]:
         )
         return ready, total
 
-    return 0, 0
+    raise HealthSnapshotUnavailable(
+        f"unrecognised get_pods response shape: {type(content).__name__}"
+    )
 
 
 async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
@@ -94,7 +102,7 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
         flux_ready = kust_data.get("ready") == "True"
     except (RuntimeError, ValueError, AttributeError, TimeoutError) as exc:
         log.warning("flux kustomization status unavailable: %s", exc)
-        flux_ready = False
+        flux_ready = None
 
     return HealthSnapshot(
         ready_pods=ready,
@@ -129,13 +137,20 @@ async def run_watchdog(deps: WatchdogDeps, baseline: HealthSnapshot) -> Watchdog
     Returns WatchdogResult(degraded=True, snapshot=<first degraded obs>) on
     first detected degradation, or WatchdogResult(degraded=False,
     snapshot=<last obs>) if the deadline is reached without degradation.
-    No rollback action is taken here -- the Orchestrator decides.
+    An indeterminate read (HealthSnapshotUnavailable) skips that poll rather
+    than fabricating a rollback; a fully indeterminate window yields
+    degraded=False. No rollback action is taken here -- the Orchestrator decides.
     """
     loop = asyncio.get_event_loop()
     deadline = loop.time() + WINDOW_S
     current = baseline
     while loop.time() < deadline:
-        current = await capture_health_snapshot(deps)
+        try:
+            current = await capture_health_snapshot(deps)
+        except HealthSnapshotUnavailable as exc:
+            log.warning("watchdog poll indeterminate, skipping: %s", exc)
+            await asyncio.sleep(POLL_INTERVAL_S)
+            continue
         if _health_degraded(baseline, current):
             return WatchdogResult(degraded=True, snapshot=current)
         await asyncio.sleep(POLL_INTERVAL_S)

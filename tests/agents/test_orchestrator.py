@@ -162,6 +162,45 @@ async def test_run_orchestration_happy_path(
     assert json.loads(index_lines[0])["run_id"] == record.run_id
 
 
+async def test_run_orchestration_aborts_on_indeterminate_baseline(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from watchdog.models import HealthSnapshotUnavailable
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    run_watchdog_mock = AsyncMock(return_value=_watchdog_ok())
+    run_diagnosis_mock = AsyncMock()
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(side_effect=HealthSnapshotUnavailable("unparseable get_pods")),
+    )
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "abort"
+    assert record.success_rate is False
+    assert record.setup_error == "baseline_unavailable"
+    run_diagnosis_mock.assert_not_awaited()
+    run_watchdog_mock.assert_not_awaited()
+    written = (tmp_path / "runs" / f"{record.run_id}.json").read_text()
+    assert json.loads(written)["setup_error"] == "baseline_unavailable"
+
+
 async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
@@ -716,6 +755,11 @@ async def test_abort_record_preserves_setup_error_reason(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
     monkeypatch.setattr(
         orch_mod,
         "run_diagnosis",
@@ -1603,6 +1647,11 @@ async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
     from diagnosis.context import ManifestPathUnresolvable
 
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
     run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), RunUsage(), []))
     monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
     monkeypatch.setattr(
@@ -1635,6 +1684,11 @@ async def test_orchestrator_escalates_on_resource_kind_unresolvable(
     from diagnosis.context import ResourceKindUnresolvable
 
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
     run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), RunUsage(), []))
     monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
     monkeypatch.setattr(

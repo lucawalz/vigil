@@ -7,6 +7,15 @@ from pydantic import BaseModel
 from pydantic_ai.mcp import MCPServerStdio
 
 
+class HealthSnapshotUnavailable(RuntimeError):
+    """Health could not be determined from a tool response.
+
+    Raised when pod counts cannot be parsed from an unrecognised tool-output
+    shape, so callers treat the read as indeterminate rather than as zero
+    ready pods.
+    """
+
+
 class HealthSnapshot(BaseModel):
     """Pre-remediation baseline + each poll iteration."""
 

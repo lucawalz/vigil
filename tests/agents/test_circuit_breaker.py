@@ -30,6 +30,16 @@ from common.toolset_guards import CircuitBreakerToolset
 from orchestrator import agent as orch_mod
 from orchestrator.agent import _CircuitBreaker, run_orchestration
 from orchestrator.models import CircuitBreakerTripped, FaultEvent
+from watchdog.models import HealthSnapshot
+
+
+def _baseline_snapshot() -> HealthSnapshot:
+    return HealthSnapshot(
+        ready_pods=3,
+        total_pods=3,
+        endpoints_healthy=True,
+        captured_at="2026-04-18T10:00:00Z",
+    )
 
 
 def test_circuit_breaker_does_not_trip_before_three_errors() -> None:
@@ -182,6 +192,11 @@ async def test_run_orchestration_abort_on_diagnosis_budget_records_real_metrics(
     from pydantic_ai.usage import RunUsage
 
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_baseline_snapshot()),
+    )
     monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
 
     usage = RunUsage(input_tokens=1234, output_tokens=567)
@@ -222,6 +237,11 @@ async def test_run_orchestration_abort_on_unexpected_model_behavior(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_baseline_snapshot()),
+    )
     monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
     monkeypatch.setattr(
         orch_mod,
@@ -252,6 +272,11 @@ async def test_run_orchestration_abort_on_circuit_breaker_tripped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_baseline_snapshot()),
+    )
     monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
     monkeypatch.setattr(
         orch_mod,
@@ -279,6 +304,11 @@ async def test_run_orchestration_aborts_when_wired_breaker_trips(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_baseline_snapshot()),
+    )
     monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
 
     failing_tool = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
