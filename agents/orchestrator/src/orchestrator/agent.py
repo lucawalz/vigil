@@ -10,6 +10,8 @@ from pathlib import Path
 from common import trace
 from common.constants import (
     CIRCUIT_BREAKER_THRESHOLD,
+    CONFIDENCE_AUTO_THRESHOLD,
+    CONFIDENCE_REVIEW_THRESHOLD,
     GIT_COMMIT_BUDGET,
     WATCHDOG_NAMESPACE,
 )
@@ -49,6 +51,8 @@ _POST_REMEDIATION_SETTLE_S: float = float(
 )
 _MAX_DIAGNOSIS_ATTEMPTS = 3
 
+_GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
+
 
 class _CircuitBreaker:
     """Counts consecutive failed MCP tool calls in a run; trips at the threshold.
@@ -76,6 +80,25 @@ class _CircuitBreaker:
     @property
     def consecutive(self) -> int:
         return self._consecutive
+
+
+def _confidence_tier(report) -> str:
+    """Map a DiagnosisReport onto a deterministic remediation tier.
+
+    Returns 'auto' (high confidence: dispatch and merge automatically),
+    'review' (medium confidence on a git-commit action: open a PR for a human
+    to merge), or 'escalate' (low confidence, or medium confidence on a
+    non-git action that has no PR to hold). The thresholds are structural and
+    never decided by the model.
+    """
+    if report.confidence >= CONFIDENCE_AUTO_THRESHOLD:
+        return "auto"
+    if (
+        report.confidence >= CONFIDENCE_REVIEW_THRESHOLD
+        and report.recommended_action in _GIT_COMMIT_ACTIONS
+    ):
+        return "review"
+    return "escalate"
 
 
 def _count_tool_calls(msgs: list[ModelMessage]) -> int:
@@ -405,6 +428,34 @@ async def run_orchestration(
             attempts=attempts_count,
         )
 
+    def _escalate_record(_report, _diag_msgs, _iteration_count: int) -> RunRecord:
+        mttr_s = asyncio.get_event_loop().time() - t0
+        ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return RunRecord(
+            run_id=run_id,
+            scenario=scenario,
+            seed=seed_str,
+            model=model_name,
+            git_sha7=sha7,
+            started_at=started_at,
+            ended_at=ended_at,
+            outcome="escalated",
+            success_rate=None,
+            diagnosis_accuracy=_score_diagnosis_accuracy(scenario, _report),
+            MTTR_s=mttr_s,
+            destructive_repair=False,
+            rollback_triggered=False,
+            rollback_success=None,
+            total_input_tokens=total_usage.input_tokens or 0,
+            total_output_tokens=total_usage.output_tokens or 0,
+            total_tool_calls=_count_tool_calls(_diag_msgs),
+            iteration_count=_iteration_count,
+            autonomy_level="full",
+            actions_taken=[],
+            model_version=model_name,
+            attempts=attempts_count,
+        )
+
     total_usage = RunUsage()
 
     log.info("run %s started (scenario=%s model=%s)", run_id, scenario, model_name)
@@ -544,33 +595,20 @@ async def run_orchestration(
                 iteration_count += 1
 
                 if report.recommended_action == "escalate":
-                    mttr_s = asyncio.get_event_loop().time() - t0
-                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    record = RunRecord(
-                        run_id=run_id,
-                        scenario=scenario,
-                        seed=seed_str,
-                        model=model_name,
-                        git_sha7=sha7,
-                        started_at=started_at,
-                        ended_at=ended_at,
-                        outcome="escalated",
-                        success_rate=None,
-                        diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
-                        MTTR_s=mttr_s,
-                        destructive_repair=False,
-                        rollback_triggered=False,
-                        rollback_success=None,
-                        total_input_tokens=total_usage.input_tokens or 0,
-                        total_output_tokens=total_usage.output_tokens or 0,
-                        total_tool_calls=_count_tool_calls(diag_msgs),
-                        iteration_count=iteration_count,
-                        autonomy_level="full",
-                        actions_taken=[],
-                        model_version=model_name,
-                        attempts=attempts_count,
-                    )
+                    record = _escalate_record(report, diag_msgs, iteration_count)
                     log.info("run %s finished outcome=escalated", run_id)
+                    _write_run_record(record)
+                    return record
+
+                tier = _confidence_tier(report)
+                if tier == "escalate":
+                    record = _escalate_record(report, diag_msgs, iteration_count)
+                    log.info(
+                        "run %s finished outcome=escalated (confidence=%.2f action=%s)",
+                        run_id,
+                        report.confidence,
+                        report.recommended_action,
+                    )
                     _write_run_record(record)
                     return record
 
@@ -587,6 +625,65 @@ async def run_orchestration(
                         run_id,
                         exc,
                     )
+
+                if tier == "review":
+                    async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+                        (
+                            remediation_result,
+                            rem_usage,
+                            rem_msgs,
+                        ) = await run_remediation(
+                            remediation_deps,
+                            report,
+                            source_branch=base_branch,
+                            model=model,
+                            run_id=run_id,
+                            blocked_tools=blocked,
+                            breaker=breaker,
+                            require_human_review=True,
+                        )
+                    total_usage = total_usage + rem_usage
+                    trace.log_messages(run_id, "remediation", rem_msgs)
+                    trace.write_trace(run_id, "remediation", rem_msgs)
+                    mttr_s = asyncio.get_event_loop().time() - t0
+                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    record = RunRecord(
+                        run_id=run_id,
+                        scenario=scenario,
+                        seed=seed_str,
+                        model=model_name,
+                        git_sha7=sha7,
+                        started_at=started_at,
+                        ended_at=ended_at,
+                        outcome="awaiting_human_review",
+                        success_rate=False,
+                        diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
+                        MTTR_s=mttr_s,
+                        destructive_repair=remediation_result.destructive_repair,
+                        rollback_triggered=False,
+                        rollback_success=None,
+                        total_input_tokens=total_usage.input_tokens or 0,
+                        total_output_tokens=total_usage.output_tokens or 0,
+                        total_tool_calls=_count_tool_calls(diag_msgs)
+                        + _count_tool_calls(rem_msgs),
+                        iteration_count=iteration_count,
+                        autonomy_level="full",
+                        actions_taken=_extract_tool_names(rem_msgs),
+                        model_version=model_name,
+                        agent_branch=remediation_result.agent_branch,
+                        agent_commits=remediation_result.agent_commits,
+                        gate_status=remediation_result.gate_status,
+                        attempts=attempts_count,
+                    )
+                    log.info(
+                        "run %s finished outcome=awaiting_human_review "
+                        "(confidence=%.2f action=%s)",
+                        run_id,
+                        report.confidence,
+                        report.recommended_action,
+                    )
+                    _write_run_record(record)
+                    return record
 
                 try:
                     (

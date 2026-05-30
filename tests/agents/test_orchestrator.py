@@ -2007,3 +2007,157 @@ async def test_gate_failed_does_not_retry(
     assert record.outcome == "gate_failed"
     assert record.attempts == 1
     assert run_diagnosis_mock.call_count == 1
+
+
+def _confidence_report(action: str, confidence: float) -> DiagnosisReport:
+    is_git = action in {"git_commit_k8s", "git_commit_nix"}
+    return DiagnosisReport(
+        root_cause="confidence-gated fault",
+        root_cause_component="vigil-app",
+        severity="high",
+        affected_resources=["default/vigil-app"],
+        evidence="evidence",
+        drift_classification=_ACTION_DRIFT[action],
+        recommended_action=action,
+        confidence=confidence,
+        target_host=(
+            "worker-1" if action in {"nixos_rebuild", "git_commit_nix"} else None
+        ),
+        manifest_path="apps/vigil-app.yaml" if is_git else None,
+        patch_body="apiVersion: apps/v1\n" if is_git else None,
+    )
+
+
+def _gate_setup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    report: DiagnosisReport,
+    remediation_result: RemediationResult,
+) -> AsyncMock:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.delenv("GIT_SHA7", raising=False)
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
+    diag_rv = (report, RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (remediation_result, RunUsage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    rem_mock = AsyncMock(return_value=rem_rv)
+    monkeypatch.setattr(orch_mod, "run_remediation", rem_mock)
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+    return rem_mock
+
+
+async def test_gate_high_confidence_takes_auto_path(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _confidence_report("git_commit_k8s", 0.95)
+    rem_mock = _gate_setup(monkeypatch, tmp_path, report, _canned_remediation())
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "success"
+    assert rem_mock.await_args.kwargs.get("require_human_review", False) is False
+
+
+async def test_gate_review_confidence_git_action_awaits_human_review(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _confidence_report("git_commit_k8s", 0.5)
+    review_result = RemediationResult(
+        success=True,
+        actions_taken=["clone_repo", "create_pr"],
+        tool_calls_count=2,
+        destructive_repair=True,
+        agent_branch="remediation/run-x",
+        agent_commits=["abc1234"],
+        gate_status="awaiting_review",
+    )
+    rem_mock = _gate_setup(monkeypatch, tmp_path, report, review_result)
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "awaiting_human_review"
+    assert record.success_rate is False
+    assert record.rollback_triggered is False
+    assert record.rollback_success is None
+    assert record.agent_branch == "remediation/run-x"
+    assert record.agent_commits == ["abc1234"]
+    assert record.gate_status == "awaiting_review"
+    assert rem_mock.await_args.kwargs.get("require_human_review") is True
+
+
+async def test_gate_review_confidence_non_git_action_escalates(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _confidence_report("nixos_rebuild", 0.5)
+    rem_mock = _gate_setup(monkeypatch, tmp_path, report, _canned_remediation())
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "escalated"
+    rem_mock.assert_not_awaited()
+
+
+async def test_gate_low_confidence_escalates(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _confidence_report("git_commit_k8s", 0.2)
+    rem_mock = _gate_setup(monkeypatch, tmp_path, report, _canned_remediation())
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "escalated"
+    rem_mock.assert_not_awaited()

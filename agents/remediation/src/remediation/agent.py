@@ -161,6 +161,7 @@ async def run_remediation(
     run_id: str = "",
     blocked_tools: frozenset[str] = frozenset(),
     breaker: Breaker | None = None,
+    require_human_review: bool = False,
 ) -> tuple[RemediationResult, RunUsage, list[ModelMessage]]:
     if source_branch in PROTECTED_BRANCHES:
         refused = RemediationResult(
@@ -210,6 +211,20 @@ async def run_remediation(
             f" If remediation requires a blocked tool,"
             f" return success=False immediately."
         )
+
+    review_block = ""
+    if require_human_review:
+        review_block = (
+            " HUMAN-REVIEW MODE OVERRIDE (applies only to git_commit_k8s and"
+            " git_commit_nix): open the PR for a human to merge, do not gate or"
+            " reconcile. After push_branch, call create_pr(..., auto_merge=false)."
+            " Then STOP: do NOT call wait_for_gate and do NOT call"
+            " reconcile_kustomization or trigger_reconcile. Record agent_branch and"
+            " agent_commits, set gate_status='awaiting_review', set"
+            " merge_commit_sha=None, and return success=True because the PR was"
+            " opened successfully for human review."
+        )
+
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
         f"{report.model_dump_json()}. "
@@ -217,6 +232,7 @@ async def run_remediation(
         f"recommended_action = {report.recommended_action}. "
         f"source_branch = {source_branch}."
         f"{constraint_block}"
+        f"{review_block}"
     )
     try:
         async with remediation_agent.iter(

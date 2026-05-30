@@ -440,10 +440,11 @@ def test_write_report_includes_per_row_outcome_literal_and_rollup(
 
     rollup_pattern = (
         r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
-        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,\s*\d+/\d+ not-run"
+        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,"
+        r"\s*\d+/\d+ awaiting-review,\s*\d+/\d+ not-run"
     )
     assert re.search(rollup_pattern, report), (
-        f"expected 6-bucket rollup line in REPORT.md; got:\n{report}"
+        f"expected bucket rollup line in REPORT.md; got:\n{report}"
     )
 
 
@@ -495,10 +496,11 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
 
     rollup_pattern = (
         r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
-        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,\s*\d+/\d+ not-run"
+        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,"
+        r"\s*\d+/\d+ awaiting-review,\s*\d+/\d+ not-run"
     )
     assert re.search(rollup_pattern, summary_text), (
-        f"expected 6-bucket rollup line in step_summary.md; got:\n{summary_text}"
+        f"expected bucket rollup line in step_summary.md; got:\n{summary_text}"
     )
 
 

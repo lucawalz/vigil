@@ -303,6 +303,134 @@ async def test_run_remediation_refuses_every_protected_branch(
         assert result.actions_taken == ["refused_protected_branch"]
 
 
+def _git_commit_report() -> DiagnosisReport:
+    return DiagnosisReport(
+        root_cause="wrong image tag",
+        root_cause_component="Deployment/vigil-app",
+        severity="high",
+        evidence="Failed to pull image vigil-app:bad-tag",
+        drift_classification="declared_drift",
+        recommended_action="git_commit_k8s",
+        confidence=0.55,
+        affected_resources=["default/vigil-app"],
+        manifest_path="apps/vigil-app.yaml",
+        patch_body="apiVersion: apps/v1\n",
+    )
+
+
+def test_run_remediation_accepts_require_human_review_param() -> None:
+    sig = inspect.signature(run_remediation)
+    assert "require_human_review" in sig.parameters
+    assert sig.parameters["require_human_review"].default is False
+
+
+async def test_run_remediation_human_review_overrides_gate_waiting(
+    mock_git_mcp: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """require_human_review=True opens a PR for a human and skips gate-waiting."""
+    captured: dict[str, str] = {}
+    reached = RemediationResult(
+        success=True,
+        actions_taken=["clone_repo", "create_pr"],
+        tool_calls_count=2,
+        destructive_repair=True,
+        agent_branch="remediation/run-x",
+        agent_commits=["abc1234"],
+        gate_status="awaiting_review",
+    )
+
+    class _FakeRun:
+        async def __aenter__(self) -> "_FakeRun":
+            return self
+
+        async def __aexit__(self, *args: object) -> bool:
+            return False
+
+        def __aiter__(self) -> "_FakeRun":
+            return self
+
+        async def __anext__(self) -> object:
+            raise StopAsyncIteration
+
+        def all_messages(self) -> list[object]:
+            return []
+
+        @property
+        def usage(self) -> object:
+            return MagicMock()
+
+        @property
+        def result(self) -> object:
+            return MagicMock(output=reached)
+
+    def _fake_iter(task: str, *a: object, **k: object) -> _FakeRun:
+        captured["task"] = task
+        return _FakeRun()
+
+    monkeypatch.setattr(_rem_agent_mod.remediation_agent, "iter", _fake_iter)
+
+    result, _usage, _msgs = await run_remediation(
+        deps=_deps(mock_git_mcp),
+        report=_git_commit_report(),
+        source_branch="remediation/run-x",
+        require_human_review=True,
+    )
+
+    task = captured["task"]
+    assert "auto_merge=false" in task
+    assert "awaiting_review" in task
+    assert "HUMAN-REVIEW MODE" in task
+    assert result.gate_status == "awaiting_review"
+
+
+async def test_run_remediation_default_omits_human_review_block(
+    mock_git_mcp: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The default (auto) path must not inject the human-review override."""
+    captured: dict[str, str] = {}
+
+    class _FakeRun:
+        async def __aenter__(self) -> "_FakeRun":
+            return self
+
+        async def __aexit__(self, *args: object) -> bool:
+            return False
+
+        def __aiter__(self) -> "_FakeRun":
+            return self
+
+        async def __anext__(self) -> object:
+            raise StopAsyncIteration
+
+        def all_messages(self) -> list[object]:
+            return []
+
+        @property
+        def usage(self) -> object:
+            return MagicMock()
+
+        @property
+        def result(self) -> object:
+            return MagicMock(output=MagicMock())
+
+    def _fake_iter(task: str, *a: object, **k: object) -> _FakeRun:
+        captured["task"] = task
+        return _FakeRun()
+
+    monkeypatch.setattr(_rem_agent_mod.remediation_agent, "iter", _fake_iter)
+
+    await run_remediation(
+        deps=_deps(mock_git_mcp),
+        report=_git_commit_report(),
+        source_branch="remediation/run-x",
+    )
+
+    assert "HUMAN-REVIEW MODE" not in captured["task"]
+    assert "auto_merge=false" not in captured["task"]
+
+
 async def test_run_remediation_allows_non_protected_branch(
     mock_git_mcp: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,

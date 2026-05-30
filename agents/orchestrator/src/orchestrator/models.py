@@ -40,6 +40,7 @@ class RunRecord(BaseModel):
         "quota_exhausted",
         "baseline_degraded",
         "escalated",
+        "awaiting_human_review",
         "inject_did_not_break",
     ]
     success_rate: bool | None

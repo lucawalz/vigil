@@ -32,6 +32,7 @@ _OUTCOME_BUCKET: dict[str, str] = {
     "abort": "infra-error",
     "setup_error": "infra-error",
     "gate_failed": "gate-uncertain",
+    "awaiting_human_review": "awaiting-review",
 }
 
 
@@ -46,6 +47,7 @@ def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
         "agent-failed": 0,
         "infra-error": 0,
         "gate-uncertain": 0,
+        "awaiting-review": 0,
         "not-run": 0,
     }
     n_seen = 0
@@ -298,6 +300,7 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
         f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
         f"{bucket_counts['infra-error']}/{n_total} infra-error, "
         f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain, "
+        f"{bucket_counts['awaiting-review']}/{n_total} awaiting-review, "
         f"{bucket_counts['not-run']}/{n_total} not-run"
     )
     lines.append("")
@@ -401,6 +404,7 @@ def write_step_summary(
         f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
         f"{bucket_counts['infra-error']}/{n_total} infra-error, "
         f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain, "
+        f"{bucket_counts['awaiting-review']}/{n_total} awaiting-review, "
         f"{bucket_counts['not-run']}/{n_total} not-run",
         "",
     ]

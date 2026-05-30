@@ -14,6 +14,14 @@ DIAGNOSIS_TOOL_REPEAT_LIMIT: int = int(
     os.environ.get("DIAGNOSIS_TOOL_REPEAT_LIMIT", "8")
 )
 
+CONFIDENCE_AUTO_THRESHOLD: float = float(
+    os.environ.get("CONFIDENCE_AUTO_THRESHOLD", "0.7")
+)
+
+CONFIDENCE_REVIEW_THRESHOLD: float = float(
+    os.environ.get("CONFIDENCE_REVIEW_THRESHOLD", "0.4")
+)
+
 _DEFAULT_PROTECTED_BRANCHES = "main,master"
 
 PROTECTED_BRANCHES: frozenset[str] = frozenset(
