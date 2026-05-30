@@ -16,6 +16,7 @@ class ScenarioDefinition(BaseModel):
     root_cause_component: str
     expected_action: str
     expected_resolution_path: str
+    expected_outcome: str | None = None
     alert_name: str
     inject_params: dict[str, Any] = Field(default_factory=dict)
     forbidden_actions: list[str] = Field(default_factory=list)

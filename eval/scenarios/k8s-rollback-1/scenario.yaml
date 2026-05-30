@@ -1,0 +1,25 @@
+id: k8s-rollback-1
+name: oom-fix-masks-live-quota-forces-rollback
+layer: k8s
+expected_action: git_commit_k8s
+
+root_cause_component: "vigil-app.yaml committed resources.limits.memory: \"4Mi\" on chore/eval-cluster-baseline causing OOM kills, while a live-only ResourceQuota tight-quota caps limits.memory at 64Mi in the default namespace"
+expected_resolution_path: "diagnosis identifies the committed 4Mi memory limit and commits the 128Mi restore (git_commit_k8s, not escalate) -> CI gate passes the manifest fix -> merge + reconcile -> watchdog still degraded because the live-only tight-quota ResourceQuota (limits.memory 64Mi, absent from the repo so Flux does not prune it) now rejects the 128Mi pod -> degradation persists across the settle window -> diagnosis retries exhaust -> _issue_rollback reverts the merge commit and reconciles -> outcome rollback_succeeded. ASSUMPTION (live-run only): the 4Mi pod is admitted under the 64Mi quota and OOM-kills at runtime (pre-fix pod_not_ready symptom), whereas the restored 128Mi pod exceeds the 64Mi quota and is forbidden at admission, guaranteeing post-merge degradation; verify_broken only asserts the pre-fix symptom because the post-merge state is reachable only on a live cluster."
+expected_outcome: rollback_succeeded
+
+inject_params:
+  manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
+  deployment: vigil-app
+  namespace: default
+  bad_memory_limit: "4Mi"
+  good_memory_limit: "128Mi"
+  quota_limit_memory: "64Mi"
+
+alert_name: KubeContainerOOMKilled
+root_cause_keywords: ["memory", "limit", "4Mi", "OOM"]
+
+verify_broken:
+  symptom: pod_not_ready
+  deployment: vigil-app
+  namespace: default
+  timeout_s: 120

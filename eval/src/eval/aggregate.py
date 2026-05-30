@@ -119,6 +119,15 @@ def _expected_action_for_scenario(scenarios_dir: Path, scenario_id: str) -> str 
     return data.get("expected_action")
 
 
+def _expected_outcome_for_scenario(scenarios_dir: Path, scenario_id: str) -> str | None:
+    p = scenarios_dir / scenario_id / "scenario.yaml"
+    if not p.exists():
+        return None
+    with p.open() as fh:
+        data = yaml.safe_load(fh) or {}
+    return data.get("expected_outcome")
+
+
 def _correct_escalation_success(records: list[dict], scenarios_dir: Path) -> None:
     """Score agent-driven escalations against expected_action from scenario.yaml."""
     for r in records:
@@ -133,6 +142,16 @@ def _correct_escalation_success(records: list[dict], scenarios_dir: Path) -> Non
             r["success_rate"] = expected == "escalate"
 
 
+def _correct_outcome_success(records: list[dict], scenarios_dir: Path) -> None:
+    """Score runs whose outcome matches the scenario's expected_outcome as success."""
+    for r in records:
+        if r.get("setup_error"):
+            continue
+        expected = _expected_outcome_for_scenario(scenarios_dir, r.get("scenario", ""))
+        if expected and r.get("outcome") == expected:
+            r["success_rate"] = True
+
+
 def aggregate_runs(
     runs_dir: Path, index_path: Path, scenarios_dir: Path
 ) -> dict[str, Any]:
@@ -144,6 +163,7 @@ def aggregate_runs(
         else []
     )
     _correct_escalation_success(records, scenarios_dir)
+    _correct_outcome_success(records, scenarios_dir)
     if not records:
         return {
             "by_model": {},
@@ -368,6 +388,7 @@ def write_step_summary(
     records = _load_records(runs_dir, index_path)
     if scenarios_dir is not None:
         _correct_escalation_success(records, scenarios_dir)
+        _correct_outcome_success(records, scenarios_dir)
     if not records:
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "step_summary.md").write_text("No run data available.\n")
