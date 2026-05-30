@@ -168,6 +168,50 @@ async def test_run_orchestration_abort_on_usage_limit_exceeded(
     assert json.loads(written)["outcome"] == "abort"
 
 
+async def test_run_orchestration_abort_on_diagnosis_budget_records_real_metrics(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from diagnosis.models import DiagnosisRequestBudgetExceeded
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.usage import RunUsage
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
+
+    usage = RunUsage(input_tokens=1234, output_tokens=567)
+    messages = [
+        ModelResponse(parts=[ToolCallPart(tool_name="get_pods", args={})]),
+        ModelResponse(parts=[ToolCallPart(tool_name="get_events", args={})]),
+    ]
+    monkeypatch.setattr(
+        orch_mod,
+        "run_diagnosis",
+        AsyncMock(side_effect=DiagnosisRequestBudgetExceeded(usage, messages)),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "abort"
+    assert record.success_rate is False
+    assert record.total_tool_calls == 2
+    assert record.total_input_tokens == 1234
+    assert record.total_output_tokens == 567
+    assert record.iteration_count >= 1
+    written = json.loads((tmp_path / "runs" / f"{record.run_id}.json").read_text())
+    assert written["setup_error"].startswith("diagnosis_request_limit_")
+
+
 async def test_run_orchestration_abort_on_unexpected_model_behavior(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
