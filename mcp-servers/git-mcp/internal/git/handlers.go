@@ -277,12 +277,21 @@ func HandleCreatePR(client GitClient, state SessionState) server.ToolHandlerFunc
 			return mcp.NewToolResultError("HandleCreatePR: session not initialised; call create_branch first"), nil
 		}
 
+		autoMerge := true
+		if raw, present := args["auto_merge"]; present {
+			if b, ok := raw.(bool); ok {
+				autoMerge = b
+			}
+		}
+
 		prNumber, err := client.CreatePR(ctx, title, branch, base, body)
 		if err != nil {
 			return toolError("HandleCreatePR", err.Error(), hintCreatePR), nil
 		}
-		if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
-			return toolError("HandleCreatePR", "enable auto-merge: "+err.Error(), hintEnableAutoMerge), nil
+		if autoMerge {
+			if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
+				return toolError("HandleCreatePR", "enable auto-merge: "+err.Error(), hintEnableAutoMerge), nil
+			}
 		}
 		return mcp.NewToolResultStructured(PRNumberResult{PRNumber: prNumber}, fmt.Sprintf("pr created: #%d", prNumber)), nil
 	}

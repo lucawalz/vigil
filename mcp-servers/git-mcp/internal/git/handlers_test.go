@@ -895,6 +895,63 @@ func TestCreatePRHandler_Success(t *testing.T) {
 	}
 }
 
+func TestCreatePRHandler_AutoMergeFalseSkipsEnableAutoMerge(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{prNumber: 42}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
+	tool := mcp.NewTool("create_pr",
+		mcp.WithString("title", mcp.Required()),
+		mcp.WithString("body", mcp.Required()),
+		mcp.WithBoolean("auto_merge"),
+	)
+	handler := git.HandleCreatePR(fake, state)
+
+	result, err := callHandler(t, "create_pr", tool, handler, map[string]any{
+		"title":      "fix: reduce OOMKilled replicas",
+		"body":       "Automated remediation",
+		"auto_merge": false,
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "#42") {
+		t.Errorf("expected PR number in response, got: %s", text)
+	}
+	if fake.autoMergeCalls != 0 {
+		t.Errorf("expected EnableAutoMerge not called, got %d", fake.autoMergeCalls)
+	}
+}
+
+func TestCreatePRHandler_AutoMergeTrueEnablesAutoMerge(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{prNumber: 42}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
+	tool := mcp.NewTool("create_pr",
+		mcp.WithString("title", mcp.Required()),
+		mcp.WithString("body", mcp.Required()),
+		mcp.WithBoolean("auto_merge"),
+	)
+	handler := git.HandleCreatePR(fake, state)
+
+	_, err := callHandler(t, "create_pr", tool, handler, map[string]any{
+		"title":      "fix: reduce OOMKilled replicas",
+		"body":       "Automated remediation",
+		"auto_merge": true,
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if fake.autoMergeCalls != 1 {
+		t.Errorf("expected EnableAutoMerge called once, got %d", fake.autoMergeCalls)
+	}
+}
+
 func TestCreatePRHandler_UsesSessionBaseBranch(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{prNumber: 7}
