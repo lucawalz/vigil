@@ -28,7 +28,7 @@ from .context import DiagnosisContext
 from .manifest_paths import lookup_os_manifest_path as _lookup_os_manifest_path
 from .models import DiagnosisDeps, DiagnosisReport, DiagnosisRequestBudgetExceeded
 
-DIAGNOSIS_REQUEST_LIMIT: int = int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "40"))
+DIAGNOSIS_REQUEST_LIMIT: int = int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
 
 if TYPE_CHECKING:
     from orchestrator.models import FaultEvent

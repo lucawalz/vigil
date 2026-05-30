@@ -43,9 +43,9 @@ def test_run_diagnosis_uses_only_diagnosis_scoped_toolsets() -> None:
 
 
 def test_run_diagnosis_enforces_request_limit() -> None:
-    """Request ceiling via DIAGNOSIS_REQUEST_LIMIT env var (default 40)."""
+    """Request ceiling via DIAGNOSIS_REQUEST_LIMIT env var (default 25)."""
     assert _diag_module.DIAGNOSIS_REQUEST_LIMIT == int(
-        os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "40")
+        os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25")
     )
     source = inspect.getsource(run_diagnosis)
     assert "request_limit=DIAGNOSIS_REQUEST_LIMIT" in source
