@@ -605,6 +605,50 @@ def test_expected_outcome_does_not_mark_mismatched_outcome(tmp_path: Path) -> No
     assert summary["by_scenario"]["k8s-rollback-1"]["success_rate"] == 0.0
 
 
+def test_aggregate_handles_mixed_str_and_int_seeds(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-1", "k8s")
+
+    str_seed_record = {
+        "run_id": "k8s-1_1_qwen_abc",
+        "scenario": "k8s-1",
+        "seed": "1",
+        "model": "qwen",
+        "git_sha7": "abc1234",
+        "started_at": "2026-05-18T10:00:00Z",
+        "ended_at": "2026-05-18T10:01:00Z",
+        "outcome": "success",
+        "success_rate": True,
+        "diagnosis_accuracy": None,
+        "MTTR_s": 10.0,
+    }
+    int_seed_record = {
+        "run_id": "k8s-1_2_qwen_abc",
+        "scenario": "k8s-1",
+        "seed": 2,
+        "model": "qwen",
+        "git_sha7": "abc1234",
+        "started_at": "2026-05-18T10:00:00Z",
+        "ended_at": "2026-05-18T10:01:00Z",
+        "outcome": "setup_error",
+        "success_rate": False,
+        "diagnosis_accuracy": None,
+        "MTTR_s": None,
+    }
+    for rec in (str_seed_record, int_seed_record):
+        (runs_dir / f"{rec['run_id']}.json").write_text(json.dumps(rec))
+        with index_path.open("a") as fh:
+            fh.write(json.dumps({"run_id": rec["run_id"]}) + "\n")
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    assert summary["by_scenario"]["k8s-1"]["n_runs"] == 2
+
+
 def test_count_buckets_not_run_counts_unexecuted_planned_scenarios() -> None:
     from eval.aggregate import _count_buckets
 

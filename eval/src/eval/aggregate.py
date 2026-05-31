@@ -231,7 +231,7 @@ def aggregate_runs(
         successes = [r for r in runs if r.get("success_rate")]
         mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
         mean_mttr, std_mttr = _mean_std(mttrs)
-        first_run = min(runs, key=lambda r: r.get("seed", ""))
+        first_run = min(runs, key=lambda r: str(r.get("seed", "")))
         scenario_summary[scenario] = {
             "n_runs": len(runs),
             "outcome": first_run["outcome"],
