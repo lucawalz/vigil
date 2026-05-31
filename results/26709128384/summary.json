@@ -1,0 +1,207 @@
+{
+  "by_model": {
+    "claude-sonnet-4-6": {
+      "n_runs": 12,
+      "n_attempts": 10,
+      "success_rate": 0.5,
+      "success_rate_given_attempt": 0.6,
+      "mean_MTTR_s": 242.98084568816674,
+      "std_MTTR_s": 57.64020672816221,
+      "diagnosis_accuracy": 0.6666666666666666,
+      "diag_n": 9,
+      "destructive_repair_rate": 0.5,
+      "rollback_triggered_rate": 0.0,
+      "n_eligible": 10,
+      "mean_input_tokens": 127855.1,
+      "mean_output_tokens": 1979.6,
+      "mean_tool_calls": 14.3,
+      "mean_iteration_count": 6.5
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 270.967050787,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 291.0093515320001,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "inject_did_not_break",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 277.3287529500001,
+      "std_MTTR_s": null
+    },
+    "k8s-5g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 280.0605416600001,
+      "std_MTTR_s": null
+    },
+    "live-quota-injected": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 158.82877365900003,
+      "std_MTTR_s": null
+    },
+    "deceptive-2": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 230.297145171,
+      "std_MTTR_s": null
+    },
+    "os-1": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "os-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 162.270356821,
+      "std_MTTR_s": null
+    },
+    "os-drift-sysctl": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "os-stale-generation": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 1.0,
+      "mean_MTTR_s": 176.24902037900006,
+      "std_MTTR_s": null
+    },
+    "disk-pressure": {
+      "n_runs": 1,
+      "outcome": "success",
+      "success_rate": 0.0,
+      "mean_MTTR_s": 163.98949965999986,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 0,
+          "total": 1
+        }
+      }
+    }
+  },
+  "totals": {
+    "n": 12,
+    "n_models": 1,
+    "n_scenarios": 12
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
