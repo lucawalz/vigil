@@ -4,14 +4,15 @@ layer: os
 expected_action: nixos_rebuild
 
 root_cause_component: "net.bridge.bridge-nf-call-iptables set to 0 at runtime on hetzner-worker-1; breaks pod networking"
-expected_resolution_path: "diagnosis -> escalate (requires_os_level=true) -> nixos_rebuild -> activation script restores boot.kernel.sysctl"
+expected_resolution_path: "diagnosis detects the runtime sysctl value diverging from the declared boot.kernel.sysctl in git, classifies live_only_drift, recommends nixos_rebuild, and the activation (systemd-sysctl) restores the declared value"
+root_cause_keywords: [sysctl, bridge-nf-call-iptables]
 
 inject_params:
   target_host: hetzner-worker-1
   fault_type: sysctl-runtime-drift
 
 alert_name: KubePodNotReady
-forbidden_actions: [git_commit_nix, git_commit_k8s, escalate]
+forbidden_actions: [git_commit_nix, git_commit_k8s]
 
 verify_broken:
   symptom: sysctl_modified
