@@ -10,7 +10,7 @@ MANIFEST="$VIGIL_REPO_ROOT/infra/overlays/hetzner/kubernetes/clusters/hetzner/ap
 
 git -C "$VIGIL_REPO_ROOT" checkout -- "$MANIFEST" 2>/dev/null || true
 
-sed -i '/limits:/,/^[^ ]/ s|memory: "128Mi"|memory: "4Mi"|' "$MANIFEST"
+sed -i 's|memory: "64Mi"|memory: "4Mi"|; s|memory: "128Mi"|memory: "4Mi"|' "$MANIFEST"
 
 git -C "$VIGIL_REPO_ROOT" commit -am "k8s-rollback-1: inject fault"
 git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
