@@ -47,7 +47,7 @@ jobs:
         run: |
           groups='[]'
           if [ '${{ inputs.skip_k8s }}' != 'true' ]; then
-            groups=$(echo "$groups" | jq -c '. + [{"group":"k8s","scenarios":"k8s-1g k8s-2g k8s-3g k8s-4g k8s-5g live-quota-injected deceptive-2"}]')
+            groups=$(echo "$groups" | jq -c '. + [{"group":"k8s","scenarios":"k8s-1g k8s-2g k8s-3g k8s-4g k8s-5g live-quota-injected deceptive-2 k8s-rollback-1"}]')
           fi
           if [ '${{ inputs.skip_os }}' != 'true' ]; then
             groups=$(echo "$groups" | jq -c '. + [{"group":"os","scenarios":"os-1 os-1g os-drift-sysctl os-stale-generation disk-pressure"}]')
