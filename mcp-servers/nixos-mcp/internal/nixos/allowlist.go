@@ -11,6 +11,7 @@ var allowList = map[string]map[string]bool{
 	"nixos-rebuild":           {"test": true, "dry-activate": true},
 	"switch-to-configuration": {"switch": true},
 	"systemctl":               {"is-active": true, "status": true, "start": true},
+	"sysctl":                  {},
 	"journalctl":              {},
 	"etcdctl":                 {"snapshot": true},
 	"kubectl":                 {"get": true},

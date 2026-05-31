@@ -67,6 +67,16 @@ func NewServer(client nixos.NixOSClient, cfg *config.Config) *server.MCPServer {
 	)
 
 	s.AddTool(
+		mcp.NewTool("get_sysctl",
+			mcp.WithDescription("Read a kernel parameter on a remote host"),
+			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),
+			mcp.WithString("key", mcp.Required(), mcp.Description("Sysctl parameter name, e.g. net.bridge.bridge-nf-call-iptables")),
+			mcp.WithOutputSchema[TextResult](),
+		),
+		nixos.HandleGetSysctl(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
 		mcp.NewTool("etcd_snapshot_save",
 			mcp.WithDescription("Save an etcd snapshot on a remote host"),
 			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),

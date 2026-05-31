@@ -49,6 +49,7 @@ type NixOSClient interface {
 	RebuildTest(ctx context.Context, host string) (string, error)
 	GetJournal(ctx context.Context, host, unit string, lines int) (string, error)
 	GetSystemdStatus(ctx context.Context, host, unit string) (string, error)
+	GetSysctl(ctx context.Context, host, key string) (string, error)
 	EtcdSnapshotSave(ctx context.Context, host, destPath string) (string, error)
 	GetNixPath(ctx context.Context, hostname string) (string, error)
 	DryBuild(ctx context.Context, host string) (string, error)
@@ -187,6 +188,13 @@ func (c *realNixOSClient) GetSystemdStatus(ctx context.Context, host, unit strin
 		return out, nil
 	}
 	return out, err
+}
+
+func (c *realNixOSClient) GetSysctl(ctx context.Context, host, key string) (string, error) {
+	if err := validateArg("key", key); err != nil {
+		return "", err
+	}
+	return c.runSSH(ctx, host, fmt.Sprintf("sysctl %s", key))
 }
 
 func (c *realNixOSClient) EtcdSnapshotSave(ctx context.Context, host, destPath string) (string, error) {

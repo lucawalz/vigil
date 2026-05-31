@@ -1,6 +1,9 @@
 package nixos
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateCommandAllowsEnumeratedCommands(t *testing.T) {
 	legitimate := []string{
@@ -48,6 +51,17 @@ func TestValidateArgRejectsFlagInjection(t *testing.T) {
 		if err := validateArg("unit", value); err == nil {
 			t.Errorf("expected validateArg rejection for %q", value)
 		}
+	}
+}
+
+func TestGetSysctlHandler_InvalidKey(t *testing.T) {
+	const metachar = ";"
+	err := validateArg("key", "vm.swappiness; echo x")
+	if err == nil {
+		t.Fatal("expected validateArg rejection for key containing a shell metacharacter")
+	}
+	if !strings.Contains(err.Error(), "metacharacter") {
+		t.Errorf("expected error mentioning the metacharacter %q, got: %v", metachar, err)
 	}
 }
 

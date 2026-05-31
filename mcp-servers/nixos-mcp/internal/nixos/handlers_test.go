@@ -24,6 +24,8 @@ type fakeNixOSClient struct {
 	journalErr       error
 	systemdOut       string
 	systemdErr       error
+	sysctlOut        string
+	sysctlErr        error
 	etcdOut          string
 	etcdErr          error
 	nixPathOut       string
@@ -35,6 +37,7 @@ type fakeNixOSClient struct {
 	lastSwitchGen    int
 	lastJournalUnit  string
 	lastJournalLines int
+	lastSysctlKey    string
 }
 
 func (f *fakeNixOSClient) GetGenerations(_ context.Context, _ string) (string, error) {
@@ -58,6 +61,11 @@ func (f *fakeNixOSClient) GetJournal(_ context.Context, _ string, unit string, l
 
 func (f *fakeNixOSClient) GetSystemdStatus(_ context.Context, _, _ string) (string, error) {
 	return f.systemdOut, f.systemdErr
+}
+
+func (f *fakeNixOSClient) GetSysctl(_ context.Context, _ string, key string) (string, error) {
+	f.lastSysctlKey = key
+	return f.sysctlOut, f.sysctlErr
 }
 
 func (f *fakeNixOSClient) EtcdSnapshotSave(_ context.Context, _, _ string) (string, error) {
@@ -108,6 +116,13 @@ func newTestServer(t *testing.T, client nixos.NixOSClient) *mcptest.Server {
 				mcp.WithString("unit", mcp.Required()),
 			),
 			Handler: nixos.HandleGetSystemdStatus(client, 4096),
+		},
+		server.ServerTool{
+			Tool: mcp.NewTool("get_sysctl",
+				mcp.WithString("host", mcp.Required()),
+				mcp.WithString("key", mcp.Required()),
+			),
+			Handler: nixos.HandleGetSysctl(client, 4096),
 		},
 		server.ServerTool{
 			Tool: mcp.NewTool("etcd_snapshot_save",
@@ -321,6 +336,27 @@ func TestGetSystemdStatusHandler_Success(t *testing.T) {
 	}
 	if !strings.Contains(resultText(result), "active") {
 		t.Errorf("expected status output, got: %s", resultText(result))
+	}
+}
+
+func TestGetSysctlHandler_Success(t *testing.T) {
+	fake := &fakeNixOSClient{sysctlOut: "net.bridge.bridge-nf-call-iptables = 1"}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_sysctl", map[string]any{
+		"host": "192.168.1.10",
+		"key":  "net.bridge.bridge-nf-call-iptables",
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if !strings.Contains(resultText(result), "net.bridge.bridge-nf-call-iptables = 1") {
+		t.Errorf("expected sysctl value in response, got: %s", resultText(result))
+	}
+	if fake.lastSysctlKey != "net.bridge.bridge-nf-call-iptables" {
+		t.Errorf("expected key forwarded to client, got %q", fake.lastSysctlKey)
 	}
 }
 

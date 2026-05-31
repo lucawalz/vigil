@@ -13,6 +13,7 @@ const (
 	hintRebuildTest      = "check get_nix_path to verify the NixOS flake configuration is accessible"
 	hintGetJournal       = "verify the systemd unit name with get_systemd_status first"
 	hintGetSystemdStatus = "try get_journal for the unit to see recent log output"
+	hintGetSysctl        = "verify the sysctl key exists, e.g. net.bridge.bridge-nf-call-iptables"
 	hintEtcdSnapshotSave = "verify the dest_path directory is writable and etcd is running on the host"
 	hintGetNixPath       = "verify the hostname matches a NixOS configuration in the flake"
 	hintDryBuild         = "check get_nix_path to verify the configuration path, then fix Nix syntax errors"
@@ -100,6 +101,25 @@ func HandleGetSystemdStatus(client NixOSClient, maxBytes int) server.ToolHandler
 		out, err := client.GetSystemdStatus(ctx, host, unit)
 		if err != nil {
 			return toolError("GetSystemdStatus", err.Error(), hintGetSystemdStatus), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
+	}
+}
+
+func HandleGetSysctl(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		host, ok := args["host"].(string)
+		if !ok || host == "" {
+			return mcp.NewToolResultError("host: missing or wrong type"), nil
+		}
+		key, ok := args["key"].(string)
+		if !ok || key == "" {
+			return mcp.NewToolResultError("key: missing or wrong type"), nil
+		}
+		out, err := client.GetSysctl(ctx, host, key)
+		if err != nil {
+			return toolError("GetSysctl", err.Error(), hintGetSysctl), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}

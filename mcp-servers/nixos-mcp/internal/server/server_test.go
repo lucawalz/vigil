@@ -23,6 +23,9 @@ func (f *fakeNixOSClient) GetJournal(_ context.Context, _, _ string, _ int) (str
 func (f *fakeNixOSClient) GetSystemdStatus(_ context.Context, _, _ string) (string, error) {
 	return "", nil
 }
+func (f *fakeNixOSClient) GetSysctl(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}
 func (f *fakeNixOSClient) EtcdSnapshotSave(_ context.Context, _, _ string) (string, error) {
 	return "", nil
 }
@@ -42,6 +45,7 @@ func TestNixOSToolInventory(t *testing.T) {
 		"rebuild_test":       true,
 		"get_journal":        true,
 		"get_systemd_status": true,
+		"get_sysctl":         true,
 		"etcd_snapshot_save": true,
 		"get_nix_path":       true,
 		"dry_build":          true,
