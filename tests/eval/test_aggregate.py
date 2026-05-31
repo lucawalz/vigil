@@ -326,6 +326,7 @@ def test_aggregate_handles_missing_per_run_json_gracefully(tmp_path: Path) -> No
         ("baseline_degraded", "infra-error"),
         ("abort", "infra-error"),
         ("setup_error", "infra-error"),
+        ("inject_did_not_break", "infra-error"),
         ("gate_failed", "gate-uncertain"),
         ("unknown_literal_xyz", "agent-failed"),
     ],

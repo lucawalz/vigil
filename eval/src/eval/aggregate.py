@@ -31,6 +31,7 @@ _OUTCOME_BUCKET: dict[str, str] = {
     "baseline_degraded": "infra-error",
     "abort": "infra-error",
     "setup_error": "infra-error",
+    "inject_did_not_break": "infra-error",
     "gate_failed": "gate-uncertain",
     "awaiting_human_review": "awaiting-review",
 }
