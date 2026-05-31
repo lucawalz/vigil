@@ -23,9 +23,9 @@ spec:
               value: "http://127.0.0.1"
           resources:
             requests:
-              memory: "64Mi"
+              memory: "4Mi"
             limits:
-              memory: "128Mi"
+              memory: "4Mi"
           volumeMounts:
             - name: nginx-config-template
               mountPath: /etc/nginx/templates
