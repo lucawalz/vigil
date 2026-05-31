@@ -96,6 +96,48 @@ func TestRevertCommit_FetchesBeforeRevert(t *testing.T) {
 	if revertSHA == "" {
 		t.Error("expected non-empty revert SHA")
 	}
+
+	remoteHead, err := exec.Command("git", "-C", remoteDir, "rev-parse", "main").Output()
+	if err != nil {
+		t.Fatalf("rev-parse origin main: %v", err)
+	}
+	if strings.TrimSpace(string(remoteHead)) != revertSHA {
+		t.Errorf("origin main = %q, want revert SHA %q (push did not reach origin)", strings.TrimSpace(string(remoteHead)), revertSHA)
+	}
+}
+
+func TestRevertCommit_PushesRevertedContentToOrigin(t *testing.T) {
+	remoteDir, cloneDir := setupRepoWithRemote(t)
+
+	workDir := t.TempDir()
+	mustRun(t, workDir, "git", "clone", remoteDir, ".")
+	if err := os.WriteFile(filepath.Join(workDir, "bad.txt"), []byte("bad"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, workDir, "git", "add", "bad.txt")
+	mustRun(t, workDir, "git", "commit", "-m", "introduce bad file")
+	mustRun(t, workDir, "git", "push", "origin", "main")
+
+	out, err := exec.Command("git", "-C", workDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse: %v", err)
+	}
+	badSHA := strings.TrimSpace(string(out))
+
+	mustRun(t, cloneDir, "git", "config", "user.email", "test@test")
+	mustRun(t, cloneDir, "git", "config", "user.name", "test")
+
+	cfg := &config.Config{RepoURL: "https://github.com/test/test.git"}
+	c := NewRealGitClient(cfg)
+	if _, err := c.RevertCommit(context.Background(), cloneDir, badSHA, "main"); err != nil {
+		t.Fatalf("RevertCommit: %v", err)
+	}
+
+	verifyDir := t.TempDir()
+	mustRun(t, verifyDir, "git", "clone", remoteDir, ".")
+	if _, err := os.Stat(filepath.Join(verifyDir, "bad.txt")); !os.IsNotExist(err) {
+		t.Errorf("bad.txt still present on origin after revert; revert did not reach remote (stat err: %v)", err)
+	}
 }
 
 func TestRevertCommit_FetchFailureReturnsClearError(t *testing.T) {

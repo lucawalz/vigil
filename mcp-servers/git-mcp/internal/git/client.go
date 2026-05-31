@@ -391,6 +391,11 @@ func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitS
 		return "", sanitiseAuthError(fmt.Errorf("revert_commit: git revert: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
 	}
 
+	pushCmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "push", "origin", "HEAD:"+branch)
+	if out, err := pushCmd.CombinedOutput(); err != nil {
+		return "", sanitiseAuthError(fmt.Errorf("revert_commit: push: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
+	}
+
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
 		return "", sanitiseAuthError(fmt.Errorf("revert_commit: open repo: %w", err), c.cfg.AuthURL())
