@@ -1229,6 +1229,54 @@ def test_check_forbidden_actions_empty_actions_returns_empty(
     assert _check_forbidden_actions("sc", []) == []
 
 
+def test_check_forbidden_actions_trigger_reconcile_maps_to_git_commit_nix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "os-1", ["git_commit_nix"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("os-1", ["trigger_reconcile"]) == [
+        "trigger_reconcile"
+    ]
+
+
+def test_check_forbidden_actions_trigger_reconcile_not_flagged_for_nixos_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "os-1", ["nixos_rebuild"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert _check_forbidden_actions("os-1", ["trigger_reconcile"]) == []
+
+
+def test_blocked_tool_names_includes_trigger_reconcile_for_git_commit_nix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _blocked_tool_names
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "os-1", ["git_commit_nix"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    assert "trigger_reconcile" in _blocked_tool_names("os-1")
+
+
+def test_blocked_tool_names_excludes_trigger_reconcile_for_nixos_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _blocked_tool_names
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "os-1", ["nixos_rebuild"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    blocked = _blocked_tool_names("os-1")
+    assert "trigger_reconcile" not in blocked
+    assert "switch_generation" in blocked
+
+
 async def test_no_rollback_when_watchdog_clears_within_settle_window(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,

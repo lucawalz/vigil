@@ -189,7 +189,7 @@ _TOOL_TO_ACTION_CLASSES: dict[str, list[str]] = {
     "write_manifest": ["git_commit_k8s", "git_commit_nix"],
     # self-mapped so raw tool names in forbidden_actions still trigger a violation
     "switch_generation": ["nixos_rebuild", "switch_generation"],
-    "trigger_reconcile": ["nixos_rebuild"],
+    "trigger_reconcile": ["git_commit_nix"],
     "reconcile_kustomization": ["flux_reconcile"],
 }
 
