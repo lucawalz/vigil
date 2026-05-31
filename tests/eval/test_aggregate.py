@@ -549,6 +549,20 @@ def test_count_buckets_escalated_correct_counts_as_passed() -> None:
     assert counts["not-run"] == 0
 
 
+def test_count_buckets_budget_abort_counts_as_agent_failed() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {"outcome": "abort", "setup_error": "diagnosis_request_limit_25"},
+        {"outcome": "abort", "setup_error": "iteration_limit"},
+        {"outcome": "abort", "setup_error": "baseline_unavailable"},
+        {"outcome": "abort", "setup_error": None},
+    ]
+    counts = _count_buckets(records)
+    assert counts["agent-failed"] == 2
+    assert counts["infra-error"] == 2
+
+
 def _make_rollback_scenarios_dir(base: Path, scenario_id: str) -> Path:
     d = base / scenario_id
     d.mkdir(parents=True, exist_ok=True)

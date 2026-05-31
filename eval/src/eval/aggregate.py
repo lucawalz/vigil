@@ -36,9 +36,18 @@ _OUTCOME_BUCKET: dict[str, str] = {
     "awaiting_human_review": "awaiting-review",
 }
 
+_AGENT_BUDGET_ABORT_PREFIXES = ("diagnosis_request_limit_",)
+_AGENT_BUDGET_ABORT_REASONS = frozenset({"iteration_limit"})
+
 
 def _bucket_outcome(literal: str) -> str:
     return _OUTCOME_BUCKET.get(literal, "agent-failed")
+
+
+def _is_agent_budget_abort(reason: str) -> bool:
+    return reason in _AGENT_BUDGET_ABORT_REASONS or reason.startswith(
+        _AGENT_BUDGET_ABORT_PREFIXES
+    )
 
 
 def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
@@ -62,6 +71,10 @@ def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
             counts["out-of-scope"] += 1
         elif outcome == "escalated":
             counts["passed" if success_rate else "agent-failed"] += 1
+        elif outcome == "abort" and _is_agent_budget_abort(
+            str(r.get("setup_error") or "")
+        ):
+            counts["agent-failed"] += 1
         else:
             bucket = _bucket_outcome(outcome)
             counts[bucket] = counts.get(bucket, 0) + 1
