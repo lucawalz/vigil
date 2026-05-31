@@ -64,6 +64,7 @@ DIAGNOSIS_NIXOS_READ_TOOLS: frozenset[str] = frozenset(
         "get_generations",
         "get_journal",
         "get_systemd_status",
+        "get_sysctl",
         "get_nix_path",
         "dry_build",
     }

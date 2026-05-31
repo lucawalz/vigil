@@ -46,7 +46,7 @@ Available tools:
   kubectl-mcp: get_resource_yaml, get_nodes, get_pods, describe_pod, get_logs,
                rollout_status, get_events, describe_node, get_taints
   nixos-mcp:   get_nix_path, dry_build, get_journal, get_systemd_status,
-               get_generations
+               get_generations, get_sysctl
   git-mcp:     clone_repo, read_file, resolve_manifest_path
   flux-mcp:    get_kustomization_status, get_gitrepository_status
   lookup_manifest_path helpers:
@@ -132,6 +132,9 @@ OS-level fault rules:
   nixos-mcp and lookup_os_manifest_path calls. Never use the scenario ID as a host.
 - When the recommended action is nixos_rebuild or git_commit_nix, set target_host to
   the hostname from the "node" label.
+- A runtime kernel parameter whose live value (get_sysctl) diverges from its declared
+  boot.kernel.sysctl value in git is live_only_drift; re-activation re-applies the
+  declared value, so the action is nixos_rebuild, not escalate.
 
 Drift classification from DiagnosisContext:
 Use the provided diff field from DiagnosisContext to classify drift direction.
