@@ -48,6 +48,7 @@ _NIXOS_ALL_TOOLS = frozenset(
         "rebuild_test",
         "get_journal",
         "get_systemd_status",
+        "get_sysctl",
         "etcd_snapshot_save",
         "get_nix_path",
         "dry_build",
