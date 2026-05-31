@@ -22,6 +22,8 @@ def _write_run(
     success: bool = True,
     mttr: float = 10.0,
     diagnosis_accuracy: bool | None = None,
+    outcome: str | None = None,
+    setup_error: str | None = None,
 ) -> None:
     record = {
         "run_id": run_id,
@@ -31,7 +33,8 @@ def _write_run(
         "git_sha7": "abc1234",
         "started_at": "2026-04-23T10:00:00Z",
         "ended_at": "2026-04-23T10:01:00Z",
-        "outcome": "success" if success else "abort",
+        "outcome": outcome if outcome is not None else ("success" if success else "abort"),
+        "setup_error": setup_error,
         "success_rate": success,
         "diagnosis_accuracy": diagnosis_accuracy,
         "MTTR_s": mttr,
@@ -561,6 +564,40 @@ def test_count_buckets_budget_abort_counts_as_agent_failed() -> None:
     counts = _count_buckets(records)
     assert counts["agent-failed"] == 2
     assert counts["infra-error"] == 2
+
+
+def test_aggregate_carries_setup_error_so_budget_abort_buckets_as_agent_failed(
+    tmp_path: Path,
+) -> None:
+    from eval.aggregate import _count_buckets, aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "os-stale", "os")
+
+    _write_run(
+        runs_dir,
+        index_path,
+        run_id="os-stale_1_qwen_abc",
+        scenario="os-stale",
+        seed=1,
+        model="qwen",
+        success=False,
+        outcome="abort",
+        setup_error="diagnosis_request_limit_25",
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+
+    assert (
+        summary["by_scenario"]["os-stale"]["setup_error"]
+        == "diagnosis_request_limit_25"
+    )
+    counts = _count_buckets(summary["by_scenario"].values())
+    assert counts["agent-failed"] == 1
+    assert counts["infra-error"] == 0
 
 
 def _make_rollback_scenarios_dir(base: Path, scenario_id: str) -> Path:
