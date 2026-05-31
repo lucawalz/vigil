@@ -772,3 +772,61 @@ def test_no_evalharness_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "EvalHarness-" not in payload["alerts"][0]["labels"]["alertname"]
     assert "EvalHarness-" not in payload["groupLabels"]["alertname"]
     assert "EvalHarness-" not in payload["groupKey"]
+
+
+_SYSCTL_KEY = "net.bridge.bridge-nf-call-iptables"
+
+
+def _write_sysctl_scenario(scenarios_dir: Path, key: str = _SYSCTL_KEY) -> None:
+    scenario_dir = scenarios_dir / "os-drift-sysctl"
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+    import yaml as _yaml
+
+    (scenario_dir / "scenario.yaml").write_text(
+        _yaml.dump(
+            {
+                "id": "os-drift-sysctl",
+                "name": "bridge-nf-call-iptables-disabled-at-runtime",
+                "layer": "os",
+                "expected_action": "nixos_rebuild",
+                "alert_name": "KubePodNotReady",
+                "verify_broken": {
+                    "symptom": "sysctl_modified",
+                    "host": "hetzner-worker-1",
+                    "key": key,
+                    "expected_value": "0",
+                    "timeout_s": 30,
+                },
+            }
+        )
+    )
+
+
+def test_build_fault_event_adds_sysctl_key_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    _write_sysctl_scenario(scenarios_dir)
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    payload = _build_fault_event("os-drift-sysctl")
+
+    assert payload["alerts"][0]["labels"]["sysctl_key"] == _SYSCTL_KEY
+    assert payload["commonLabels"]["sysctl_key"] == _SYSCTL_KEY
+
+
+def test_build_fault_event_omits_sysctl_key_for_non_sysctl_scenario(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    _write_k8s1_scenario(scenarios_dir)
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    payload = _build_fault_event("k8s-1")
+
+    assert "sysctl_key" not in payload["alerts"][0]["labels"]
+    assert "sysctl_key" not in payload["commonLabels"]
