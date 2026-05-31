@@ -1,0 +1,241 @@
+{
+  "by_model": {
+    "claude-sonnet-4-6": {
+      "n_runs": 13,
+      "n_attempts": 13,
+      "success_rate": 0.8461538461538461,
+      "success_rate_given_attempt": 0.8461538461538461,
+      "mean_MTTR_s": 194.56035518136363,
+      "std_MTTR_s": 95.8871601793869,
+      "diagnosis_accuracy": 0.9166666666666666,
+      "diag_n": 12,
+      "destructive_repair_rate": 0.6923076923076923,
+      "rollback_triggered_rate": 0.0,
+      "n_eligible": 13,
+      "mean_input_tokens": 138179.6923076923,
+      "mean_output_tokens": 1953.3076923076924,
+      "mean_tool_calls": 15,
+      "mean_iteration_count": 6.384615384615385
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 273.1970211,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 295.015865309,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "inject_did_not_break",
+      "setup_error": "scenario k8s-3g: symptom 'pod_not_ready' not observed within 120s",
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 277.7252484160001,
+      "std_MTTR_s": null
+    },
+    "k8s-5g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 275.48574149,
+      "std_MTTR_s": null
+    },
+    "live-quota-injected": {
+      "n_runs": 1,
+      "outcome": "escalated",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 37.51587718900009,
+      "std_MTTR_s": null
+    },
+    "deceptive-2": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 0.0,
+      "mean_MTTR_s": 229.5065839990002,
+      "std_MTTR_s": null
+    },
+    "k8s-rollback-1": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 296.234255332,
+      "std_MTTR_s": null
+    },
+    "os-1": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 168.063735942,
+      "std_MTTR_s": null
+    },
+    "os-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 158.283279612,
+      "std_MTTR_s": null
+    },
+    "os-drift-sysctl": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 137.967121906,
+      "std_MTTR_s": null
+    },
+    "os-stale-generation": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 172.76716372700002,
+      "std_MTTR_s": null
+    },
+    "disk-pressure": {
+      "n_runs": 1,
+      "outcome": "escalated",
+      "setup_error": null,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 47.90859697199994,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "claude-sonnet-4-6": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    }
+  },
+  "totals": {
+    "n": 13,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
