@@ -3,17 +3,18 @@ name: oom-memory-limit-committed
 layer: k8s
 expected_action: git_commit_k8s
 
-root_cause_component: "vigil-app.yaml committed resources.limits.memory: \"4Mi\" on chore/eval-cluster-baseline causing OOM kills"
+root_cause_component: "vigil-app.yaml committed the mem-load sidecar resources.limits.memory: \"32Mi\" on chore/eval-cluster-baseline, below its ~50Mi working set, causing OOM kills"
 expected_resolution_path: "diagnosis -> git_commit_k8s (restore memory limit in manifest) -> gate_pass -> reconcile -> watchdog_confirm"
 
 inject_params:
   manifest: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps/vigil-app.yaml
   deployment: vigil-app
   namespace: default
-  bad_memory_limit: "4Mi"
-  good_memory_limit: "128Mi"
+  bad_memory_limit: "32Mi"
+  good_memory_limit: "96Mi"
 
 alert_name: KubeContainerOOMKilled
+root_cause_keywords: ["memory", "limit", "OOM"]
 
 verify_broken:
   symptom: pod_not_ready
