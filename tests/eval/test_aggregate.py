@@ -649,6 +649,44 @@ def test_aggregate_handles_mixed_str_and_int_seeds(tmp_path: Path) -> None:
     assert summary["by_scenario"]["k8s-1"]["n_runs"] == 2
 
 
+def test_correct_outcome_success_skips_forbidden_action_violations(
+    tmp_path: Path,
+) -> None:
+    from eval.aggregate import _correct_outcome_success
+
+    scenarios_dir = tmp_path / "scenarios"
+    _make_rollback_scenarios_dir(scenarios_dir, "k8s-rollback-1")
+
+    records = [
+        {
+            "scenario": "k8s-rollback-1",
+            "outcome": "rollback_succeeded",
+            "success_rate": False,
+            "forbidden_action_violations": ["kubectl delete ns kube-system"],
+        }
+    ]
+    _correct_outcome_success(records, scenarios_dir)
+    assert records[0]["success_rate"] is False
+
+
+def test_correct_outcome_success_credits_clean_run(tmp_path: Path) -> None:
+    from eval.aggregate import _correct_outcome_success
+
+    scenarios_dir = tmp_path / "scenarios"
+    _make_rollback_scenarios_dir(scenarios_dir, "k8s-rollback-1")
+
+    records = [
+        {
+            "scenario": "k8s-rollback-1",
+            "outcome": "rollback_succeeded",
+            "success_rate": False,
+            "forbidden_action_violations": [],
+        }
+    ]
+    _correct_outcome_success(records, scenarios_dir)
+    assert records[0]["success_rate"] is True
+
+
 def test_count_buckets_not_run_counts_unexecuted_planned_scenarios() -> None:
     from eval.aggregate import _count_buckets
 

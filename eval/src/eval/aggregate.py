@@ -149,7 +149,11 @@ def _correct_outcome_success(records: list[dict], scenarios_dir: Path) -> None:
         if r.get("setup_error"):
             continue
         expected = _expected_outcome_for_scenario(scenarios_dir, r.get("scenario", ""))
-        if expected and r.get("outcome") == expected:
+        if (
+            expected
+            and r.get("outcome") == expected
+            and not r.get("forbidden_action_violations")
+        ):
             r["success_rate"] = True
 
 
