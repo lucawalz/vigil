@@ -9,12 +9,15 @@ from common.constants import (
     DIAGNOSIS_GIT_READ_TOOLS,
     DIAGNOSIS_KUBECTL_READ_TOOLS,
     DIAGNOSIS_NIXOS_READ_TOOLS,
+    DIAGNOSIS_TOOL_CALL_SOFT_LIMIT,
     DIAGNOSIS_TOOL_REPEAT_LIMIT,
 )
 from common.provider import build_model
 from common.toolset_guards import (
     Breaker,
     CircuitBreakerToolset,
+    GlobalToolCallBudgetToolset,
+    GlobalToolCounter,
     ToolRepeatLimitToolset,
 )
 from pydantic_ai import Agent
@@ -308,9 +311,18 @@ async def run_diagnosis(
         read_toolsets = tuple(
             CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in read_toolsets
         )
-    toolsets: list[object] = [
+    repeat_limited = (
         ToolRepeatLimitToolset(wrapped=ts, limit=DIAGNOSIS_TOOL_REPEAT_LIMIT)
         for ts in read_toolsets
+    )
+    shared_call_counter = GlobalToolCounter()
+    toolsets: list[object] = [
+        GlobalToolCallBudgetToolset(
+            wrapped=ts,
+            threshold=DIAGNOSIS_TOOL_CALL_SOFT_LIMIT,
+            counter=shared_call_counter,
+        )
+        for ts in repeat_limited
     ]
     constraint_block = ""
     if blocked_tools:

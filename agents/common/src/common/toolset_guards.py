@@ -102,6 +102,43 @@ class ToolRepeatLimitToolset(WrapperToolset[AgentDepsT]):
 
 
 @dataclass
+class GlobalToolCounter:
+    total: int = 0
+
+
+@dataclass
+class GlobalToolCallBudgetToolset(WrapperToolset[AgentDepsT]):
+    """Nudges the model to conclude once cumulative tool calls cross a threshold.
+
+    A single shared counter sums calls across every wrapped toolset, so the budget
+    is global rather than per-server. Crossing the threshold does not end the run:
+    it raises ModelRetry telling the model it has enough evidence and should emit
+    its DiagnosisReport from what it has already gathered. The threshold sits below
+    the hard request cap, so the model gets this hint while it still has budget to
+    act on it. Pass one counter instance into every wrapper so the total is shared.
+    """
+
+    threshold: int
+    counter: GlobalToolCounter = field(default_factory=GlobalToolCounter)
+
+    async def call_tool(
+        self,
+        name: str,
+        tool_args: dict[str, Any],
+        ctx: RunContext[AgentDepsT],
+        tool: ToolsetTool[AgentDepsT],
+    ) -> Any:
+        if self.counter.total >= self.threshold:
+            raise ModelRetry(
+                f"{self.counter.total} tool calls made, enough evidence to conclude. "
+                f"Stop gathering and emit the DiagnosisReport now from the context "
+                f"already gathered."
+            )
+        self.counter.total += 1
+        return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+
+
+@dataclass
 class CircuitBreakerToolset(WrapperToolset[AgentDepsT]):
     """Drives a shared Breaker from real MCP tool-call outcomes within one run.
 

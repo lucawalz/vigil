@@ -14,6 +14,10 @@ DIAGNOSIS_TOOL_REPEAT_LIMIT: int = int(
     os.environ.get("DIAGNOSIS_TOOL_REPEAT_LIMIT", "8")
 )
 
+DIAGNOSIS_TOOL_CALL_SOFT_LIMIT: int = int(
+    os.environ.get("DIAGNOSIS_TOOL_CALL_SOFT_LIMIT", "18")
+)
+
 CONFIDENCE_AUTO_THRESHOLD: float = float(
     os.environ.get("CONFIDENCE_AUTO_THRESHOLD", "0.7")
 )
