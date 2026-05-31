@@ -33,7 +33,9 @@ def _write_run(
         "git_sha7": "abc1234",
         "started_at": "2026-04-23T10:00:00Z",
         "ended_at": "2026-04-23T10:01:00Z",
-        "outcome": outcome if outcome is not None else ("success" if success else "abort"),
+        "outcome": outcome
+        if outcome is not None
+        else ("success" if success else "abort"),
         "setup_error": setup_error,
         "success_rate": success,
         "diagnosis_accuracy": diagnosis_accuracy,
