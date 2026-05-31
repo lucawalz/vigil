@@ -129,6 +129,16 @@ def _extract_systemd_unit(fault: FaultEvent) -> str | None:
     return None
 
 
+def _extract_sysctl_key(fault: FaultEvent) -> str | None:
+    for alert in fault.alerts:
+        key = alert.get("labels", {}).get("sysctl_key") or (
+            alert.get("annotations", {}).get("sysctl_key")
+        )
+        if key:
+            return key
+    return fault.commonLabels.get("sysctl_key") or fault.groupLabels.get("sysctl_key")
+
+
 def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
     try:
         data = yaml.safe_load(live_text)
@@ -495,11 +505,18 @@ async def build_diagnosis_context(
         manifest_path = _extract_text(manifest_path_result)
 
         systemd_unit = _extract_systemd_unit(fault)
+        sysctl_key = _extract_sysctl_key(fault)
         if systemd_unit:
             live_result = await call_tool(
                 deps.nixos_mcp,
                 "get_systemd_status",
                 {"host": target_host, "unit": systemd_unit},
+            )
+        elif sysctl_key:
+            live_result = await call_tool(
+                deps.nixos_mcp,
+                "get_sysctl",
+                {"host": target_host, "key": sysctl_key},
             )
         else:
             live_result = await call_tool(

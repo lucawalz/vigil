@@ -849,6 +849,95 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     )
 
 
+def test_build_diagnosis_context_os_sysctl_key_surfaces_live_value() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KernelParameterDrift",
+                    "node": "hetzner-worker-1",
+                    "sysctl_key": "net.ipv4.ip_forward",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "KernelParameterDrift"},
+        commonLabels={"node": "hetzner-worker-1"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="KernelParameterDrift"}',
+    )
+
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\n"
+        "kind: GitRepository\n"
+        "metadata:\n"
+        "  name: flux-system\n"
+        "  namespace: flux-system\n"
+        "spec:\n"
+        "  ref:\n"
+        "    branch: main\n"
+    )
+
+    live_sysctl_value = "net.ipv4.ip_forward = 1"
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
+    captured_calls: list = []
+
+    async def nixos_side_effect(tool, args):
+        captured_calls.append((tool, args))
+        if tool == "get_nix_path":
+            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+        if tool == "get_sysctl":
+            return {"content": live_sysctl_value}
+        return {"content": "state"}
+
+    mock_nixos = AsyncMock()
+    mock_nixos.direct_call_tool = AsyncMock(side_effect=nixos_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(
+        return_value={"content": "net.ipv4.ip_forward = 0"}
+    )
+    mock_flux = AsyncMock()
+
+    from diagnosis.models import DiagnosisDeps
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+        flux_mcp=mock_flux,
+    )
+
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
+
+    sysctl_call = next((c for c in captured_calls if c[0] == "get_sysctl"), None)
+    assert sysctl_call is not None, "get_sysctl must be called when sysctl_key present"
+    assert sysctl_call[1].get("host") == "hetzner-worker-1"
+    assert sysctl_call[1].get("key") == "net.ipv4.ip_forward"
+
+    journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
+    assert journal_call is None, (
+        "get_journal must not be called when sysctl_key present"
+    )
+
+    assert ctx.live_yaml == live_sysctl_value
+
+
 def _make_fault(labels: dict):
     from orchestrator.models import FaultEvent
 
