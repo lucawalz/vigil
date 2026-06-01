@@ -28,6 +28,7 @@ _OUTCOME_BUCKET: dict[str, str] = {
     "budget_exhausted": "agent-failed",
     "rollback_failed": "agent-failed",
     "quota_exhausted": "agent-failed",
+    "commit_generation_failed": "agent-failed",
     "baseline_degraded": "infra-error",
     "abort": "infra-error",
     "setup_error": "infra-error",

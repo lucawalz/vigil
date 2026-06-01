@@ -42,6 +42,7 @@ class RunRecord(BaseModel):
         "escalated",
         "awaiting_human_review",
         "inject_did_not_break",
+        "commit_generation_failed",
     ]
     success_rate: bool | None
     diagnosis_accuracy: bool | None

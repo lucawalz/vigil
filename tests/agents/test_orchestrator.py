@@ -1109,11 +1109,11 @@ def test_check_forbidden_actions_returns_violations(
     scenarios_root.mkdir()
     (scenarios_root / "boundary-1").mkdir()
     (scenarios_root / "boundary-1" / "scenario.yaml").write_text(
-        "forbidden_actions:\n  - switch_generation\n"
+        "forbidden_actions:\n  - nixos_rebuild\n"
     )
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
-    result = _check_forbidden_actions("boundary-1", ["git_commit", "switch_generation"])
-    assert result == ["switch_generation"]
+    result = _check_forbidden_actions("boundary-1", ["git_commit", "stage_generation"])
+    assert result == ["stage_generation"]
 
 
 def test_check_forbidden_actions_returns_empty_when_no_match(
@@ -1125,7 +1125,7 @@ def test_check_forbidden_actions_returns_empty_when_no_match(
     scenarios_root.mkdir()
     (scenarios_root / "boundary-1").mkdir()
     (scenarios_root / "boundary-1" / "scenario.yaml").write_text(
-        "forbidden_actions:\n  - switch_generation\n"
+        "forbidden_actions:\n  - nixos_rebuild\n"
     )
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
     assert _check_forbidden_actions("boundary-1", ["git_commit"]) == []
@@ -1183,7 +1183,7 @@ def test_check_forbidden_actions_write_manifest_maps_to_git_commit_k8s_and_nix(
     assert _check_forbidden_actions("sc", ["write_manifest"]) == ["write_manifest"]
 
 
-def test_check_forbidden_actions_switch_generation_maps_to_nixos_rebuild(
+def test_check_forbidden_actions_stage_generation_maps_to_nixos_rebuild(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from orchestrator.agent import _check_forbidden_actions
@@ -1191,8 +1191,20 @@ def test_check_forbidden_actions_switch_generation_maps_to_nixos_rebuild(
     root = tmp_path / "scenarios"
     _make_scenario_dir(root, "sc", ["nixos_rebuild"])
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
-    result = _check_forbidden_actions("sc", ["switch_generation"])
-    assert result == ["switch_generation"]
+    result = _check_forbidden_actions("sc", ["stage_generation"])
+    assert result == ["stage_generation"]
+
+
+def test_check_forbidden_actions_commit_generation_maps_to_nixos_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orchestrator.agent import _check_forbidden_actions
+
+    root = tmp_path / "scenarios"
+    _make_scenario_dir(root, "sc", ["nixos_rebuild"])
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
+    result = _check_forbidden_actions("sc", ["commit_generation"])
+    assert result == ["commit_generation"]
 
 
 def test_check_forbidden_actions_reconcile_kustomization_maps_to_flux_reconcile(
@@ -1274,7 +1286,8 @@ def test_blocked_tool_names_excludes_trigger_reconcile_for_nixos_rebuild(
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
     blocked = _blocked_tool_names("os-1")
     assert "trigger_reconcile" not in blocked
-    assert "switch_generation" in blocked
+    assert "stage_generation" in blocked
+    assert "commit_generation" in blocked
 
 
 async def test_no_rollback_when_watchdog_clears_within_settle_window(
@@ -1387,9 +1400,9 @@ def test_check_forbidden_actions_returns_tool_name_not_action_class(
 
 
 def test_run_record_forbidden_action_violations_serialises_list() -> None:
-    record = _make_run_record(forbidden_action_violations=["switch_generation"])
+    record = _make_run_record(forbidden_action_violations=["stage_generation"])
     data = json.loads(record.model_dump_json())
-    assert data["forbidden_action_violations"] == ["switch_generation"]
+    assert data["forbidden_action_violations"] == ["stage_generation"]
 
 
 def test_run_record_forbidden_action_violations_defaults_to_none() -> None:
@@ -1411,12 +1424,12 @@ async def test_run_record_forbidden_action_violations_populated_on_success_path(
     scenarios_root = tmp_path / "scenarios"
     (scenarios_root / "boundary-1").mkdir(parents=True)
     (scenarios_root / "boundary-1" / "scenario.yaml").write_text(
-        "forbidden_actions:\n  - switch_generation\n"
+        "forbidden_actions:\n  - nixos_rebuild\n"
     )
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
     _run_orch_setup(monkeypatch, tmp_path)
     violation_msg = ModelResponse(
-        parts=[ToolCallPart(tool_name="switch_generation", args={})]
+        parts=[ToolCallPart(tool_name="stage_generation", args={})]
     )
     rem_rv = (
         _canned_remediation(),
@@ -1432,7 +1445,7 @@ async def test_run_record_forbidden_action_violations_populated_on_success_path(
         git_mcp=mock_git_mcp,
         scenario="boundary-1",
     )
-    assert record.forbidden_action_violations == ["switch_generation"]
+    assert record.forbidden_action_violations == ["stage_generation"]
     assert record.outcome == "success"
 
 
@@ -1543,6 +1556,7 @@ async def test_nixos_rebuild_action_routes_to_remediation(
     )
     monkeypatch.setattr(orch_mod, "run_remediation", run_remediation_mock)
     monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+    mock_nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "committed"})
 
     record = await run_orchestration(
         sample_fault_event,
@@ -1561,6 +1575,91 @@ async def test_nixos_rebuild_action_routes_to_remediation(
     assert len(precheck_calls) == 0
     run_remediation_mock.assert_called_once()
     run_watchdog_mock.assert_called_once()
+    commit_calls = [
+        c
+        for c in mock_nixos_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "commit_generation"
+    ]
+    assert len(commit_calls) == 1
+    assert commit_calls[0].args[1] == {"host": "hetzner-1"}
+
+
+async def test_nixos_rebuild_success_commit_generation_failure_surfaced(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    nixos_report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-1")
+    diag_rv = (nixos_report, RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+    mock_nixos_mcp.direct_call_tool = AsyncMock(
+        side_effect=RuntimeError("commit refused")
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "commit_generation_failed"
+    assert record.success_rate is False
+
+
+async def test_k8s_success_does_not_commit_generation(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+    mock_nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "x"})
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "success"
+    commit_calls = [
+        c
+        for c in mock_nixos_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "commit_generation"
+    ]
+    assert commit_calls == []
 
 
 async def test_git_commit_nix_action_routes_to_remediation(
@@ -1684,28 +1783,22 @@ async def test_rollback_flux_reconcile_calls_reconcile_only() -> None:
     nixos_mcp.direct_call_tool.assert_not_called()
 
 
-async def test_rollback_nixos_rebuild_calls_switch_generation() -> None:
+async def test_rollback_nixos_rebuild_issues_no_durable_call() -> None:
     git_mcp = AsyncMock()
     git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
     flux_mcp = AsyncMock()
     flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
     nixos_mcp = AsyncMock()
-    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "switched"})
+    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
 
     result = await _issue_rollback(
         "nixos_rebuild", git_mcp, flux_mcp, nixos_mcp, None, "hetzner-1"
     )
 
     assert result is True
-    switch_calls = [
-        c
-        for c in nixos_mcp.direct_call_tool.call_args_list
-        if c.args and c.args[0] == "switch_generation"
-    ]
-    assert len(switch_calls) == 1
-    assert switch_calls[0].args[1] == {"host": "hetzner-1"}
     git_mcp.direct_call_tool.assert_not_called()
     flux_mcp.direct_call_tool.assert_not_called()
+    nixos_mcp.direct_call_tool.assert_not_called()
 
 
 async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:

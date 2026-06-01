@@ -55,6 +55,8 @@ _RUN_ID_SUFFIX_LEN = 8
 
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
+_COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
+
 _RUN_LOCK = asyncio.Lock()
 
 
@@ -188,7 +190,8 @@ _TOOL_TO_ACTION_CLASSES: dict[str, list[str]] = {
     "create_pr": ["git_commit_k8s", "git_commit_nix"],
     "write_manifest": ["git_commit_k8s", "git_commit_nix"],
     # self-mapped so raw tool names in forbidden_actions still trigger a violation
-    "switch_generation": ["nixos_rebuild", "switch_generation"],
+    "stage_generation": ["nixos_rebuild", "stage_generation"],
+    "commit_generation": ["nixos_rebuild", "commit_generation"],
     "trigger_reconcile": ["git_commit_nix"],
     "reconcile_kustomization": ["flux_reconcile"],
 }
@@ -264,11 +267,7 @@ async def _issue_rollback(
                 {"namespace": "flux-system", "name": "cluster-apps"},
             )
         elif recommended_action == "nixos_rebuild":
-            await call_tool(
-                nixos_mcp,
-                "switch_generation",
-                {"host": target_host},
-            )
+            return True
         elif recommended_action == "git_commit_nix":
             await call_tool(
                 git_mcp,
@@ -285,6 +284,24 @@ async def _issue_rollback(
         return True
     except Exception:
         log.exception("rollback failed for action=%s", recommended_action)
+        return False
+
+
+async def _commit_nixos_generation(
+    nixos_mcp: MCPServerStdio,
+    target_host: str | None,
+) -> bool:
+    """Durably promote the staged generation, disarming the rollback timer.
+
+    Called only after the Watchdog confirms health. Returns True on success;
+    on failure the staged generation stays uncommitted, so the armed timer
+    reverts the host by construction.
+    """
+    try:
+        await call_tool(nixos_mcp, "commit_generation", {"host": target_host})
+        return True
+    except Exception:
+        log.exception("commit_generation failed for host=%s", target_host)
         return False
 
 
@@ -831,7 +848,15 @@ async def _run_orchestration(
                         "rollback_succeeded" if rollback_success else "rollback_failed"
                     )
                 else:
-                    outcome = "success"
+                    if report.recommended_action == "nixos_rebuild":
+                        if await _commit_nixos_generation(
+                            nixos_mcp, report.target_host
+                        ):
+                            outcome = "success"
+                        else:
+                            outcome = _COMMIT_GENERATION_FAILED_OUTCOME
+                    else:
+                        outcome = "success"
                     rollback_triggered = False
                     rollback_success = None
                 break
@@ -855,6 +880,7 @@ async def _run_orchestration(
                     and not last_watchdog_result.degraded
                     and not forbidden_violations
                     and accuracy is not False
+                    and outcome != _COMMIT_GENERATION_FAILED_OUTCOME
                 ),
                 diagnosis_accuracy=accuracy,
                 MTTR_s=mttr_s,

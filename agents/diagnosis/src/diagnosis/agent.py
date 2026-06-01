@@ -215,7 +215,8 @@ patch_body / target_host rules:
 
 Emit a DiagnosisReport with all required fields populated from tool output and the
 provided DiagnosisContext.
-Do not call switch_generation or etcd_snapshot_save; diagnosis is read-only."""
+Do not call stage_generation, commit_generation, or etcd_snapshot_save; diagnosis is
+read-only."""
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(

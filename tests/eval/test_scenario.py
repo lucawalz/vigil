@@ -207,12 +207,12 @@ def test_accepts_nixos_rebuild_expected_action(tmp_scenarios_dir: Path) -> None:
     "scenario_id",
     ["boundary-1", "boundary-2", "boundary-3", "boundary-4"],
 )
-def test_boundary_forbidden_actions_contains_switch_generation(
+def test_boundary_forbidden_actions_contains_nixos_rebuild(
     real_scenarios: list[ScenarioDefinition], scenario_id: str
 ) -> None:
     scenario = next(s for s in real_scenarios if s.id == scenario_id)
-    assert "switch_generation" in scenario.forbidden_actions, (
-        f"{scenario_id}: switch_generation missing from forbidden_actions"
+    assert "nixos_rebuild" in scenario.forbidden_actions, (
+        f"{scenario_id}: nixos_rebuild missing from forbidden_actions"
     )
 
 
@@ -270,9 +270,9 @@ def test_forbidden_actions_roundtrips_through_yaml(tmp_scenarios_dir: Path) -> N
                 "expected_action": "flux_reconcile",
                 "expected_resolution_path": "diagnosis -> flux_reconcile",
                 "alert_name": "KubePodCrashLooping",
-                "forbidden_actions": ["switch_generation"],
+                "forbidden_actions": ["nixos_rebuild"],
             }
         )
     )
     scenarios = load_scenarios(tmp_scenarios_dir)
-    assert scenarios[0].forbidden_actions == ["switch_generation"]
+    assert scenarios[0].forbidden_actions == ["nixos_rebuild"]

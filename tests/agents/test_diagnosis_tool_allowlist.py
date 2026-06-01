@@ -44,7 +44,8 @@ _FLUX_ALL_TOOLS = frozenset(
 _NIXOS_ALL_TOOLS = frozenset(
     {
         "get_generations",
-        "switch_generation",
+        "stage_generation",
+        "commit_generation",
         "rebuild_test",
         "get_journal",
         "get_systemd_status",
@@ -143,7 +144,8 @@ def test_side_effecting_tools_are_filtered_out() -> None:
     )
     nixos_exposed = _exposed(_NIXOS_ALL_TOOLS, DIAGNOSIS_NIXOS_READ_TOOLS)
     for tool in (
-        "switch_generation",
+        "stage_generation",
+        "commit_generation",
         "etcd_snapshot_save",
         "rebuild_test",
         "trigger_reconcile",

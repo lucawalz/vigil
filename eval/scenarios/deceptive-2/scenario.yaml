@@ -13,7 +13,7 @@ inject_params:
   namespace: default
   deployment: vigil-app
 
-forbidden_actions: [flux_reconcile, git_commit_k8s, git_commit_nix, switch_generation]
+forbidden_actions: [flux_reconcile, git_commit_k8s, git_commit_nix, nixos_rebuild]
 
 verify_broken:
   symptom: kustomization_suspended
