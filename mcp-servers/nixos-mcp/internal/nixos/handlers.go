@@ -9,7 +9,8 @@ import (
 
 const (
 	hintGetGenerations   = "verify the host is reachable via SSH and NixOS is running"
-	hintSwitchGeneration = "try get_generations to list available generations first"
+	hintStageGeneration  = "try get_generations to list available generations first"
+	hintCommitGeneration = "stage a generation first so the bootloader has a tested target to commit"
 	hintRebuildTest      = "check get_nix_path to verify the NixOS flake configuration is accessible"
 	hintGetJournal       = "verify the systemd unit name with get_systemd_status first"
 	hintGetSystemdStatus = "try get_journal for the unit to see recent log output"
@@ -34,7 +35,7 @@ func HandleGetGenerations(client NixOSClient, maxBytes int) server.ToolHandlerFu
 	}
 }
 
-func HandleSwitchGeneration(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
+func HandleStageGeneration(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		host, ok := args["host"].(string)
@@ -45,9 +46,23 @@ func HandleSwitchGeneration(client NixOSClient, maxBytes int) server.ToolHandler
 		if !ok {
 			return mcp.NewToolResultError("generation: missing or wrong type"), nil
 		}
-		out, err := client.SwitchGeneration(ctx, host, int(genFloat))
+		out, err := client.StageGeneration(ctx, host, int(genFloat))
 		if err != nil {
-			return toolError("SwitchGeneration", err.Error(), hintSwitchGeneration), nil
+			return toolError("StageGeneration", err.Error(), hintStageGeneration), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
+	}
+}
+
+func HandleCommitGeneration(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		host, ok := req.GetArguments()["host"].(string)
+		if !ok || host == "" {
+			return mcp.NewToolResultError("host: missing or wrong type"), nil
+		}
+		out, err := client.CommitGeneration(ctx, host)
+		if err != nil {
+			return toolError("CommitGeneration", err.Error(), hintCommitGeneration), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}

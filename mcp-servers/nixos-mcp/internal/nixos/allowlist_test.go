@@ -8,7 +8,11 @@ import (
 func TestValidateCommandAllowsEnumeratedCommands(t *testing.T) {
 	legitimate := []string{
 		"nix-env -p /nix/var/nix/profiles/system --list-generations",
-		"sudo nix-env --switch-generation 42 -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
+		"sudo systemctl start rollback-gate.timer && sudo nix-env --switch-generation 42 -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test",
+		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration boot && sudo systemctl stop rollback-gate.timer",
+		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test",
+		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration boot",
+		"sudo systemctl stop rollback-gate.timer",
 		"sudo nixos-rebuild test --flake /opt/vigil/infra/nixos#hetzner-master",
 		"systemctl is-active rollback-gate.service",
 		`kubectl get node $(hostname) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`,
@@ -32,6 +36,7 @@ func TestValidateCommandRejectsInjection(t *testing.T) {
 		"sudo etcdctl snapshot save /tmp/x && rm -rf /",
 		"systemctl restart sshd.service",
 		"kubectl delete node hetzner-master",
+		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
 		"curl http://evil",
 	}
 	for _, cmd := range rejected {

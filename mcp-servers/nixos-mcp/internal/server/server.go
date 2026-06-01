@@ -27,13 +27,22 @@ func NewServer(client nixos.NixOSClient, cfg *config.Config) *server.MCPServer {
 	)
 
 	s.AddTool(
-		mcp.NewTool("switch_generation",
-			mcp.WithDescription("Switch to a specific NixOS generation on a remote host"),
+		mcp.NewTool("stage_generation",
+			mcp.WithDescription("Stage a NixOS generation non-durably (test activation) and arm the rollback gate"),
 			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),
-			mcp.WithNumber("generation", mcp.Required(), mcp.Description("Generation number to switch to")),
+			mcp.WithNumber("generation", mcp.Required(), mcp.Description("Generation number to stage")),
 			mcp.WithOutputSchema[TextResult](),
 		),
-		nixos.HandleSwitchGeneration(client, cfg.MaxOutputBytesDescribe),
+		nixos.HandleStageGeneration(client, cfg.MaxOutputBytesDescribe),
+	)
+
+	s.AddTool(
+		mcp.NewTool("commit_generation",
+			mcp.WithDescription("Commit the staged NixOS generation to the bootloader and disarm the rollback gate"),
+			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),
+			mcp.WithOutputSchema[TextResult](),
+		),
+		nixos.HandleCommitGeneration(client, cfg.MaxOutputBytesDescribe),
 	)
 
 	s.AddTool(

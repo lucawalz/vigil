@@ -13,7 +13,10 @@ type fakeNixOSClient struct{}
 var _ nixos.NixOSClient = &fakeNixOSClient{}
 
 func (f *fakeNixOSClient) GetGenerations(_ context.Context, _ string) (string, error) { return "", nil }
-func (f *fakeNixOSClient) SwitchGeneration(_ context.Context, _ string, _ int) (string, error) {
+func (f *fakeNixOSClient) StageGeneration(_ context.Context, _ string, _ int) (string, error) {
+	return "", nil
+}
+func (f *fakeNixOSClient) CommitGeneration(_ context.Context, _ string) (string, error) {
 	return "", nil
 }
 func (f *fakeNixOSClient) RebuildTest(_ context.Context, _ string) (string, error) { return "", nil }
@@ -41,7 +44,8 @@ func TestNixOSToolInventory(t *testing.T) {
 	tools := s.ListTools()
 	want := map[string]bool{
 		"get_generations":    true,
-		"switch_generation":  true,
+		"stage_generation":   true,
+		"commit_generation":  true,
 		"rebuild_test":       true,
 		"get_journal":        true,
 		"get_systemd_status": true,

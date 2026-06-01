@@ -16,8 +16,10 @@ import (
 type fakeNixOSClient struct {
 	generationsOut   string
 	generationsErr   error
-	switchOut        string
-	switchErr        error
+	stageOut         string
+	stageErr         error
+	commitOut        string
+	commitErr        error
 	rebuildOut       string
 	rebuildErr       error
 	journalOut       string
@@ -34,7 +36,7 @@ type fakeNixOSClient struct {
 	dryBuildErr      error
 	reconcileOut     string
 	reconcileErr     error
-	lastSwitchGen    int
+	lastStageGen     int
 	lastJournalUnit  string
 	lastJournalLines int
 	lastSysctlKey    string
@@ -44,9 +46,13 @@ func (f *fakeNixOSClient) GetGenerations(_ context.Context, _ string) (string, e
 	return f.generationsOut, f.generationsErr
 }
 
-func (f *fakeNixOSClient) SwitchGeneration(_ context.Context, _ string, generation int) (string, error) {
-	f.lastSwitchGen = generation
-	return f.switchOut, f.switchErr
+func (f *fakeNixOSClient) StageGeneration(_ context.Context, _ string, generation int) (string, error) {
+	f.lastStageGen = generation
+	return f.stageOut, f.stageErr
+}
+
+func (f *fakeNixOSClient) CommitGeneration(_ context.Context, _ string) (string, error) {
+	return f.commitOut, f.commitErr
 }
 
 func (f *fakeNixOSClient) RebuildTest(_ context.Context, _ string) (string, error) {
@@ -92,11 +98,15 @@ func newTestServer(t *testing.T, client nixos.NixOSClient) *mcptest.Server {
 			Handler: nixos.HandleGetGenerations(client, 4096),
 		},
 		server.ServerTool{
-			Tool: mcp.NewTool("switch_generation",
+			Tool: mcp.NewTool("stage_generation",
 				mcp.WithString("host", mcp.Required()),
 				mcp.WithNumber("generation", mcp.Required()),
 			),
-			Handler: nixos.HandleSwitchGeneration(client, 4096),
+			Handler: nixos.HandleStageGeneration(client, 4096),
+		},
+		server.ServerTool{
+			Tool:    mcp.NewTool("commit_generation", mcp.WithString("host", mcp.Required())),
+			Handler: nixos.HandleCommitGeneration(client, 4096),
 		},
 		server.ServerTool{
 			Tool:    mcp.NewTool("rebuild_test", mcp.WithString("host", mcp.Required())),
@@ -251,12 +261,12 @@ func TestGetGenerationsHandler_Truncation(t *testing.T) {
 	}
 }
 
-func TestSwitchGenerationHandler_Success(t *testing.T) {
-	fake := &fakeNixOSClient{switchOut: "switched to generation 3"}
+func TestStageGenerationHandler_Success(t *testing.T) {
+	fake := &fakeNixOSClient{stageOut: "staged generation 3"}
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	result := callTool(t, srv, "switch_generation", map[string]any{
+	result := callTool(t, srv, "stage_generation", map[string]any{
 		"host":       "192.168.1.10",
 		"generation": float64(3),
 	})
@@ -266,18 +276,96 @@ func TestSwitchGenerationHandler_Success(t *testing.T) {
 	}
 }
 
-func TestSwitchGenerationHandler_NumericArg(t *testing.T) {
-	fake := &fakeNixOSClient{switchOut: "ok"}
+func TestStageGenerationHandler_NumericArg(t *testing.T) {
+	fake := &fakeNixOSClient{stageOut: "ok"}
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	callTool(t, srv, "switch_generation", map[string]any{
+	callTool(t, srv, "stage_generation", map[string]any{
 		"host":       "192.168.1.10",
 		"generation": float64(42),
 	})
 
-	if fake.lastSwitchGen != 42 {
-		t.Errorf("expected generation 42, got %d", fake.lastSwitchGen)
+	if fake.lastStageGen != 42 {
+		t.Errorf("expected generation 42, got %d", fake.lastStageGen)
+	}
+}
+
+func TestStageGenerationHandler_DomainError(t *testing.T) {
+	fake := &fakeNixOSClient{stageErr: errors.New("ssh dial failed")}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "stage_generation", map[string]any{
+		"host":       "192.168.1.10",
+		"generation": float64(3),
+	})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for domain error")
+	}
+	if !strings.Contains(resultText(result), "StageGeneration") {
+		t.Errorf("expected 'StageGeneration' in response, got: %s", resultText(result))
+	}
+}
+
+func TestStageGenerationHandler_MissingGeneration(t *testing.T) {
+	fake := &fakeNixOSClient{}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "stage_generation", map[string]any{"host": "192.168.1.10"})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for missing generation")
+	}
+	if !strings.Contains(resultText(result), "generation") {
+		t.Errorf("expected 'generation' in response, got: %s", resultText(result))
+	}
+}
+
+func TestCommitGenerationHandler_Success(t *testing.T) {
+	fake := &fakeNixOSClient{commitOut: "committed to bootloader"}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "commit_generation", map[string]any{"host": "192.168.1.10"})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if !strings.Contains(resultText(result), "committed") {
+		t.Errorf("expected commit output, got: %s", resultText(result))
+	}
+}
+
+func TestCommitGenerationHandler_DomainError(t *testing.T) {
+	fake := &fakeNixOSClient{commitErr: errors.New("ssh dial failed")}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "commit_generation", map[string]any{"host": "192.168.1.10"})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for domain error")
+	}
+	if !strings.Contains(resultText(result), "CommitGeneration") {
+		t.Errorf("expected 'CommitGeneration' in response, got: %s", resultText(result))
+	}
+}
+
+func TestCommitGenerationHandler_MissingHost(t *testing.T) {
+	fake := &fakeNixOSClient{}
+	srv := newTestServer(t, fake)
+	defer srv.Close()
+
+	result := callTool(t, srv, "commit_generation", map[string]any{})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for missing host")
+	}
+	if !strings.Contains(resultText(result), "host") {
+		t.Errorf("expected 'host' in response, got: %s", resultText(result))
 	}
 }
 

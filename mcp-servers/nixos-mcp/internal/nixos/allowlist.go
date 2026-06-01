@@ -9,8 +9,8 @@ import (
 var allowList = map[string]map[string]bool{
 	"nix-env":                 {},
 	"nixos-rebuild":           {"test": true, "dry-activate": true},
-	"switch-to-configuration": {"switch": true},
-	"systemctl":               {"is-active": true, "status": true, "start": true},
+	"switch-to-configuration": {"test": true, "boot": true},
+	"systemctl":               {"is-active": true, "status": true, "start": true, "stop": true},
 	"sysctl":                  {},
 	"journalctl":              {},
 	"etcdctl":                 {"snapshot": true},
