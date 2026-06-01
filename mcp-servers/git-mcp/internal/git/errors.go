@@ -1,6 +1,11 @@
 package git
 
-import "github.com/mark3labs/mcp-go/mcp"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/mark3labs/mcp-go/mcp"
+)
 
 func toolError(what, why, hint string) *mcp.CallToolResult {
 	msg := what + ": " + why
@@ -8,4 +13,10 @@ func toolError(what, why, hint string) *mcp.CallToolResult {
 		msg += ". Hint: " + hint
 	}
 	return mcp.NewToolResultError(msg)
+}
+
+var ErrProtectedBranch = errors.New("branch is protected")
+
+func protectedBranchError(what, branch string) *mcp.CallToolResult {
+	return toolError(what, fmt.Sprintf("%s: %s", ErrProtectedBranch.Error(), branch), hintProtectedBranch)
 }

@@ -38,6 +38,7 @@ const (
 	hintReadFile         = "verify the branch and path are correct; call resolve_manifest_path to locate the repo-relative path"
 	hintReadFileNotFound = "call resolve_manifest_path(kustomize_path, kind, name, namespace) to locate the correct repo-relative path"
 	hintRevertCommit     = "verify the merge commit SHA from wait_for_gate and that the session is initialised"
+	hintProtectedBranch  = "the target branch is protected; target a non-protected branch or adjust VIGIL_PROTECTED_BRANCHES"
 )
 
 var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -242,11 +243,14 @@ func HandleCommitFiles(client GitClient, state SessionState) server.ToolHandlerF
 	}
 }
 
-func HandlePushBranch(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandlePushBranch(client GitClient, state SessionState, protected ProtectedBranches, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		branch, cloneDir := state.Branch()
 		if branch == "" || cloneDir == "" {
 			return mcp.NewToolResultError("HandlePushBranch: session not initialised; call create_branch first"), nil
+		}
+		if protected.Contains(branch) {
+			return protectedBranchError("HandlePushBranch", branch), nil
 		}
 
 		if err := client.Push(ctx, cloneDir, branch); err != nil {
@@ -385,12 +389,15 @@ func HandleClosePR(client GitClient, state SessionState) server.ToolHandlerFunc 
 	}
 }
 
-func HandleDeleteBranch(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
+func HandleDeleteBranch(client GitClient, state SessionState, protected ProtectedBranches, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		branch, ok := args["branch"].(string)
 		if !ok || branch == "" {
 			return mcp.NewToolResultError("branch: missing or wrong type"), nil
+		}
+		if protected.Contains(branch) {
+			return protectedBranchError("HandleDeleteBranch", branch), nil
 		}
 
 		if err := client.DeleteBranch(ctx, branch); err != nil {
@@ -467,7 +474,7 @@ func HandleResolveManifestPath(client GitClient, state SessionState) server.Tool
 	}
 }
 
-func HandleRevertCommit(client GitClient, state SessionState) server.ToolHandlerFunc {
+func HandleRevertCommit(client GitClient, state SessionState, protected ProtectedBranches) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		mergeCommitSHA, ok := args["merge_commit_sha"].(string)
@@ -486,6 +493,9 @@ func HandleRevertCommit(client GitClient, state SessionState) server.ToolHandler
 		baseBranch := state.BaseBranch()
 		if baseBranch == "" {
 			return mcp.NewToolResultError("HandleRevertCommit: base branch not set; call clone_repo first"), nil
+		}
+		if protected.Contains(baseBranch) {
+			return protectedBranchError("HandleRevertCommit", baseBranch), nil
 		}
 		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA, baseBranch)
 		if err != nil {

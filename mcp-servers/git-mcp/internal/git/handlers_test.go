@@ -37,6 +37,7 @@ type fakeGitClient struct {
 	prMergeSHA         string
 	revertSHA          string
 	lastRevertBranch   string
+	pushCalls          int
 	err                error
 	getPRCalls         int
 	autoMergeErr       error
@@ -72,6 +73,7 @@ func (f *fakeGitClient) CommitFiles(_ context.Context, _, _, _ string) (string, 
 }
 
 func (f *fakeGitClient) Push(_ context.Context, _, _ string) error {
+	f.pushCalls++
 	return f.err
 }
 
@@ -819,7 +821,7 @@ func TestPushBranchHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("push_branch")
-	handler := git.HandlePushBranch(fake, state, testMaxBytes)
+	handler := git.HandlePushBranch(fake, state, git.ProtectedBranches{}, testMaxBytes)
 
 	result, err := callHandler(t, "push_branch", tool, handler, map[string]any{})
 	if err != nil {
@@ -839,7 +841,7 @@ func TestPushBranchHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{err: fmt.Errorf("push rejected")}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("push_branch")
-	handler := git.HandlePushBranch(fake, state, testMaxBytes)
+	handler := git.HandlePushBranch(fake, state, git.ProtectedBranches{}, testMaxBytes)
 
 	result, err := callHandler(t, "push_branch", tool, handler, map[string]any{})
 	if err != nil {
@@ -854,7 +856,7 @@ func TestPushBranchHandler_NoSession(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("push_branch")
-	handler := git.HandlePushBranch(fake, state, testMaxBytes)
+	handler := git.HandlePushBranch(fake, state, git.ProtectedBranches{}, testMaxBytes)
 
 	result, err := callHandler(t, "push_branch", tool, handler, map[string]any{})
 	if err != nil {
@@ -1241,7 +1243,7 @@ func TestRevertCommitHandler_Success(t *testing.T) {
 	state := preloadedState(cloneDir, "remediation/run-001")
 	state.SetBaseBranch("main")
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1263,7 +1265,7 @@ func TestRevertCommitHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{err: fmt.Errorf("revert conflict")}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1281,7 +1283,7 @@ func TestRevertCommitHandler_InvalidSHA(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "not-a-sha!",
@@ -1358,7 +1360,7 @@ func TestDeleteBranchHandler_Success(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("delete_branch", mcp.WithString("branch", mcp.Required()))
-	handler := git.HandleDeleteBranch(fake, state, testMaxBytes)
+	handler := git.HandleDeleteBranch(fake, state, git.ProtectedBranches{}, testMaxBytes)
 
 	result, err := callHandler(t, "delete_branch", tool, handler, map[string]any{"branch": "remediation/run-k8s-1"})
 	if err != nil {
@@ -1377,7 +1379,7 @@ func TestDeleteBranchHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{deleteBranchErr: fmt.Errorf("gh: not found")}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("delete_branch", mcp.WithString("branch", mcp.Required()))
-	handler := git.HandleDeleteBranch(fake, state, testMaxBytes)
+	handler := git.HandleDeleteBranch(fake, state, git.ProtectedBranches{}, testMaxBytes)
 
 	result, err := callHandler(t, "delete_branch", tool, handler, map[string]any{"branch": "remediation/run-k8s-1"})
 	if err != nil {
@@ -1396,7 +1398,7 @@ func TestDeleteBranchHandler_MissingArgument(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("delete_branch", mcp.WithString("branch", mcp.Required()))
-	handler := git.HandleDeleteBranch(fake, state, testMaxBytes)
+	handler := git.HandleDeleteBranch(fake, state, git.ProtectedBranches{}, testMaxBytes)
 
 	result, err := callHandler(t, "delete_branch", tool, handler, map[string]any{})
 	if err != nil {
@@ -1408,6 +1410,98 @@ func TestDeleteBranchHandler_MissingArgument(t *testing.T) {
 	text := result.Content[0].(mcp.TextContent).Text
 	if !strings.Contains(text, "branch") {
 		t.Errorf("expected 'branch' in error message, got: %s", text)
+	}
+}
+
+func TestPushBranchHandler_RefusesProtected(t *testing.T) {
+	fake := &fakeGitClient{}
+	state := preloadedState(t.TempDir(), "main")
+	tool := mcp.NewTool("push_branch")
+	handler := git.HandlePushBranch(fake, state, git.ProtectedBranches{"main": {}}, testMaxBytes)
+
+	result, err := callHandler(t, "push_branch", tool, handler, map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for protected branch")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "branch is protected") {
+		t.Errorf("expected 'branch is protected' in error, got: %s", text)
+	}
+	if fake.pushCalls != 0 {
+		t.Errorf("expected Push not called, got %d", fake.pushCalls)
+	}
+}
+
+func TestRevertCommitHandler_RefusesProtectedBase(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("main")
+	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}})
+
+	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+		"merge_commit_sha": "abc1234",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for protected base branch")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "branch is protected") {
+		t.Errorf("expected 'branch is protected' in error, got: %s", text)
+	}
+	if fake.lastRevertBranch != "" {
+		t.Errorf("expected RevertCommit not called, got branch %q", fake.lastRevertBranch)
+	}
+}
+
+func TestRevertCommitHandler_AllowsEvalBaseline(t *testing.T) {
+	cloneDir := t.TempDir()
+	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	state.SetBaseBranch("chore/eval-cluster-baseline")
+	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}})
+
+	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+		"merge_commit_sha": "abc1234",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success, got error: %v", result.Content)
+	}
+	if fake.lastRevertBranch != "chore/eval-cluster-baseline" {
+		t.Errorf("expected lastRevertBranch %q, got %q", "chore/eval-cluster-baseline", fake.lastRevertBranch)
+	}
+}
+
+func TestDeleteBranchHandler_RefusesProtected(t *testing.T) {
+	fake := &fakeGitClient{}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("delete_branch", mcp.WithString("branch", mcp.Required()))
+	handler := git.HandleDeleteBranch(fake, state, git.ProtectedBranches{"main": {}}, testMaxBytes)
+
+	result, err := callHandler(t, "delete_branch", tool, handler, map[string]any{"branch": "main"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for protected branch")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "branch is protected") {
+		t.Errorf("expected 'branch is protected' in error, got: %s", text)
+	}
+	if fake.deleteBranchCalls != 0 {
+		t.Errorf("expected DeleteBranch not called, got %d", fake.deleteBranchCalls)
 	}
 }
 
@@ -1828,7 +1922,7 @@ func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
 	state.SetBaseBranch("chore/eval-cluster-baseline")
 
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1854,7 +1948,7 @@ func TestHandleRevertCommit_FailsWhenBaseBranchUnset(t *testing.T) {
 	state := preloadedState(cloneDir, "remediation/run-001")
 
 	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",

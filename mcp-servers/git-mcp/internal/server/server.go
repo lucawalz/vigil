@@ -72,6 +72,7 @@ const serverVersion = "1.0.0"
 
 func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 	s := &GitServer{}
+	protected := git.LoadProtectedBranches()
 
 	mcpServer := server.NewMCPServer("git-mcp", serverVersion,
 		server.WithToolCapabilities(true),
@@ -140,7 +141,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithDescription("Push the remediation branch to origin"),
 			mcp.WithOutputSchema[git.TextResult](),
 		),
-		git.HandlePushBranch(client, s, cfg.MaxOutputBytes),
+		git.HandlePushBranch(client, s, protected, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -198,7 +199,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.CommitResult](),
 		),
-		git.HandleRevertCommit(client, s),
+		git.HandleRevertCommit(client, s, protected),
 	)
 
 	mcpServer.AddTool(
@@ -222,7 +223,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.TextResult](),
 		),
-		git.HandleDeleteBranch(client, s, cfg.MaxOutputBytes),
+		git.HandleDeleteBranch(client, s, protected, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
