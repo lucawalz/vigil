@@ -45,17 +45,30 @@ Chosen option: "NixOS dead-man's switch", because it makes OS repair attempts in
 - Bad: This mechanism is specific to NixOS; nodes running other distributions would require a different rollback strategy
 - Bad: The Watchdog agent must complete its health assessment within the rollback-gate window
 
-`switch_generation` is the primary OS remediation verb validated in the v1.0 eval campaign; `rebuild_test` is the trial activation step; the systemd timer + health-gate is the safety net that triggers a forced reboot when health checks fail. The agent converges on `switch_generation` reliably across all OS-layer eval scenarios.
+OS-layer repairs follow a stage-confirm-commit flow:
 
-**Validation Status:** Verified — v1.0 initial deployment (timer + health gate deployed and calibrated); v1.0 eval campaign (all 7 OS/cross scenarios pass via `switch_generation`).
+1. `stage_generation(host, generation)` arms the per-node `rollback-gate.timer` via `systemctl start`, then activates the target generation with `switch-to-configuration test`. The running system uses the new configuration; the bootloader default still points at the prior committed generation.
+2. The deterministic Watchdog confirms cluster health within its window.
+3. Only after confirmation, the Orchestrator (not the remediation LLM) calls `commit_generation(host)`, which runs `switch-to-configuration boot` to set the bootloader default to the staged generation and disarms the timer via `systemctl stop`.
+
+If health is not confirmed by the deadline, whether from degradation, timeout, or an agent crash, the armed timer fires `rollback-gate.service`, which exits non-zero and triggers `FailureAction=reboot-force`. Because nothing was committed to the bootloader, the reboot restores the prior generation. The timer fires independently of the agent process, so the guarantee holds even on agent crash.
+
+**Validation Status:** Implemented. `stage_generation` activates non-durably and arms `rollback-gate.timer`; the Watchdog confirms; `commit_generation` makes the change durable and disarms the timer; non-confirmation or agent crash reverts on reboot. End-to-end OS-layer eval revalidation is pending.
+
+### Scope: `git_commit_nix`
+
+The dead-man's switch covers OS repairs applied directly to a node via `stage_generation`. It does **not** cover `git_commit_nix`, which commits a NixOS change to the Git repository for `vigil-auto-reconcile` to apply. The reversal path for `git_commit_nix` is GIT-REVERT: `revert_commit` followed by `trigger_reconcile` re-converges the cluster to a corrected Git state. `git_commit_nix` is therefore out of scope for the dead-man's switch.
+
+Residual risk: a merged configuration that bricks a node below k3s defeats the auto-reconciler's self-heal, because the node can no longer pull and apply the corrected commit. This risk is mitigated by the CI/PR gate and the human-review path, not by staging. Adding staging discipline to `vigil-auto-reconcile` is a deliberate non-goal: the GitOps path's safety property is Git revertibility plus pre-merge review, not in-place activation gating.
 
 ### Confirmation
 
 The decision holds as long as:
-- `nixos-rebuild test` activates a new configuration without committing it to the boot loader on all cluster nodes
-- The systemd timer (`nixos-rollback-gate.timer`) forces a reboot within the configured window when health confirmation is not received
-- `switch_generation` is the agent-facing verb for committing a validated OS repair in the nixos-mcp tool
-- All 7 OS-layer and cross-layer eval scenarios continue to pass end-to-end via the dead-man's switch flow
+- `switch-to-configuration test` activates a new configuration without changing the bootloader default on all cluster nodes
+- `stage_generation` arms `rollback-gate.timer` (via `systemctl start`) when it activates the staged configuration non-durably
+- The systemd timer (`rollback-gate.timer`) forces a reboot within the configured window when health confirmation is not received, regardless of agent liveness
+- `commit_generation` is the deterministic Orchestrator-invoked verb that makes a confirmed repair durable (`switch-to-configuration boot`) and disarms the timer
+- OS-layer and cross-layer eval scenarios pass end-to-end via the stage-confirm-commit flow
 
 ### Pros and Cons of the Options
 

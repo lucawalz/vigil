@@ -10,12 +10,12 @@ informed: []
 
 ## Context and Problem Statement
 
-During OS-layer remediation the Watchdog agent runs concurrently with Remediation (via `asyncio.TaskGroup`) and observes cluster health on a fixed poll interval. When health degrades, the Watchdog signals `WatchdogResult.degraded=True` and the Orchestrator issues `git-mcp revert_commit` followed by `flux-mcp reconcile_kustomization` for K8s faults (or `nixos-mcp switch_generation` for OS faults). This path is safety-critical: a false negative (missed degradation) leaves a broken node live; a false positive triggers an unnecessary rollback that aborts a valid repair.
+During OS-layer remediation the Watchdog agent runs concurrently with Remediation (via `asyncio.TaskGroup`) and observes cluster health on a fixed poll interval. When health degrades, the Watchdog signals `WatchdogResult.degraded=True` and the Orchestrator issues `git-mcp revert_commit` followed by `flux-mcp reconcile_kustomization` for K8s faults (for OS faults, a non-confirmed staged generation reverts when the armed `rollback-gate.timer` fires). This path is safety-critical: a false negative (missed degradation) leaves a broken node live; a false positive triggers an unnecessary rollback that aborts a valid repair.
 
 Two properties of LLM-backed health assessment make it unsuitable for this path:
 
 1. **Hallucination surface**: An LLM interpreting `get_pods` output could reason itself into "the pods look mostly fine" despite a CrashLoopBackOff, particularly when tool output is incomplete. A deterministic snapshot diff has no such failure mode.
-2. **Token cost and latency**: The Watchdog polls every few seconds throughout the entire remediation window. Calling an LLM per poll tick adds hundreds of milliseconds per call and accumulates significant token cost over a 24 s window with no accuracy gain over a simple pod-count comparison.
+2. **Token cost and latency**: The Watchdog polls every few seconds throughout the entire remediation window. Calling an LLM per poll tick adds hundreds of milliseconds per call and accumulates significant token cost over the confirm window with no accuracy gain over a simple pod-count comparison.
 
 ## Decision Drivers
 
@@ -36,7 +36,7 @@ Chosen option: "Deterministic Watchdog", because it eliminates hallucination sur
 
 ### Consequences
 
-- Good: The rollback trigger path contains no LLM call; degradation classification is a deterministic comparison of `HealthSnapshot` fields (ready-pod count, restart counts, node-ready status)
+- Good: The rollback trigger path contains no LLM call; degradation classification is a deterministic comparison of `HealthSnapshot` fields (ready-pod count, endpoint health, and Flux readiness)
 - Good: Watchdog poll loop incurs zero token cost regardless of how many ticks occur during the remediation window
 - Good: The Watchdog only returns `WatchdogResult`; the Orchestrator calls `revert_commit`. No agent can bypass this boundary.
 - Bad: The deterministic diff cannot reason about partial degradation (e.g., a pod that is Ready but serving 5xx responses); application-layer health is outside the Watchdog's scope

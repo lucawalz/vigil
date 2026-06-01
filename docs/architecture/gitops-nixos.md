@@ -1,10 +1,12 @@
 # Vigil — NixOS GitOps and the Dead-Man's Switch
 
-Vigil performs OS-level repairs by invoking `nixos-rebuild` on cluster nodes over SSH. Every such
-repair is reversible by construction, not by convention. This document covers the NixOS generation
-model as the rollback substrate, the dead-man's switch timer that enforces a hard revert deadline,
-the Flux GitOps layer that manages the desired NixOS state, and the `nixos-mcp` tool sequence that
-agents follow for OS-layer fault remediation.
+Vigil performs OS-level repairs through a stage-confirm-commit flow on cluster nodes over SSH.
+Every such repair is reversible by construction, not by convention: a generation is staged
+non-durably, the cluster's health is confirmed, and only a confirmed repair is committed to the
+bootloader. This document covers the NixOS generation model as the rollback substrate, the
+dead-man's switch timer that enforces a hard revert deadline, the Flux GitOps layer that manages the
+desired NixOS state, and the `nixos-mcp` tool sequence that agents follow for OS-layer fault
+remediation.
 
 ## NixOS Generation Model
 
@@ -13,85 +15,86 @@ generation is a complete, independently bootable system closure in `/nix/var/nix
 Switching generations is atomic: the bootloader entry changes, the active configuration changes, and
 the previous generation remains intact until explicitly garbage-collected.
 
-`nixos-rebuild test` activates a new configuration in memory without writing a new bootloader entry.
-The current generation pointer does not change. If the node reboots before a subsequent
-`nixos-rebuild switch`, it boots back to the generation that was active before `nixos-rebuild test`
-ran. This is not a Vigil-specific property; it is the standard NixOS behaviour for the `test`
-subcommand.
+`switch-to-configuration test` activates a new configuration in the running system without changing
+the bootloader default. The committed-generation pointer does not move. If the node reboots before a
+subsequent `switch-to-configuration boot`, it boots back to the generation that was the bootloader
+default before activation. This is the standard NixOS behaviour for the `test` activation mode.
 
-Vigil exploits this property as a safety primitive: every OS repair attempt is a `nixos-rebuild test`
-followed by a health check. If the health check fails, or if the agent crashes, or if the node
-reboots for any reason, the node returns to its prior generation without agent intervention.
+Vigil exploits this property as a safety primitive. An OS repair is staged with
+`switch-to-configuration test` and is durable only after `switch-to-configuration boot` writes the
+new bootloader default. Between staging and commit, if the health check fails, the agent crashes, or
+the node reboots for any reason, the node returns to its prior committed generation without agent
+intervention.
 
-`switch_generation` in `nixos-mcp` provides the path for reverting to a specific prior generation:
+`stage_generation` and `commit_generation` in `nixos-mcp` implement the two halves of this flow.
+`stage_generation` activates the target generation non-durably and arms the dead-man's switch timer:
 
 ```go
 // mcp-servers/nixos-mcp/internal/nixos/client.go
-func (c *realNixOSClient) SwitchGeneration(_ context.Context, host string, generation int) (string, error) {
+func (c *realNixOSClient) StageGeneration(ctx context.Context, host string, generation int) (string, error) {
     cmd := fmt.Sprintf(
-        "sudo nix-env --switch-generation %d -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
+        "sudo systemctl start rollback-gate.timer && sudo nix-env --switch-generation %d -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test",
         generation,
     )
-    return c.runSSH(host, cmd)
+    return c.runSSH(ctx, host, cmd)
 }
 ```
 
-The two-step implementation reflects the difference between switching the profile pointer
-(`nix-env --switch-generation`) and activating the configuration it points to
-(`switch-to-configuration switch`). Switching the pointer alone does not restart services or update
-the running environment; calling `switch-to-configuration switch` after it makes the system state
-consistent with the newly active generation.
+The timer is armed first, so a failure during activation is still covered by the deadline.
+
+`switch-to-configuration test` activates the staged generation in the running system without touching
+the bootloader default, so an uncommitted stage is reverted by any reboot. `commit_generation` makes
+a confirmed repair durable with `switch-to-configuration boot` and disarms the timer with
+`systemctl stop rollback-gate.timer`. The commit step is invoked deterministically by the
+Orchestrator, not by the remediation LLM; the remediation agent can only stage.
 
 ## Dead-Man's Switch Timer
 
 The dead-man's switch is a systemd timer and service pair deployed on every cluster node via the
 `rollback-gate.nix` NixOS module. It provides a hard revert deadline that operates independently of
-the agent: if the node does not pass its health gate within the configured window after a
-`nixos-rebuild test`, the timer fires the service, which either confirms the node is healthy or
-forces a reboot.
+the agent: the timer is not started at boot. `stage_generation` arms it at staging time and
+`commit_generation` disarms it on a confirmed repair. Health assessment belongs to the Watchdog;
+the timer is a pure deadline. If the staged repair is not committed before the deadline, the timer
+fires the service, which forces a reboot to the prior committed generation.
 
 ```nix
 # infra/nixos/modules/services/rollback-gate.nix
 systemd.services.rollback-gate = {
   serviceConfig = {
     Type = "oneshot";
-    ExecStart = pkgs.writeShellScript "rollback-gate-check" ''
-      set -euo pipefail
-      ${pkgs.systemd}/bin/systemctl is-active k3s.service
-      kc=/etc/rancher/k3s/k3s.yaml
-      if [ ! -f "$kc" ]; then kc=/var/lib/rancher/k3s/agent/kubelet.kubeconfig; fi
-      status=$(KUBECONFIG=$kc ${pkgs.k3s}/bin/kubectl get node "${meta.hostname}" \
-        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
-      [ "$status" = "True" ]
+    ExecStart = pkgs.writeShellScript "rollback-gate-expire" ''
+      echo "rollback-gate: confirmation deadline expired without commit; reverting to boot default" >&2
+      exit 1
     '';
     FailureAction = "reboot-force";
-    TimeoutStartSec = "120s";
   };
 };
 
 systemd.timers.rollback-gate = {
-  wantedBy = [ "multi-user.target" ];
   timerConfig = {
-    OnActiveSec = "24s";
+    OnActiveSec = "180s";
     Unit = "rollback-gate.service";
   };
 };
 ```
 
-The timer fires once, 24 seconds after the system enters `multi-user.target`. The service checks two
-conditions in sequence: `k3s.service` must be active, and the node must report `Ready` in the
-Kubernetes API. If either check fails, `FailureAction = "reboot-force"` triggers an immediate
-kernel-level reboot. Because `nixos-rebuild test` does not write a new bootloader entry, this reboot
-lands on the previous generation.
+The timer is not bound to `multi-user.target`, so it does not start at boot; `stage_generation` arms
+it with `systemctl start rollback-gate.timer`. Once armed, it fires once, 180 seconds later. Firing
+is itself the revert signal: the service exits non-zero, and `FailureAction = "reboot-force"`
+triggers an immediate kernel-level reboot. Because a staged generation does not change the bootloader
+default, this reboot lands on the previous committed generation.
 
-The 24-second `OnActiveSec` value comes from empirical measurement. The worst-case warm-store
-`nixos-rebuild test` activation time on the Hetzner CX23/CX33 VMs used in evaluation was 16 seconds
-(hetzner-worker-2, run 2). The timer deadline is `ceil(16 * 1.5) = 24s`, giving a 50% margin above
-the measured maximum. Full timing data is in `docs/eval/rollback-gate-timings.md`.
+The 180-second `OnActiveSec` value covers the full stage-confirm-commit budget, not activation
+time alone. The dominant term is the deterministic Watchdog confirm window (120 s); stage activation
+adds ≤16 s and the commit plus Orchestrator dispatch overhead adds ≤25 s, giving ≈161 s rounded up to
+180 s for headroom. A single value serves all environments because the 120 s window dominates the
+per-environment activation variance. Full timing data and the derivation are in
+`docs/eval/rollback-gate-timings.md` and `docs/adr/0012-empirically-calibrated-rollback-deadline.md`.
 
-The timer runs unconditionally on every boot. On a node that is not in a `nixos-rebuild test` state,
-the service checks health, finds `k3s.service` active and the node Ready, and exits successfully. The
-timer fires exactly once per boot because it uses `OnActiveSec` rather than a repeating interval.
+The timer is armed only during a staged-but-uncommitted window. On a confirmed repair,
+`commit_generation` disarms it with `systemctl stop rollback-gate.timer` before it can fire; on a
+non-confirmed repair or an agent crash, the timer fires once and forces the revert. It uses
+`OnActiveSec` rather than a repeating interval, so a single firing covers the window.
 
 ## Flux GitOps Layer
 
@@ -105,8 +108,9 @@ via `nixos-mcp` when a fault requires it.
 The interaction between the two layers becomes relevant when a cross-layer fault occurs: a NixOS
 misconfiguration that also affects Kubernetes workloads. In such a scenario, the Remediation agent
 must suspend the Flux Kustomization before patching any Kubernetes resource, and separately invoke
-`rebuild_test` or `switch_generation` on the affected node. The Flux suspension prevents Flux from
-reconciling the Kubernetes resource back to the faulty state while the NixOS repair is in progress.
+`stage_generation` on the affected node (with the Orchestrator committing via `commit_generation`
+after the Watchdog confirms health). The Flux suspension prevents Flux from reconciling the
+Kubernetes resource back to the faulty state while the NixOS repair is in progress.
 
 The NixOS Flake at `infra/nixos/flake.nix` defines four host configurations:
 
@@ -120,51 +124,29 @@ The NixOS Flake at `infra/nixos/flake.nix` defines four host configurations:
 Every cluster node imports `rollback-gate.nix`. The Vigil agent host does not, because it runs no
 Kubernetes component and is not subject to OS-level repairs by the agent.
 
-## RebuildTest and the Health Gate
+## Staging and the Health Gate
 
-The `rebuild_test` tool in `nixos-mcp` runs `nixos-rebuild test` on the target node and immediately
-probes two health signals:
+`stage_generation` is the entry verb for an OS-layer repair. It activates the target generation
+non-durably with `switch-to-configuration test` and arms `rollback-gate.timer`, leaving the
+bootloader default unchanged so any reboot reverts the stage. It does not commit the configuration:
+the running system reflects the staged generation, but durability requires a later
+`commit_generation` (`switch-to-configuration boot`).
 
-```go
-// mcp-servers/nixos-mcp/internal/nixos/client.go
-func (c *realNixOSClient) RebuildTest(_ context.Context, host string) (string, error) {
-    _, rebuildErr := c.runSSH(host, "sudo nixos-rebuild test")
-    exitCode := 0
-    if rebuildErr != nil {
-        exitCode = 1
-    }
+The health gate has two independent enforcement points:
 
-    healthGate, _ := c.runSSH(host, "systemctl is-active rollback-gate.service")
-    healthGate = strings.TrimSpace(healthGate)
+- The deterministic Watchdog confirms cluster health within its window after staging. Confirmation is
+  the precondition the Orchestrator checks before committing.
+- The armed `rollback-gate.timer` fires `rollback-gate.service`, which exits non-zero and forces a
+  reboot to the prior committed generation. This enforcement runs independently of the agent: it
+  fires by default and is suppressed only by the success-path disarm at commit.
 
-    k8sReady, _ := c.runSSH(host, `kubectl get node $(hostname) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`)
-    k8sReady = strings.TrimSpace(k8sReady)
+On a confirmed repair, the Orchestrator deterministically calls `commit_generation`, which writes the
+new bootloader default with `switch-to-configuration boot` and disarms the timer with
+`systemctl stop rollback-gate.timer`. The remediation agent never commits; it can only stage.
 
-    result := fmt.Sprintf("nixos-rebuild exit: %d\nhealth-gate: %s\nk8s-node-ready: %s", exitCode, healthGate, k8sReady)
-    return result, nil
-}
-```
-
-The return value is a three-line string. The agent parses it to decide whether the trial activation
-succeeded:
-
-- `nixos-rebuild exit: 0` confirms the rebuild completed without error
-- `k8s-node-ready: True` confirms the node is Ready in the Kubernetes API
-
-The `health-gate` field reflects `systemctl is-active rollback-gate.service` at the moment of the
-probe. This value is informational for the agent; the authoritative health enforcement is performed
-by the timer firing independently, not by the agent reading this field.
-
-A successful `rebuild_test` does not commit the new configuration. The Remediation agent exits the
-OS path after a successful `rebuild_test` without calling `switch_generation`; the running system
-reflects the `nixos-rebuild test` state, and the new configuration becomes permanent only after a
-subsequent `nixos-rebuild switch` (outside the agent's scope) or a reboot that writes the new
-bootloader entry through a later `switch` call.
-
-If `rebuild_test` returns `nixos-rebuild exit: 1` or `k8s-node-ready: False`, the Remediation agent
-calls `get_generations` to retrieve the available generation list and then calls `switch_generation`
-with the previous generation number. `switch_generation` is therefore the rollback verb, not the
-success verb.
+If health is not confirmed, whether from degradation, timeout, or an agent crash, the timer fires and
+`FailureAction=reboot-force` reboots the node. Because the stage never changed the bootloader default,
+the reboot lands on the prior committed generation.
 
 ## OS Remediation Sequence
 
@@ -173,13 +155,14 @@ The full OS path for an agent-driven remediation:
 1. Diagnosis agent sets `requires_os_level=True` in `DiagnosisReport`, populates `target_host` from
    the alert's `node` label.
 2. Orchestrator passes `target_host` through `RemediationDeps` to the Remediation agent.
-3. Remediation agent calls `rebuild_test(host=target_host)`.
-4. If `rebuild_test` returns a healthy result: exit OS path, no further action.
-5. If `rebuild_test` returns an unhealthy result: call `get_generations(host=target_host)` to list
-   available generations, then call `switch_generation(host=target_host, generation=N-1)` where
-   `N-1` is the previous generation number.
-6. The dead-man's switch timer fires 24 seconds after the next `multi-user.target` activation,
-   regardless of agent state.
+3. Remediation agent calls `get_generations(host=target_host)` to list available generations, then
+   `stage_generation(host=target_host, generation=N)` to activate the target generation non-durably
+   and arm `rollback-gate.timer`.
+4. The deterministic Watchdog confirms cluster health within its window.
+5. On confirmation, the Orchestrator deterministically calls `commit_generation(host=target_host)`,
+   which makes the generation durable (`switch-to-configuration boot`) and disarms the timer.
+6. On non-confirmation or an agent crash, the dead-man's switch timer fires 180 seconds after
+   staging armed it and forces a reboot to the prior committed generation, regardless of agent state.
 
 The `etcd_snapshot_save` tool provides a recovery point for the etcd control plane before a
 destructive generation switch that crosses a major NixOS configuration boundary. It is called as a

@@ -10,66 +10,75 @@ informed: []
 
 ## Context and Problem Statement
 
-The NixOS rollback gate (`nixos-rollback-gate.timer`) fires `OnActiveSec` after `nixos-rebuild test` activates a new configuration. If the Watchdog has not confirmed cluster health by that time, the timer triggers a forced reboot, reverting to the previous NixOS generation.
+The NixOS rollback gate (`rollback-gate.timer`) is armed at staging and fires `OnActiveSec` after `stage_generation` activates a new configuration non-durably (`switch-to-configuration test`). If the Watchdog has not confirmed cluster health and the Orchestrator has not committed (disarming the timer) by that time, the timer triggers a forced reboot, reverting to the previous NixOS generation.
 
 The timer deadline must satisfy two competing constraints:
 
-1. **Too short**: the Watchdog has not yet completed its health assessment when the timer fires; a valid repair triggers an unnecessary rollback every time.
+1. **Too short**: the full stage-confirm-commit budget has not elapsed when the timer fires; a valid repair triggers an unnecessary rollback every time.
 2. **Too long**: a broken configuration remains active longer than necessary before the dead-man's switch engages; MTTR for OS-layer failures is extended.
 
-The initial placeholder value of 120 s was chosen conservatively before timing data was available. Measured activation times now provide an empirical basis for a tighter deadline.
+The deadline must outlast the entire stage-confirm-commit budget, not raw activation time alone. The dominant term is the Watchdog confirm window, which is environment-independent.
 
 ## Decision Drivers
 
-- Measured 16 s steady-state warm-store rebuild time (Hetzner CX23 worker-2, run 2; the highest steady-state value across all nodes and runs in `docs/eval/rollback-gate-timings.md`)
-- 50 % engineering margin applied to the measured max: `ceil(16 × 1.5) = 24 s`
-- Faster MTTR than the 120 s placeholder: a node running a bad configuration is reverted 5× sooner
-- Cold-start (first `nixos-rebuild test` on a fresh VM) is excluded: warm-store runs 2–3 are the steady-state scenario the gate must handle; cold starts are an infra-provisioning concern, not a per-repair concern
+- The deadline must cover the full stage-confirm-commit budget, not activation time alone. An earlier `ceil(16 × 1.5) = 24 s` derivation counted only activation and would fire mid-confirmation.
+- The Watchdog confirm window (`WATCHDOG_WINDOW_S=120 s`) is the dominant, environment-independent term in the budget
+- Stage activation (`switch-to-configuration test` on an already-built generation): ≤16 s steady-state (`docs/eval/rollback-gate-timings.md`)
+- Commit (`switch-to-configuration boot`) plus Orchestrator dispatch overhead: ≤25 s
+- A single value should serve all environments: the 120 s window dominates, so the small Hetzner-vs-local activation variance (16 s vs 22 s) is absorbed by the headroom rather than requiring per-environment calibration
+- Cold-start (first activation on a fresh VM) is excluded: warm-store runs 2–3 are the steady-state scenario the gate must handle; cold starts are an infra-provisioning concern, not a per-repair concern
 
 ## Considered Options
 
-- Empirically-calibrated deadline (24 s, derived from measured timing data with 50 % margin)
+- Full-budget deadline (180 s, derived from the stage-confirm-commit budget)
+- Activation-only deadline (24 s, derived from measured activation time with 50 % margin)
 - Conservative placeholder deadline (120 s, no timing evidence)
-- Dynamic deadline (Watchdog reports completion time; timer cancelled by agent signal)
+- Dynamic deadline (agent computes/maintains the deadline; timer cancelled by agent signal)
 
 ## Decision Outcome
 
-Chosen option: "Empirically-calibrated deadline (24 s)", because it is derived from measured activation times on the actual hardware profile (Hetzner CX23 and CX33), applies a 50 % safety margin over the worst observed steady-state run, and reduces the OS-failure window by 5× compared to the placeholder.
+Chosen option: "Full-budget deadline (180 s)", because the gate must outlast the entire stage-confirm-commit sequence. The budget is the Watchdog confirm window (120 s, the dominant term) plus stage activation (≤16 s) plus commit and Orchestrator dispatch overhead (≤25 s), giving a subtotal of ≈161 s rounded up to 180 s for ~12 % headroom against run-to-run variance. One value serves all environments: because the 120 s window dominates, the small Hetzner-vs-local activation variance (16 s vs 22 s) is absorbed by the headroom, collapsing the previous 24 s (Hetzner) / 33 s (local) split into a single calibrated value.
 
 ### Consequences
 
-- Good: The 24 s deadline is derived from measured hardware timing; the 50 % margin accounts for run-to-run variance
-- Good: MTTR for OS-layer faults is reduced: a node running a bad configuration reboots within 24 s rather than 120 s
-- Good: The derivation is documented in `docs/eval/rollback-gate-timings.md`; re-calibration requires new timing data when the hardware profile changes
-- Bad: The 50 % margin does not cover degraded-network scenarios where the Watchdog's `get_pods` call experiences unusual API server latency; such scenarios require a separate latency budget analysis
-- Bad: The deadline is hardware-specific: a different instance type (e.g., CX11) would require re-measurement and a new calibration
+- Good: The 180 s deadline covers the full stage-confirm-commit budget; it cannot fire mid-confirmation the way the activation-only 24 s value could
+- Good: One value applies to every environment; the dominant 120 s Watchdog window makes the per-environment activation variance negligible within the headroom
+- Good: The derivation is documented in `docs/eval/rollback-gate-timings.md`; the activation-time component is re-measured when the hardware profile changes, but the deadline only moves if the Watchdog window changes
+- Bad: A node running a broken configuration remains active for up to 180 s before the dead-man's switch reverts it; this is the cost of guaranteeing the confirm window can complete
+- Documented dependency: if `WATCHDOG_WINDOW_S` changes, `OnActiveSec` must be recomputed as ≥ window + ~60 s (activation + commit + dispatch headroom)
 
-**Validation Status:** Verified — `docs/eval/rollback-gate-timings.md` records steady-state max of 16 s on Hetzner CX23; `ceil(16 × 1.5) = 24 s` is the current `OnActiveSec` value. Local cluster timing max is 22 s (`OnActiveSec: 33 s`), calibrated separately.
+**Validation Status:** Implemented. `OnActiveSec=180s` is derived from the 120 s Watchdog window plus the ≤16 s activation and ≤25 s commit/dispatch components documented in `docs/eval/rollback-gate-timings.md`. A single value applies to both Hetzner and local environments. End-to-end revalidation of the full stage-confirm-commit timing is pending.
 
 ### Confirmation
 
 The decision holds as long as:
-- Hetzner node instance types remain CX33 (master) and CX23 (workers)
-- The steady-state activation time measured in `docs/eval/rollback-gate-timings.md` does not exceed 16 s on warm-store runs
-- `nixos-rollback-gate.timer` has `OnActiveSec=24s` in the NixOS module for Hetzner nodes
+- The Watchdog confirm window remains `WATCHDOG_WINDOW_S=120 s`; a change requires recomputing `OnActiveSec` as ≥ window + ~60 s
+- The steady-state activation time measured in `docs/eval/rollback-gate-timings.md` stays within the ≤16 s activation component the budget assumes
+- `rollback-gate.timer` has `OnActiveSec=180s` in the NixOS module on all cluster nodes
 
 ### Pros and Cons of the Options
 
-#### Empirically-calibrated deadline (24 s)
+#### Full-budget deadline (180 s)
 
-- Good: Derived from three `nixos-rebuild test` runs per node across all Hetzner cluster members; worst-case steady-state value is the baseline, not the average
-- Good: 50 % margin (`ceil(max × 1.5)`) is the same formula applied to local cluster timing (22 s → 33 s), making the calibration methodology consistent across environments
-- Bad: Requires re-measurement when hardware profile changes; the 24 s value is not portable to a different instance class without new timing data
+- Good: Covers the entire stage-confirm-commit sequence; the deadline cannot expire while the Watchdog is still inside its confirm window
+- Good: A single value serves all environments because the 120 s Watchdog window dominates and absorbs the per-environment activation variance
+- Good: The deadline is a static value baked into the NixOS module; it is armed once at staging by a deterministic `systemctl start` and fires by default regardless of agent liveness
+- Bad: A node running a broken configuration stays active for up to 180 s; this latency is the cost of guaranteeing the confirm window can finish before the gate fires
+
+#### Activation-only deadline (24 s)
+
+- Good: Derived from three activation runs per node across all Hetzner cluster members; worst-case steady-state value is the baseline, not the average
+- Bad: Counts only `switch-to-configuration test` activation, ignoring the 120 s Watchdog confirm window and the commit step; the timer would fire mid-confirmation and revert every valid repair before it could be committed
 
 #### Conservative placeholder deadline (120 s)
 
-- Good: Guaranteed to outlast any realistic activation time; no risk of premature rollback due to an underestimated deadline
-- Bad: A node running a misconfigured NixOS generation remains active for up to 120 s before the dead-man's switch reverts it. Measured activation times show steady-state completion at 14–16 s; padding to 120 s extends the OS-failure window by more than 7× beyond what the hardware requires, directly increasing MTTR for every OS-layer fault in the eval and in production.
+- Good: Guaranteed to outlast any realistic activation time; no risk of premature rollback due to an underestimated activation time
+- Bad: 120 s equals the Watchdog confirm window exactly, leaving no margin for the activation and commit steps that bracket it; a confirm that completes near the end of its window would race the gate. The full-budget 180 s value adds the activation and commit components plus headroom so the gate reliably outlasts a successful confirm-then-commit.
 
-#### Dynamic deadline (agent-cancelled timer)
+#### Dynamic deadline (agent-computed timer)
 
 - Good: The rollback window would be exactly as long as the repair takes; no fixed margin required
-- Bad: A dynamic deadline requires the Watchdog or Orchestrator to cancel the systemd timer by writing to a control file or calling a socket. If the agent crashes after activating the configuration but before cancelling the timer, the timer would never fire: the node would be left running an unconfirmed configuration indefinitely. The static timer is the safety guarantee precisely because it does not depend on the agent's continued liveness.
+- Bad: A dynamic deadline requires the agent to compute and maintain the timer at runtime through a control file or socket. If the agent crashes after activating but before maintaining the timer, the node runs an unconfirmed configuration indefinitely. The chosen design avoids this: the timer has a static deadline baked into the NixOS module and is armed once at staging by a deterministic `systemctl start`, so it fires by default. Only the success-path disarm (`systemctl stop` at commit) is an agent action, and a missed disarm still fires and reverts. A deadline the agent computes or maintains stays rejected because it makes the firing path depend on agent liveness.
 
 ## More Information
 
