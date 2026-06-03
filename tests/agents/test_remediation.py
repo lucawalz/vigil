@@ -133,7 +133,7 @@ def test_remediation_result_fields_stable() -> None:
         "success",
         "actions_taken",
         "tool_calls_count",
-        "destructive_repair",
+        "mutation_attempted",
         "merge_commit_sha",
         "agent_branch",
         "agent_commits",
@@ -334,7 +334,7 @@ async def test_run_remediation_human_review_overrides_gate_waiting(
         success=True,
         actions_taken=["clone_repo", "create_pr"],
         tool_calls_count=2,
-        destructive_repair=True,
+        mutation_attempted=True,
         agent_branch="remediation/run-x",
         agent_commits=["abc1234"],
         gate_status="awaiting_review",
@@ -440,7 +440,7 @@ async def test_run_remediation_allows_non_protected_branch(
         success=True,
         actions_taken=["clone_repo"],
         tool_calls_count=1,
-        destructive_repair=False,
+        mutation_attempted=False,
     )
 
     class _FakeRun:

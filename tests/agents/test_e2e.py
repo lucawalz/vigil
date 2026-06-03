@@ -53,7 +53,7 @@ def _canned_remediation() -> RemediationResult:
             "reconcile_kustomization",
         ],
         tool_calls_count=7,
-        destructive_repair=False,
+        mutation_attempted=False,
     )
 
 

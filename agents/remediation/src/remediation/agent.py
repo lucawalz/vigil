@@ -136,7 +136,7 @@ Return a RemediationResult with:
   - success: True only if the repair action completed without error.
   - actions_taken: ordered list of tool names called.
   - tool_calls_count: total tool calls.
-  - destructive_repair: True if any mutation tool was invoked (any git-mcp write
+  - mutation_attempted: True if any mutation tool was invoked (any git-mcp write
     tool, stage_generation, or trigger_reconcile).
   - merge_commit_sha: parsed from 'gate passed: merged sha=<sha>' on git_commit_k8s
     or git_commit_nix success; None otherwise.
@@ -148,7 +148,7 @@ Return a RemediationResult with:
 
 If recommended_action is anything other than the four above (including "escalate"),
 return RemediationResult(success=False, actions_taken=[], tool_calls_count=0,
-destructive_repair=False, merge_commit_sha=None, agent_branch=None,
+mutation_attempted=False, merge_commit_sha=None, agent_branch=None,
 agent_commits=None, gate_status=None) immediately with
 error="unexpected_action: <value>" in actions_taken. Do not call any tools.
 The orchestrator handles "escalate" before run_remediation is ever called;
@@ -179,7 +179,7 @@ async def run_remediation(
             success=False,
             actions_taken=["refused_protected_branch"],
             tool_calls_count=0,
-            destructive_repair=False,
+            mutation_attempted=False,
         )
         return refused, RunUsage(), []
 
@@ -265,7 +265,7 @@ async def run_remediation(
             success=False,
             actions_taken=["commit_budget_exceeded"],
             tool_calls_count=0,
-            destructive_repair=False,
+            mutation_attempted=False,
         )
         return budget_refused, agent_run.usage, agent_run.all_messages()
     except (UnexpectedModelBehavior, UsageLimitExceeded):

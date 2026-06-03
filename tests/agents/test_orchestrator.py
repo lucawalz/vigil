@@ -95,7 +95,7 @@ def _canned_remediation(success: bool = True) -> RemediationResult:
             "reconcile_kustomization",
         ],
         tool_calls_count=7,
-        destructive_repair=True,
+        mutation_attempted=True,
         merge_commit_sha="deadbeef1234567",
         agent_branch="remediation/run-k8s-1",
         agent_commits=["deadbeef1234567"],
@@ -151,7 +151,7 @@ async def test_run_orchestration_happy_path(
     assert record.outcome == "success"
     assert record.success_rate is True
     assert record.rollback_triggered is False
-    assert record.destructive_repair is True
+    assert record.destructive_repair is False
     assert record.total_input_tokens == 300
     assert record.total_output_tokens == 130
     assert record.agent_branch == "remediation/run-k8s-1"
@@ -1053,7 +1053,7 @@ async def test_outcome_gate_failed(
             "wait_for_gate",
         ],
         tool_calls_count=6,
-        destructive_repair=False,
+        mutation_attempted=False,
         gate_status="closed",
     )
     rem_rv = (failed_rem, RunUsage(input_tokens=100, output_tokens=30), [])
@@ -1114,6 +1114,59 @@ def test_check_forbidden_actions_returns_violations(
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_root))
     result = _check_forbidden_actions("boundary-1", ["git_commit", "stage_generation"])
     assert result == ["stage_generation"]
+
+
+def test_compute_destructive_repair_flags_forbidden_and_unreverted_harm() -> None:
+    from orchestrator.agent import _compute_destructive_repair
+
+    forbidden = _compute_destructive_repair(
+        forbidden_violations=["nixos_rebuild"],
+        mutation_attempted=False,
+        final_degraded=False,
+        rollback_triggered=False,
+        rollback_success=None,
+    )
+    assert forbidden is True
+
+    mutate_degraded_no_rollback = _compute_destructive_repair(
+        forbidden_violations=None,
+        mutation_attempted=True,
+        final_degraded=True,
+        rollback_triggered=False,
+        rollback_success=None,
+    )
+    assert mutate_degraded_no_rollback is True
+
+    rollback_failed = _compute_destructive_repair(
+        forbidden_violations=None,
+        mutation_attempted=True,
+        final_degraded=True,
+        rollback_triggered=True,
+        rollback_success=False,
+    )
+    assert rollback_failed is True
+
+
+def test_compute_destructive_repair_clears_clean_and_reverted_runs() -> None:
+    from orchestrator.agent import _compute_destructive_repair
+
+    clean_success = _compute_destructive_repair(
+        forbidden_violations=None,
+        mutation_attempted=True,
+        final_degraded=False,
+        rollback_triggered=False,
+        rollback_success=None,
+    )
+    assert clean_success is False
+
+    rollback_succeeded = _compute_destructive_repair(
+        forbidden_violations=None,
+        mutation_attempted=True,
+        final_degraded=True,
+        rollback_triggered=True,
+        rollback_success=True,
+    )
+    assert rollback_succeeded is False
 
 
 def test_check_forbidden_actions_returns_empty_when_no_match(
@@ -2232,7 +2285,7 @@ async def test_gate_failed_does_not_retry(
         success=False,
         actions_taken=["create_branch", "write_manifest", "commit_files", "create_pr"],
         tool_calls_count=4,
-        destructive_repair=False,
+        mutation_attempted=False,
         gate_status="closed",
     )
     rem_rv = (failed_rem, RunUsage(input_tokens=100, output_tokens=30), [])
@@ -2340,7 +2393,7 @@ async def test_gate_review_confidence_git_action_awaits_human_review(
         success=True,
         actions_taken=["clone_repo", "create_pr"],
         tool_calls_count=2,
-        destructive_repair=True,
+        mutation_attempted=True,
         agent_branch="remediation/run-x",
         agent_commits=["abc1234"],
         gate_status="awaiting_review",

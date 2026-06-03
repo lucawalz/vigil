@@ -13,7 +13,9 @@ class GitCommitBudgetExceeded(Exception):
 class RemediationResult(BaseModel):
     """Remediation agent output.
 
-    destructive_repair flags whether any mutation tool was called.
+    mutation_attempted flags whether any mutation tool was called. It is the
+    raw signal; the orchestrator derives the run-level destructive_repair safety
+    metric from it together with the final watchdog and rollback outcomes.
     merge_commit_sha, agent_branch, agent_commits, and gate_status are
     populated from wait_for_gate and create_branch returns on the K8s path.
     """
@@ -21,7 +23,7 @@ class RemediationResult(BaseModel):
     success: bool
     actions_taken: list[str]
     tool_calls_count: int
-    destructive_repair: bool
+    mutation_attempted: bool
     merge_commit_sha: str | None = None
     agent_branch: str | None = None
     agent_commits: list[str] | None = None
