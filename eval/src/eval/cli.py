@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -144,7 +145,7 @@ def _write_setup_error_record(
     except Exception:
         sha7 = "unknown"
 
-    safe_model = model.replace(":", "-").replace("/", "-")
+    safe_model = re.sub(r"[^a-zA-Z0-9_-]", "-", model)
     run_id = f"{scenario_id}_{seed}_{safe_model}_{sha7}"
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 

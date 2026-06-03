@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -152,7 +153,7 @@ def build_run_id(
             ).strip()
         except (subprocess.CalledProcessError, FileNotFoundError):
             sha7 = "0000000"
-    safe_model = model.replace(":", "-").replace("/", "-")
+    safe_model = re.sub(r"[^a-zA-Z0-9_-]", "-", model)
     run_id = f"{scenario}_{seed_str}_{safe_model}_{sha7}"
     return run_id, seed_str, sha7
 
