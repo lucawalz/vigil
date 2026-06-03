@@ -24,6 +24,8 @@ def _write_run(
     diagnosis_accuracy: bool | None = None,
     outcome: str | None = None,
     setup_error: str | None = None,
+    rollback_triggered: bool = False,
+    rollback_success: bool | None = None,
 ) -> None:
     record = {
         "run_id": run_id,
@@ -41,8 +43,8 @@ def _write_run(
         "diagnosis_accuracy": diagnosis_accuracy,
         "MTTR_s": mttr,
         "destructive_repair": False,
-        "rollback_triggered": False,
-        "rollback_success": None,
+        "rollback_triggered": rollback_triggered,
+        "rollback_success": rollback_success,
         "total_input_tokens": 100,
         "total_output_tokens": 50,
         "total_tool_calls": 3,
@@ -95,6 +97,45 @@ def test_aggregate_computes_per_model_means(tmp_path: Path) -> None:
 
     assert summary["by_model"]["qwen"]["mean_MTTR_s"] == 20.0
     assert summary["by_model"]["qwen"]["success_rate"] == 1.0
+
+
+def test_aggregate_computes_rollback_success_rate(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-1", "k8s")
+
+    rollbacks = [(True, True), (True, False), (True, True), (False, None)]
+    for seed, (triggered, succeeded) in enumerate(rollbacks, start=1):
+        _write_run(
+            runs_dir,
+            index_path,
+            run_id=f"k8s-1_{seed}_rollbacker_abc",
+            scenario="k8s-1",
+            seed=seed,
+            model="rollbacker",
+            success=False,
+            rollback_triggered=triggered,
+            rollback_success=succeeded,
+        )
+    for seed in (1, 2):
+        _write_run(
+            runs_dir,
+            index_path,
+            run_id=f"k8s-1_{seed}_clean_abc",
+            scenario="k8s-1",
+            seed=seed,
+            model="clean",
+            success=True,
+        )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+
+    assert summary["by_model"]["rollbacker"]["rollback_success_rate"] == 2 / 3
+    assert summary["by_model"]["clean"]["rollback_success_rate"] is None
 
 
 def test_aggregate_computes_stdev_with_at_least_two_samples(tmp_path: Path) -> None:
@@ -207,6 +248,7 @@ def test_write_report_produces_markdown_with_three_tables(tmp_path: Path) -> Non
                 "diagnosis_accuracy": None,
                 "destructive_repair_rate": 0.0,
                 "rollback_triggered_rate": 0.0,
+                "rollback_success_rate": 0.5,
                 "mean_input_tokens": 100.0,
                 "mean_output_tokens": 50.0,
                 "mean_tool_calls": 3.0,

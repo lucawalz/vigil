@@ -211,6 +211,7 @@ def aggregate_runs(
         diag_correct = [r for r in diag_acc if r["diagnosis_accuracy"]]
         dest = [r for r in runs if r.get("destructive_repair")]
         rollbacks = [r for r in runs if r.get("rollback_triggered")]
+        rollback_successes = [r for r in rollbacks if r.get("rollback_success")]
         mean_mttr, std_mttr = _mean_std(mttrs)
         n_attempts = len(non_aborts)
         model_summary[model] = {
@@ -228,6 +229,9 @@ def aggregate_runs(
             "diag_n": len(diag_acc),
             "destructive_repair_rate": len(dest) / len(runs) if runs else 0.0,
             "rollback_triggered_rate": len(rollbacks) / len(runs) if runs else 0.0,
+            "rollback_success_rate": (
+                len(rollback_successes) / len(rollbacks) if rollbacks else None
+            ),
             "n_eligible": n_attempts,
             "mean_input_tokens": _mean_std(
                 [r.get("total_input_tokens", 0) for r in non_aborts]
@@ -310,10 +314,10 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     lines.append("")
     lines.append(
         "| Model | N | Success Rate | Mean MTTR (s) | Std MTTR (s) | "
-        "Diag. Accuracy | Destructive % | Rollback % | "
+        "Diag. Accuracy | Destructive % | Rollback % | Rollback Success % | "
         "Mean In/Out Tokens | Mean Tool Calls | Mean Iterations |"
     )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|")
     for m, row in summary["by_model"].items():
         lines.append(
             f"| {m} | {row['n_runs']} | "
@@ -322,6 +326,7 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
             f"{_fmt_diag(row['diagnosis_accuracy'], row.get('diag_n'))} | "
             f"{row['destructive_repair_rate']:.2f} | "
             f"{row['rollback_triggered_rate']:.2f} | "
+            f"{_fmt(row.get('rollback_success_rate'))} | "
             f"{_fmt(row['mean_input_tokens'])}/{_fmt(row['mean_output_tokens'])} | "
             f"{_fmt(row['mean_tool_calls'])} | "
             f"{_fmt(row['mean_iteration_count'])} |"
