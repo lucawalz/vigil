@@ -48,7 +48,7 @@ Chosen option: "Multi-agent decomposition with dedicated roles", because focused
 
 ### Confirmation
 
-The `asyncio.TaskGroup` pattern is confirmed in `agents/orchestrator/src/orchestrator/agent.py`. The four-agent split is verified by the module structure: `agents/orchestrator/`, `agents/diagnosis/`, `agents/remediation/`, `agents/watchdog/`. All eval campaign results use this decomposition. The K8s remediation path runs Watchdog sequentially after a fixed grace period (`WATCHDOG_RECONCILE_GRACE_S=90s`); the OS remediation path retains the concurrent `asyncio.TaskGroup` pattern. This asymmetry reflects the cluster's response latency: a Flux reconcile takes seconds to apply, whereas a NixOS rebuild is synchronous and the concurrent Watchdog catches a degradation during the rebuild itself.
+The `asyncio.TaskGroup` pattern is confirmed in `agents/orchestrator/src/orchestrator/agent.py`. The four-agent split is verified by the module structure: `agents/orchestrator/`, `agents/diagnosis/`, `agents/remediation/`, `agents/watchdog/`. All eval campaign results use this decomposition. The K8s remediation path polls the Watchdog until the cluster recovers, returning as soon as a snapshot is non-degraded and waiting up to a `WATCHDOG_RECONCILE_GRACE_S=300s` ceiling for GitOps convergence; the OS remediation path retains the concurrent `asyncio.TaskGroup` pattern. This asymmetry reflects the cluster's response latency: a Flux reconcile takes seconds to apply, whereas a NixOS rebuild is synchronous and the concurrent Watchdog catches a degradation during the rebuild itself.
 
 ### Pros and Cons of the Options
 

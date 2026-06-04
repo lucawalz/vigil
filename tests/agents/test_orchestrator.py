@@ -940,8 +940,60 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
 def test_orchestrator_constants_have_correct_defaults() -> None:
     assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 1800.0
     assert orch_mod.REMEDIATION_TIMEOUT_S == 600.0
-    assert orch_mod.WATCHDOG_RECONCILE_GRACE_S == 90.0
+    assert orch_mod.WATCHDOG_RECONCILE_GRACE_S == 300.0
+    assert orch_mod.WATCHDOG_RECONCILE_POLL_INTERVAL_S == 15.0
     assert orch_mod._MAX_DIAGNOSIS_ATTEMPTS == 3
+
+
+def _watchdog_degraded() -> WatchdogResult:
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    return WatchdogResult(degraded=True, snapshot=degraded_snap)
+
+
+async def test_await_cluster_recovery_returns_early_when_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_watchdog_mock = AsyncMock(side_effect=[_watchdog_ok()])
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+
+    result = await orch_mod._await_cluster_recovery(object(), object())
+
+    assert result.degraded is False
+    assert run_watchdog_mock.await_count == 1
+
+
+async def test_await_cluster_recovery_polls_until_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_watchdog_mock = AsyncMock(
+        side_effect=[_watchdog_degraded(), _watchdog_degraded(), _watchdog_ok()]
+    )
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_POLL_INTERVAL_S", 0.0)
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 5.0)
+
+    result = await orch_mod._await_cluster_recovery(object(), object())
+
+    assert result.degraded is False
+    assert run_watchdog_mock.await_count == 3
+
+
+async def test_await_cluster_recovery_gives_up_at_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_watchdog_mock = AsyncMock(return_value=_watchdog_degraded())
+    monkeypatch.setattr(orch_mod, "run_watchdog", run_watchdog_mock)
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+
+    result = await orch_mod._await_cluster_recovery(object(), object())
+
+    assert result.degraded is True
+    assert run_watchdog_mock.await_count == 1
 
 
 async def test_outcome_rollback_succeeded(

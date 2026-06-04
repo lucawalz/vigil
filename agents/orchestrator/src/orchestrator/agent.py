@@ -50,7 +50,10 @@ ORCHESTRATOR_RUN_TIMEOUT_S: float = float(
 DIAGNOSIS_TIMEOUT_S: float = float(os.environ.get("DIAGNOSIS_TIMEOUT_S", "300"))
 REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "600"))
 WATCHDOG_RECONCILE_GRACE_S: float = float(
-    os.environ.get("WATCHDOG_RECONCILE_GRACE_S", "90")
+    os.environ.get("WATCHDOG_RECONCILE_GRACE_S", "300")
+)
+WATCHDOG_RECONCILE_POLL_INTERVAL_S: float = float(
+    os.environ.get("WATCHDOG_RECONCILE_POLL_INTERVAL_S", "15")
 )
 _POST_REMEDIATION_SETTLE_S: float = float(
     os.environ.get("POST_REMEDIATION_SETTLE_S", "60")
@@ -274,6 +277,23 @@ async def _still_degraded_after_settle(
     return result.degraded
 
 
+async def _await_cluster_recovery(watchdog_deps: WatchdogDeps, baseline):
+    """Poll the Watchdog until the cluster recovers or the reconcile ceiling elapses.
+
+    Returns as soon as a snapshot is non-degraded so MTTR reflects real
+    recovery time, waiting up to WATCHDOG_RECONCILE_GRACE_S for GitOps
+    convergence (Flux fetch, reconcile, rollout) before returning the last
+    degraded snapshot.
+    """
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + WATCHDOG_RECONCILE_GRACE_S
+    while True:
+        result = await run_watchdog(watchdog_deps, baseline)
+        if not result.degraded or loop.time() >= deadline:
+            return result
+        await asyncio.sleep(WATCHDOG_RECONCILE_POLL_INTERVAL_S)
+
+
 async def _issue_rollback(
     recommended_action: str,
     git_mcp: MCPServerStdio,
@@ -384,8 +404,7 @@ async def _dispatch_remediation_and_watchdog(
                 blocked_tools=blocked,
                 breaker=breaker,
             )
-        await asyncio.sleep(WATCHDOG_RECONCILE_GRACE_S)
-        watchdog_result = await run_watchdog(watchdog_deps, baseline)
+        watchdog_result = await _await_cluster_recovery(watchdog_deps, baseline)
     else:
         async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
             try:
