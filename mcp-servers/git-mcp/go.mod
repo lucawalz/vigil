@@ -3,10 +3,11 @@ module github.com/lucawalz/vigil/mcp-servers/git-mcp
 go 1.26.0
 
 require (
-	github.com/go-git/go-git/v5 v5.19.0
+	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/go-github/v86 v86.0.0
-	github.com/mark3labs/mcp-go v0.54.0
-	golang.org/x/oauth2 v0.34.0
+	github.com/mark3labs/mcp-go v0.54.1
+	golang.org/x/oauth2 v0.36.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -39,5 +40,4 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
