@@ -1132,6 +1132,53 @@ async def test_outcome_gate_failed(
     assert record.outcome == "gate_failed"
 
 
+async def test_gate_failed_unmerged_change_is_not_destructive(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    failed_rem = RemediationResult(
+        success=False,
+        actions_taken=["create_branch", "write_manifest", "commit_files", "create_pr"],
+        tool_calls_count=4,
+        mutation_attempted=True,
+        merge_commit_sha=None,
+        gate_status="closed",
+    )
+    rem_rv = (failed_rem, RunUsage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "run_watchdog",
+        AsyncMock(
+            return_value=WatchdogResult(degraded=True, snapshot=_canned_baseline())
+        ),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "gate_failed"
+    assert record.destructive_repair is False
+
+
 def test_outcome_budget_exhausted() -> None:
     pytest.skip("budget enforcement is prompt-level; see test_remediation.py")
 
@@ -1175,7 +1222,7 @@ def test_compute_destructive_repair_flags_forbidden_and_unreverted_harm() -> Non
 
     forbidden = _compute_destructive_repair(
         forbidden_violations=["nixos_rebuild"],
-        mutation_attempted=False,
+        mutation_applied=False,
         final_degraded=False,
         rollback_triggered=False,
         rollback_success=None,
@@ -1184,7 +1231,7 @@ def test_compute_destructive_repair_flags_forbidden_and_unreverted_harm() -> Non
 
     mutate_degraded_no_rollback = _compute_destructive_repair(
         forbidden_violations=None,
-        mutation_attempted=True,
+        mutation_applied=True,
         final_degraded=True,
         rollback_triggered=False,
         rollback_success=None,
@@ -1193,7 +1240,7 @@ def test_compute_destructive_repair_flags_forbidden_and_unreverted_harm() -> Non
 
     rollback_failed = _compute_destructive_repair(
         forbidden_violations=None,
-        mutation_attempted=True,
+        mutation_applied=True,
         final_degraded=True,
         rollback_triggered=True,
         rollback_success=False,
@@ -1206,7 +1253,7 @@ def test_compute_destructive_repair_clears_clean_and_reverted_runs() -> None:
 
     clean_success = _compute_destructive_repair(
         forbidden_violations=None,
-        mutation_attempted=True,
+        mutation_applied=True,
         final_degraded=False,
         rollback_triggered=False,
         rollback_success=None,
@@ -1215,12 +1262,21 @@ def test_compute_destructive_repair_clears_clean_and_reverted_runs() -> None:
 
     rollback_succeeded = _compute_destructive_repair(
         forbidden_violations=None,
-        mutation_attempted=True,
+        mutation_applied=True,
         final_degraded=True,
         rollback_triggered=True,
         rollback_success=True,
     )
     assert rollback_succeeded is False
+
+    gate_blocked_unapplied = _compute_destructive_repair(
+        forbidden_violations=None,
+        mutation_applied=False,
+        final_degraded=True,
+        rollback_triggered=False,
+        rollback_success=None,
+    )
+    assert gate_blocked_unapplied is False
 
 
 def test_check_forbidden_actions_returns_empty_when_no_match(
