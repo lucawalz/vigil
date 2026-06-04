@@ -24,7 +24,12 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.toolsets.filtered import FilteredToolset
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from .models import GitCommitBudgetExceeded, RemediationDeps, RemediationResult
+from .models import (
+    GitCommitBudgetExceeded,
+    RemediationDeps,
+    RemediationOutputRetryExhausted,
+    RemediationResult,
+)
 
 REMEDIATION_REQUEST_LIMIT: int = int(os.environ.get("REMEDIATION_REQUEST_LIMIT", "20"))
 
@@ -268,7 +273,14 @@ async def run_remediation(
             mutation_attempted=False,
         )
         return budget_refused, agent_run.usage, agent_run.all_messages()
-    except (UnexpectedModelBehavior, UsageLimitExceeded):
+    except UnexpectedModelBehavior as exc:
+        partial_msgs = agent_run.all_messages()
+        if run_id and partial_msgs:
+            trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        raise RemediationOutputRetryExhausted(
+            agent_run.usage, partial_msgs, exc
+        ) from exc
+    except UsageLimitExceeded:
         if run_id:
             partial_msgs = agent_run.all_messages()
             if partial_msgs:

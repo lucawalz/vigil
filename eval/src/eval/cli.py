@@ -81,6 +81,7 @@ def run_cmd(
         datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         result_path = asyncio.run(
             run_one(
@@ -104,12 +105,20 @@ def run_cmd(
             resolved_runs_dir,
             str(e),
             outcome="diagnosis_timeout",
+            started_at=started_at,
         )
         sys.exit(2)
     except (RuntimeError, FileNotFoundError) as e:
         click.echo(f"ERROR: {e}", err=True)
         resolved_runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
-        _write_setup_error_record(scenario, seed, model, resolved_runs_dir, str(e))
+        _write_setup_error_record(
+            scenario,
+            seed,
+            model,
+            resolved_runs_dir,
+            str(e),
+            started_at=started_at,
+        )
         sys.exit(1)
 
     record = json.loads(result_path.read_text())
@@ -135,6 +144,7 @@ def _write_setup_error_record(
     runs_dir: Path,
     error_msg: str,
     outcome: str = "setup_error",
+    started_at: str | None = None,
 ) -> None:
     try:
         sha7 = subprocess.check_output(
@@ -167,9 +177,10 @@ def _write_setup_error_record(
         "iteration_count": 0,
         "autonomy_level": "full",
         "actions_taken": [],
-        "started_at": now_str,
+        "forbidden_action_violations": [],
+        "started_at": started_at or now_str,
         "ended_at": now_str,
-        "error_message": error_msg[:500],
+        "setup_error": error_msg[:500],
     }
     (runs_dir / f"{run_id}.json").write_text(json.dumps(record, indent=2))
 

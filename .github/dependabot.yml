@@ -18,39 +18,8 @@ updates:
           - minor
 
   - package-ecosystem: gomod
-    directory: /mcp-servers/kubectl-mcp
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: chore
-    open-pull-requests-limit: 10
-    rebase-strategy: auto
-    labels:
-      - dependencies
-    groups:
-      patch-and-minor:
-        update-types:
-          - patch
-          - minor
-
-  - package-ecosystem: gomod
-    directory: /mcp-servers/flux-mcp
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: chore
-    open-pull-requests-limit: 10
-    rebase-strategy: auto
-    labels:
-      - dependencies
-    groups:
-      patch-and-minor:
-        update-types:
-          - patch
-          - minor
-
-  - package-ecosystem: gomod
-    directory: /mcp-servers/nixos-mcp
+    directories:
+      - /mcp-servers/*
     schedule:
       interval: weekly
     commit-message:
