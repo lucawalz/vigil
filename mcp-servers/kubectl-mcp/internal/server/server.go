@@ -78,7 +78,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("rollout_status",
-			mcp.WithDescription("Get rollout status of a deployment"),
+			mcp.WithDescription("Get structured JSON workload status (generation, replicas, conditions) for a Deployment or StatefulSet"),
 			mcp.WithString("namespace",
 				mcp.Required(),
 				mcp.Description("Kubernetes namespace"),

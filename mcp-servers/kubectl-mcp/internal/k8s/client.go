@@ -2,12 +2,14 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -310,53 +312,103 @@ func (c *realK8sClient) resolveKind(kind string) (schema.GroupVersionKind, error
 	return schema.GroupVersionKind{}, fmt.Errorf("kind %q not found in discovery", kind)
 }
 
-func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, deploymentName string) (string, error) {
-	dep, err := c.cs.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+type workloadCondition struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+type workloadStatus struct {
+	Kind               string              `json:"kind"`
+	Namespace          string              `json:"namespace"`
+	Name               string              `json:"name"`
+	Found              bool                `json:"found"`
+	Generation         int64               `json:"generation"`
+	ObservedGeneration int64               `json:"observedGeneration"`
+	SpecReplicas       int32               `json:"specReplicas"`
+	Replicas           int32               `json:"replicas"`
+	UpdatedReplicas    int32               `json:"updatedReplicas"`
+	ReadyReplicas      int32               `json:"readyReplicas"`
+	AvailableReplicas  int32               `json:"availableReplicas"`
+	Conditions         []workloadCondition `json:"conditions"`
+}
+
+func specReplicaCount(replicas *int32) int32 {
+	if replicas == nil {
+		return 0
+	}
+	return *replicas
+}
+
+func marshalWorkloadStatus(ws workloadStatus) (string, error) {
+	out, err := json.Marshal(ws)
+	if err != nil {
+		return "", fmt.Errorf("marshal workload status: %w", err)
+	}
+	return string(out), nil
+}
+
+func (c *realK8sClient) RolloutStatus(ctx context.Context, namespace, name string) (string, error) {
+	dep, err := c.cs.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return "", fmt.Errorf("get deployment: %w", err)
 	}
 	if err == nil {
-		desired := dep.Spec.Replicas
-		desiredCount := int32(0)
-		if desired != nil {
-			desiredCount = *desired
-		}
-		updated := dep.Status.UpdatedReplicas
-		ready := dep.Status.ReadyReplicas
-		available := dep.Status.AvailableReplicas
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "Deployment: %s/%s\n", namespace, deploymentName)
-		fmt.Fprintf(&sb, "Desired:    %d\n", desiredCount)
-		fmt.Fprintf(&sb, "Updated:    %d\n", updated)
-		fmt.Fprintf(&sb, "Ready:      %d\n", ready)
-		fmt.Fprintf(&sb, "Available:  %d\n", available)
-		if ready == desiredCount && updated == desiredCount {
-			sb.WriteString("Status:     Rolled out successfully\n")
-		} else {
-			sb.WriteString("Status:     Rolling out...\n")
-		}
-		return sb.String(), nil
+		return marshalWorkloadStatus(deploymentWorkloadStatus(namespace, name, dep))
 	}
-	ss, ssErr := c.cs.AppsV1().StatefulSets(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
-	if ssErr != nil {
-		return "", fmt.Errorf("%s not found as deployment or statefulset in namespace %s", deploymentName, namespace)
+	ss, ssErr := c.cs.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if ssErr != nil && !k8serrors.IsNotFound(ssErr) {
+		return "", fmt.Errorf("get statefulset: %w", ssErr)
 	}
-	desired := ss.Spec.Replicas
-	desiredCount := int32(0)
-	if desired != nil {
-		desiredCount = *desired
+	if ssErr == nil {
+		return marshalWorkloadStatus(statefulSetWorkloadStatus(namespace, name, ss))
 	}
-	ready := ss.Status.ReadyReplicas
-	updated := ss.Status.UpdatedReplicas
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "StatefulSet: %s/%s\n", namespace, deploymentName)
-	fmt.Fprintf(&sb, "Desired:     %d\n", desiredCount)
-	fmt.Fprintf(&sb, "Updated:     %d\n", updated)
-	fmt.Fprintf(&sb, "Ready:       %d\n", ready)
-	if ready == desiredCount && updated == desiredCount {
-		sb.WriteString("Status:      Rolled out successfully\n")
-	} else {
-		sb.WriteString("Status:      Rolling out...\n")
+	return marshalWorkloadStatus(workloadStatus{
+		Namespace:  namespace,
+		Name:       name,
+		Found:      false,
+		Conditions: []workloadCondition{},
+	})
+}
+
+func deploymentWorkloadStatus(namespace, name string, dep *appsv1.Deployment) workloadStatus {
+	conditions := make([]workloadCondition, 0, len(dep.Status.Conditions))
+	for _, cond := range dep.Status.Conditions {
+		conditions = append(conditions, workloadCondition{
+			Type:   string(cond.Type),
+			Status: string(cond.Status),
+			Reason: cond.Reason,
+		})
 	}
-	return sb.String(), nil
+	return workloadStatus{
+		Kind:               "Deployment",
+		Namespace:          namespace,
+		Name:               name,
+		Found:              true,
+		Generation:         dep.ObjectMeta.Generation,
+		ObservedGeneration: dep.Status.ObservedGeneration,
+		SpecReplicas:       specReplicaCount(dep.Spec.Replicas),
+		Replicas:           dep.Status.Replicas,
+		UpdatedReplicas:    dep.Status.UpdatedReplicas,
+		ReadyReplicas:      dep.Status.ReadyReplicas,
+		AvailableReplicas:  dep.Status.AvailableReplicas,
+		Conditions:         conditions,
+	}
+}
+
+func statefulSetWorkloadStatus(namespace, name string, ss *appsv1.StatefulSet) workloadStatus {
+	return workloadStatus{
+		Kind:               "StatefulSet",
+		Namespace:          namespace,
+		Name:               name,
+		Found:              true,
+		Generation:         ss.ObjectMeta.Generation,
+		ObservedGeneration: ss.Status.ObservedGeneration,
+		SpecReplicas:       specReplicaCount(ss.Spec.Replicas),
+		Replicas:           ss.Status.Replicas,
+		UpdatedReplicas:    ss.Status.UpdatedReplicas,
+		ReadyReplicas:      ss.Status.ReadyReplicas,
+		AvailableReplicas:  ss.Status.AvailableReplicas,
+		Conditions:         []workloadCondition{},
+	}
 }

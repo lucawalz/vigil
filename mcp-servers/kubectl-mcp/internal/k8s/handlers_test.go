@@ -212,7 +212,7 @@ func TestGetLogsHandler_Success(t *testing.T) {
 }
 
 func TestRolloutStatusHandler_Success(t *testing.T) {
-	fake := &fakeK8sClient{rolloutStatus: "Deployment: default/my-app\nDesired: 3\nReady: 3\n"}
+	fake := &fakeK8sClient{rolloutStatus: `{"kind":"Deployment","namespace":"default","name":"my-app","found":true,"readyReplicas":3}`}
 	srv, err := mcptest.NewServer(t, server.ServerTool{
 		Tool: mcp.NewTool("rollout_status",
 			mcp.WithString("namespace", mcp.Required()),
