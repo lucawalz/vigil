@@ -64,3 +64,44 @@ def test_build_model_openai_explicit_temperature() -> None:
         m = build_model("ollama/llama", temperature=0.3)
     assert m.settings is not None
     assert m.settings.get("temperature") == 0.3
+
+
+def test_build_model_openai_defaults_reasoning_effort_none() -> None:
+    env = {"OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "nokey"}
+    with patch.dict(os.environ, env):
+        os.environ.pop("LLM_REASONING_EFFORT", None)
+        m = build_model("ollama/llama")
+    assert m.settings is not None
+    assert m.settings.get("openai_reasoning_effort") == "none"
+
+
+def test_build_model_openai_respects_reasoning_effort_env() -> None:
+    env = {
+        "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+        "OLLAMA_API_KEY": "nokey",
+        "LLM_REASONING_EFFORT": "high",
+    }
+    with patch.dict(os.environ, env):
+        m = build_model("ollama/llama")
+    assert m.settings is not None
+    assert m.settings.get("openai_reasoning_effort") == "high"
+
+
+def test_build_model_openai_default_keyword_leaves_effort_unset() -> None:
+    env = {
+        "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+        "OLLAMA_API_KEY": "nokey",
+        "LLM_REASONING_EFFORT": "default",
+    }
+    with patch.dict(os.environ, env):
+        m = build_model("ollama/llama")
+    assert m.settings is not None
+    assert "openai_reasoning_effort" not in m.settings
+
+
+def test_build_model_anthropic_ignores_reasoning_effort() -> None:
+    env = {"ANTHROPIC_API_KEY": "sk-ant-test-fake", "LLM_REASONING_EFFORT": "high"}
+    with patch.dict(os.environ, env):
+        m = build_model("claude-sonnet-4-6")
+    assert m.settings is not None
+    assert "openai_reasoning_effort" not in m.settings
