@@ -19,7 +19,7 @@ on:
         default: "claude-sonnet-4-6"
         options:
           - claude-sonnet-4-6
-          - qwen3-coder-next:cloud
+          - qwen3.5:cloud
           - deepseek-v3.2:cloud
       skip_k8s:
         description: "Skip the k8s scenario group"
@@ -218,7 +218,7 @@ jobs:
           for S in $SCENARIOS; do
             if [ -n "$PREV" ]; then
               SHA7=$(ssh $SSH_OPTS root@$AGENT_IP "git -C /root/vigil rev-parse --short=7 HEAD")
-              SAFE_MODEL=$(echo "$MODEL" | tr ':/' '--')
+              SAFE_MODEL=$(printf '%s' "$MODEL" | tr -c 'a-zA-Z0-9_-' '-')
               PREV_RUN_ID="${PREV}_${SEED}_${SAFE_MODEL}_${SHA7}"
               echo "::group::between-scenarios prev=$PREV next=$S"
               ssh $SSH_OPTS root@$AGENT_IP \
