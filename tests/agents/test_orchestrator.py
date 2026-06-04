@@ -1090,6 +1090,59 @@ async def test_outcome_rollback_failed(
     assert record.rollback_success is False
 
 
+async def test_degraded_without_merge_skips_rollback(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    monkeypatch.setattr(orch_mod, "_POST_REMEDIATION_SETTLE_S", 0.0)
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    unmerged_rem = RemediationResult(
+        success=False,
+        actions_taken=["create_branch", "write_manifest", "commit_files"],
+        tool_calls_count=3,
+        mutation_attempted=True,
+        merge_commit_sha=None,
+        agent_branch="remediation/run-k8s-1",
+        agent_commits=["abc1234"],
+        gate_status="open",
+    )
+    rem_rv = (unmerged_rem, RunUsage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_snap = HealthSnapshot(
+        ready_pods=0,
+        total_pods=3,
+        endpoints_healthy=False,
+        captured_at="2026-04-18T10:00:05Z",
+    )
+    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=AssertionError("no revert"))
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "flux_degraded"
+    assert record.rollback_triggered is False
+    assert record.rollback_success is None
+
+
 async def test_sequential_watchdog_k8s_path(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,

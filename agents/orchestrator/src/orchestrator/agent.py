@@ -318,6 +318,19 @@ async def _await_cluster_recovery(watchdog_deps: WatchdogDeps, baseline):
         await asyncio.sleep(WATCHDOG_RECONCILE_POLL_INTERVAL_S)
 
 
+def _has_rollback_target(recommended_action: str, merge_commit_sha: str | None) -> bool:
+    """Report whether a rollback for this action has anything to undo.
+
+    Git-commit actions can only be reverted when a mutation actually merged; a
+    None merge_commit_sha means nothing reached the cluster, so reverting it
+    would fail meaninglessly. flux_reconcile and nixos_rebuild restore declared
+    state without a merge SHA, so they always have a target.
+    """
+    if recommended_action in _GIT_COMMIT_ACTIONS:
+        return merge_commit_sha is not None
+    return True
+
+
 async def _issue_rollback(
     recommended_action: str,
     git_mcp: MCPServerStdio,
@@ -942,18 +955,28 @@ async def _run_orchestration(
                             _MAX_DIAGNOSIS_ATTEMPTS,
                         )
                         continue
-                    rollback_triggered = True
-                    rollback_success = await _issue_rollback(
+                    if _has_rollback_target(
                         last_report.recommended_action,
-                        git_mcp,
-                        flux_mcp,
-                        nixos_mcp,
                         last_remediation_result.merge_commit_sha,
-                        last_report.target_host,
-                    )
-                    outcome = (
-                        "rollback_succeeded" if rollback_success else "rollback_failed"
-                    )
+                    ):
+                        rollback_triggered = True
+                        rollback_success = await _issue_rollback(
+                            last_report.recommended_action,
+                            git_mcp,
+                            flux_mcp,
+                            nixos_mcp,
+                            last_remediation_result.merge_commit_sha,
+                            last_report.target_host,
+                        )
+                        outcome = (
+                            "rollback_succeeded"
+                            if rollback_success
+                            else "rollback_failed"
+                        )
+                    else:
+                        outcome = "flux_degraded"
+                        rollback_triggered = False
+                        rollback_success = None
                 else:
                     if report.recommended_action == "nixos_rebuild":
                         if await _commit_nixos_generation(

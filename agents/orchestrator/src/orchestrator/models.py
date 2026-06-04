@@ -39,6 +39,7 @@ class RunRecord(BaseModel):
         "rollback_failed",
         "gate_failed",
         "budget_exhausted",
+        "flux_degraded",
         "abort",
         "quota_exhausted",
         "baseline_degraded",
