@@ -1,0 +1,181 @@
+{
+  "by_model": {
+    "deepseek-v3.2:cloud": {
+      "n_runs": 8,
+      "n_attempts": 6,
+      "success_rate": 0.5,
+      "success_rate_given_attempt": 0.6666666666666666,
+      "mean_MTTR_s": 546.1522367059999,
+      "std_MTTR_s": 19.260069151039808,
+      "diagnosis_accuracy": 0.8333333333333334,
+      "diag_n": 6,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.125,
+      "rollback_success_rate": 0.0,
+      "n_eligible": 6,
+      "mean_input_tokens": 150234,
+      "mean_output_tokens": 4392.333333333333,
+      "mean_tool_calls": 19.833333333333332,
+      "mean_iteration_count": 10.5
+    },
+    "qwen3-coder-next:cloud": {
+      "n_runs": 5,
+      "n_attempts": 3,
+      "success_rate": 0.0,
+      "success_rate_given_attempt": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "diagnosis_accuracy": null,
+      "diag_n": 0,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.0,
+      "rollback_success_rate": null,
+      "n_eligible": 3,
+      "mean_input_tokens": 0,
+      "mean_output_tokens": 0,
+      "mean_tool_calls": 0,
+      "mean_iteration_count": 0
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 527.737411839,
+      "std_MTTR_s": null
+    },
+    "k8s-1": {
+      "n_runs": 5,
+      "outcome": "abort",
+      "setup_error": "unhandled_exception",
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 0.0313650419999855,
+      "std_MTTR_s": 0.007616451629345761
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 565.1228390780001,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "setup_error": "circuit_breaker_3_consecutive_errors",
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-4g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 560.2567472239998,
+      "std_MTTR_s": null
+    },
+    "k8s-5g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 531.4919486829999,
+      "std_MTTR_s": null
+    },
+    "live-quota-injected": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "setup_error": "circuit_breaker_3_consecutive_errors",
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "deceptive-2": {
+      "n_runs": 1,
+      "outcome": "rollback_failed",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 523.1420858689999,
+      "std_MTTR_s": null
+    },
+    "k8s-rollback-1": {
+      "n_runs": 1,
+      "outcome": "gate_failed",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 295.15167993199975,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-1": {
+      "layer": null,
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 13,
+    "n_models": 2,
+    "n_scenarios": 9
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
