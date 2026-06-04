@@ -65,8 +65,8 @@ jobs:
     env:
       TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
       TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
-      TF_VAR_vigil_webhook_secret: ${{ secrets.TF_VAR_VIGIL_WEBHOOK_SECRET }}
       TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
       TF_VAR_group_name: ${{ matrix.group }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}
       TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}

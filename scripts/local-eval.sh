@@ -4,7 +4,6 @@ set -euo pipefail
 REQUIRED_ENV_VARS=(
   TF_VAR_hcloud_token
   TF_VAR_github_token
-  TF_VAR_vigil_webhook_secret
   TF_VAR_ollama_api_key
   TF_VAR_ollama_base_url
   TF_VAR_llm_model_name
@@ -29,7 +28,6 @@ trap 'rm -f "$SECRETS_FILE"' EXIT
 cat > "$SECRETS_FILE" <<EOF
 TF_VAR_HCLOUD_TOKEN=${TF_VAR_hcloud_token}
 TF_VAR_GITHUB_TOKEN=${TF_VAR_github_token}
-TF_VAR_VIGIL_WEBHOOK_SECRET=${TF_VAR_vigil_webhook_secret}
 TF_VAR_OLLAMA_API_KEY=${TF_VAR_ollama_api_key}
 TF_VAR_OLLAMA_BASE_URL=${TF_VAR_ollama_base_url}
 TF_VAR_LLM_MODEL_NAME=${TF_VAR_llm_model_name}
