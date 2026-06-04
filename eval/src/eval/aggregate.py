@@ -69,7 +69,10 @@ def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
         outcome = r.get("outcome", "")
         success_rate = r.get("success_rate")
         if outcome == "success" and not success_rate:
-            counts["out-of-scope"] += 1
+            if r.get("forbidden_action_violations"):
+                counts["agent-failed"] += 1
+            else:
+                counts["out-of-scope"] += 1
         elif outcome == "escalated":
             counts["passed" if success_rate else "agent-failed"] += 1
         elif outcome == "abort" and _is_agent_budget_abort(
@@ -258,6 +261,9 @@ def aggregate_runs(
             "n_runs": len(runs),
             "outcome": first_run["outcome"],
             "setup_error": first_run.get("setup_error"),
+            "forbidden_action_violations": first_run.get(
+                "forbidden_action_violations"
+            ),
             "success_rate": len(successes) / len(runs) if runs else 0.0,
             "mean_MTTR_s": mean_mttr,
             "std_MTTR_s": std_mttr,
