@@ -22,7 +22,7 @@ os.environ.setdefault("LLM_MODEL_NAME", "test-model")
 os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
-from diagnosis.models import DiagnosisReport
+from diagnosis.models import DiagnosisOutputRetryExhausted, DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
     _RUN_LOCK,
@@ -34,7 +34,7 @@ from orchestrator.agent import (
 from orchestrator.models import CircuitBreakerTripped, FaultEvent, RunRecord
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.usage import RunUsage
-from remediation.models import RemediationResult
+from remediation.models import RemediationOutputRetryExhausted, RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
 
 _ACTION_DRIFT: dict[str, str] = {
@@ -162,6 +162,53 @@ async def test_run_orchestration_happy_path(
     index_lines = (tmp_path / "runs_index.jsonl").read_text().strip().splitlines()
     assert len(index_lines) == 1
     assert json.loads(index_lines[0])["run_id"] == record.run_id
+
+
+async def test_run_orchestration_captures_usage_on_remediation_retry_exhaustion(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(orch_mod, "WATCHDOG_RECONCILE_GRACE_S", 0.0)
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_remediation",
+        AsyncMock(
+            side_effect=RemediationOutputRetryExhausted(
+                RunUsage(input_tokens=200, output_tokens=80),
+                [],
+                UnexpectedModelBehavior("exceeded max retries count of 3"),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+    assert record.outcome == "abort"
+    assert record.setup_error is not None
+    assert "retry_exhausted:remediation" in record.setup_error
+    assert record.total_input_tokens == 300
+    assert record.total_output_tokens == 130
 
 
 async def test_run_orchestration_aborts_on_indeterminate_baseline(
@@ -737,7 +784,7 @@ async def test_abort_record_also_carries_actions_taken_and_model_version(
     assert record.agent_branch is None
     assert record.agent_commits is None
     assert record.gate_status is None
-    assert record.forbidden_action_violations is None
+    assert record.forbidden_action_violations == []
 
 
 async def test_runs_index_written_on_abort_path_usage_limit(
@@ -819,8 +866,12 @@ async def test_abort_record_preserves_setup_error_reason(
         orch_mod,
         "run_diagnosis",
         AsyncMock(
-            side_effect=UnexpectedModelBehavior(
-                "Tool 'read_file' exceeded max retries count of 3"
+            side_effect=DiagnosisOutputRetryExhausted(
+                RunUsage(input_tokens=1234, output_tokens=56),
+                [],
+                UnexpectedModelBehavior(
+                    "Tool 'read_file' exceeded max retries count of 3"
+                ),
             )
         ),
     )
@@ -833,7 +884,10 @@ async def test_abort_record_preserves_setup_error_reason(
     )
     assert record.outcome == "abort"
     assert record.setup_error is not None
+    assert "retry_exhausted:diagnosis" in record.setup_error
     assert "read_file" in record.setup_error
+    assert record.total_input_tokens == 1234
+    assert record.total_output_tokens == 56
 
 
 async def test_runs_index_path_resolution_uses_parent_of_runs_dir(
@@ -1458,9 +1512,9 @@ def test_run_record_forbidden_action_violations_serialises_list() -> None:
     assert data["forbidden_action_violations"] == ["stage_generation"]
 
 
-def test_run_record_forbidden_action_violations_defaults_to_none() -> None:
+def test_run_record_forbidden_action_violations_defaults_to_empty_list() -> None:
     record = _make_run_record()
-    assert record.forbidden_action_violations is None
+    assert record.forbidden_action_violations == []
 
 
 async def test_run_record_forbidden_action_violations_populated_on_success_path(
@@ -2416,6 +2470,44 @@ async def test_gate_review_confidence_git_action_awaits_human_review(
     assert record.agent_commits == ["abc1234"]
     assert record.gate_status == "awaiting_review"
     assert rem_mock.await_args.kwargs.get("require_human_review") is True
+
+
+async def test_gate_review_captures_usage_on_remediation_retry_exhaustion(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _confidence_report("git_commit_k8s", 0.5)
+    _gate_setup(monkeypatch, tmp_path, report, _canned_remediation())
+    monkeypatch.setattr(
+        orch_mod,
+        "run_remediation",
+        AsyncMock(
+            side_effect=RemediationOutputRetryExhausted(
+                RunUsage(input_tokens=200, output_tokens=80),
+                [],
+                UnexpectedModelBehavior("exceeded max retries count of 3"),
+            )
+        ),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "abort"
+    assert record.setup_error is not None
+    assert "retry_exhausted:remediation" in record.setup_error
+    assert record.total_input_tokens == 300
+    assert record.total_output_tokens == 130
 
 
 async def test_gate_review_confidence_non_git_action_escalates(

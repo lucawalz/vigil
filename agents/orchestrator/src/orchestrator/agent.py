@@ -26,13 +26,17 @@ from diagnosis.context import (
     build_diagnosis_context,
     extract_alert_namespace,
 )
-from diagnosis.models import DiagnosisDeps, DiagnosisRequestBudgetExceeded
+from diagnosis.models import (
+    DiagnosisDeps,
+    DiagnosisOutputRetryExhausted,
+    DiagnosisRequestBudgetExceeded,
+)
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 from remediation.agent import run_remediation
-from remediation.models import RemediationDeps
+from remediation.models import RemediationDeps, RemediationOutputRetryExhausted
 from watchdog.agent import capture_health_snapshot, run_watchdog
 from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps
 
@@ -395,6 +399,7 @@ async def _dispatch_remediation_and_watchdog(
             except* (
                 UsageLimitExceeded,
                 UnexpectedModelBehavior,
+                RemediationOutputRetryExhausted,
                 CircuitBreakerTripped,
             ) as eg:
                 raise eg.exceptions[0]
@@ -502,7 +507,7 @@ async def _run_orchestration(
             actions_taken=[],
             model_version=model_name,
             setup_error=_reason,
-            forbidden_action_violations=None,
+            forbidden_action_violations=[],
             attempts=attempts_count,
         )
 
@@ -530,6 +535,7 @@ async def _run_orchestration(
             iteration_count=_iteration_count,
             autonomy_level="full",
             actions_taken=[],
+            forbidden_action_violations=[],
             model_version=model_name,
             attempts=attempts_count,
         )
@@ -613,7 +619,10 @@ async def _run_orchestration(
                     record = _abort_record("diagnosis_timeout")
                     _write_run_record(record)
                     return record
-                except UnexpectedModelBehavior as exc:
+                except DiagnosisOutputRetryExhausted as exc:
+                    total_usage = total_usage + exc.usage
+                    total_tool_calls += _count_tool_calls(exc.messages)
+                    iteration_count = attempts_count
                     log.error(
                         "run %s aborted: retry_exhausted:diagnosis: %s", run_id, exc
                     )
@@ -711,21 +720,37 @@ async def _run_orchestration(
                     )
 
                 if tier == "review":
-                    async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
-                        (
-                            remediation_result,
-                            rem_usage,
-                            rem_msgs,
-                        ) = await run_remediation(
-                            remediation_deps,
-                            report,
-                            source_branch=base_branch,
-                            model=model,
-                            run_id=run_id,
-                            blocked_tools=blocked,
-                            breaker=breaker,
-                            require_human_review=True,
+                    try:
+                        async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+                            (
+                                remediation_result,
+                                rem_usage,
+                                rem_msgs,
+                            ) = await run_remediation(
+                                remediation_deps,
+                                report,
+                                source_branch=base_branch,
+                                model=model,
+                                run_id=run_id,
+                                blocked_tools=blocked,
+                                breaker=breaker,
+                                require_human_review=True,
+                            )
+                    except (
+                        RemediationOutputRetryExhausted,
+                        UnexpectedModelBehavior,
+                    ) as exc:
+                        if isinstance(exc, RemediationOutputRetryExhausted):
+                            total_usage = total_usage + exc.usage
+                            total_tool_calls += _count_tool_calls(exc.messages)
+                        log.error(
+                            "run %s aborted: retry_exhausted:remediation: %s",
+                            run_id,
+                            exc,
                         )
+                        record = _abort_record(f"retry_exhausted:remediation: {exc}")
+                        _write_run_record(record)
+                        return record
                     total_usage = total_usage + rem_usage
                     trace.log_messages(run_id, "remediation", rem_msgs)
                     trace.write_trace(run_id, "remediation", rem_msgs)
@@ -795,7 +820,13 @@ async def _run_orchestration(
                     record = _abort_record("remediation_timeout")
                     _write_run_record(record)
                     return record
-                except UnexpectedModelBehavior as exc:
+                except (
+                    RemediationOutputRetryExhausted,
+                    UnexpectedModelBehavior,
+                ) as exc:
+                    if isinstance(exc, RemediationOutputRetryExhausted):
+                        total_usage = total_usage + exc.usage
+                        total_tool_calls += _count_tool_calls(exc.messages)
                     log.error(
                         "run %s aborted: retry_exhausted:remediation: %s",
                         run_id,
@@ -971,7 +1002,7 @@ async def _run_orchestration(
             actions_taken=[],
             model_version=model_name,
             setup_error="iteration_limit",
-            forbidden_action_violations=None,
+            forbidden_action_violations=[],
             attempts=attempts_count,
         )
         _write_run_record(record)

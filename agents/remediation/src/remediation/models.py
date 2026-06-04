@@ -4,10 +4,27 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.usage import RunUsage
 
 
 class GitCommitBudgetExceeded(Exception):
     """Raised when a run exceeds its allotted commit_files invocations."""
+
+
+class RemediationOutputRetryExhausted(Exception):
+    """Remediation exhausted output-validation retries before producing a result.
+
+    Carries the usage consumed by the failed attempts so the caller can record
+    real token cost; a bare re-raise would drop it and report zero.
+    """
+
+    def __init__(
+        self, usage: RunUsage, messages: list[ModelMessage], cause: Exception
+    ) -> None:
+        super().__init__(str(cause))
+        self.usage = usage
+        self.messages = messages
 
 
 class RemediationResult(BaseModel):

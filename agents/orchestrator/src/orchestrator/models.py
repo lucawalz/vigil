@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class FaultEvent(BaseModel):
@@ -62,7 +62,7 @@ class RunRecord(BaseModel):
     agent_branch: str | None = None
     agent_commits: list[str] | None = None
     gate_status: str | None = None
-    forbidden_action_violations: list[str] | None = None
+    forbidden_action_violations: list[str] | None = Field(default_factory=list)
 
 
 class CircuitBreakerTripped(Exception):
