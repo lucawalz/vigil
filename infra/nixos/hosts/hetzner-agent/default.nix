@@ -36,7 +36,7 @@ let
   };
   git-mcp = mkMcpServer {
     name = "git-mcp";
-    vendorHash = "sha256-FNsvJYBdm5DtrPtNBLMh9IxYsIs7ZNjniduYytooQvY=";
+    vendorHash = "sha256-u+O+glPj8ezIplwJmRxO4y6/KNyndTWz69H7md/Hdzs=";
     nativeBuildInputs = [ pkgs.git ];
   };
 in
