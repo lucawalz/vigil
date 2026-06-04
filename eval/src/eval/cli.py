@@ -96,18 +96,25 @@ def run_cmd(
             )
         )
     except TimeoutError as e:
-        click.echo(f"ERROR: {e}", err=True)
         resolved_runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
-        _write_setup_error_record(
-            scenario,
-            seed,
-            model,
-            resolved_runs_dir,
-            str(e),
-            outcome="diagnosis_timeout",
-            started_at=started_at,
-        )
-        sys.exit(2)
+        result_path = resolved_runs_dir / f"{_run_id_for(scenario, seed, model)}.json"
+        if result_path.exists():
+            click.echo(
+                "NOTE: orchestrator result appeared after the wait deadline; using it",
+                err=True,
+            )
+        else:
+            click.echo(f"ERROR: {e}", err=True)
+            _write_setup_error_record(
+                scenario,
+                seed,
+                model,
+                resolved_runs_dir,
+                str(e),
+                outcome="harness_timeout",
+                started_at=started_at,
+            )
+            sys.exit(2)
     except (RuntimeError, FileNotFoundError) as e:
         click.echo(f"ERROR: {e}", err=True)
         resolved_runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
@@ -137,15 +144,7 @@ def run_cmd(
     )
 
 
-def _write_setup_error_record(
-    scenario_id: str,
-    seed: int,
-    model: str,
-    runs_dir: Path,
-    error_msg: str,
-    outcome: str = "setup_error",
-    started_at: str | None = None,
-) -> None:
+def _run_id_for(scenario_id: str, seed: int, model: str) -> str:
     try:
         sha7 = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -154,11 +153,25 @@ def _write_setup_error_record(
         ).strip()
     except Exception:
         sha7 = "unknown"
-
     safe_model = re.sub(r"[^a-zA-Z0-9_-]", "-", model)
-    run_id = f"{scenario_id}_{seed}_{safe_model}_{sha7}"
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"{scenario_id}_{seed}_{safe_model}_{sha7}"
 
+
+def _write_setup_error_record(
+    scenario_id: str,
+    seed: int,
+    model: str,
+    runs_dir: Path,
+    error_msg: str,
+    outcome: str = "setup_error",
+    started_at: str | None = None,
+) -> bool:
+    run_id = _run_id_for(scenario_id, seed, model)
+    result_path = runs_dir / f"{run_id}.json"
+    if result_path.exists():
+        return False
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     runs_dir.mkdir(parents=True, exist_ok=True)
     record: dict = {
         "run_id": run_id,
@@ -182,7 +195,7 @@ def _write_setup_error_record(
         "ended_at": now_str,
         "setup_error": error_msg[:500],
     }
-    (runs_dir / f"{run_id}.json").write_text(json.dumps(record, indent=2))
+    result_path.write_text(json.dumps(record, indent=2))
 
     index_path = runs_dir.parent / "runs_index.jsonl"
     index_entry = {
@@ -195,6 +208,7 @@ def _write_setup_error_record(
     }
     with index_path.open("a") as fh:
         fh.write(json.dumps(index_entry) + "\n")
+    return True
 
 
 @cli.command("campaign")

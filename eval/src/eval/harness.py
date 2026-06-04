@@ -16,7 +16,11 @@ import yaml
 from orchestrator.agent import _write_run_record, build_run_id
 from orchestrator.models import RunRecord
 
-DEFAULT_TIMEOUT_S = 600
+_ORCHESTRATOR_RUN_TIMEOUT_S = float(
+    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "1800")
+)
+_HARNESS_WAIT_BUFFER_S = 300
+DEFAULT_TIMEOUT_S = int(_ORCHESTRATOR_RUN_TIMEOUT_S + _HARNESS_WAIT_BUFFER_S)
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
 BASELINE_KUSTOMIZATIONS = ("cluster-apps", "cluster-infrastructure")
 CIRCUIT_BREAKER_THRESHOLD = 3
