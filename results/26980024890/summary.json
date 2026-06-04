@@ -1,0 +1,150 @@
+{
+  "by_model": {
+    "deepseek-v3.2:cloud": {
+      "n_runs": 8,
+      "n_attempts": 6,
+      "success_rate": 0.625,
+      "success_rate_given_attempt": 0.8333333333333334,
+      "mean_MTTR_s": 370.8204125620002,
+      "std_MTTR_s": 108.2050194539511,
+      "diagnosis_accuracy": 0.8333333333333334,
+      "diag_n": 6,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.0,
+      "rollback_success_rate": null,
+      "n_eligible": 6,
+      "mean_input_tokens": 145187.66666666666,
+      "mean_output_tokens": 3947.5,
+      "mean_tool_calls": 19.166666666666668,
+      "mean_iteration_count": 10.166666666666666
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 431.4858304719999,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "setup_error": "unhandled_exception",
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 438.51876066600016,
+      "std_MTTR_s": null
+    },
+    "k8s-4g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 431.13943837000033,
+      "std_MTTR_s": null
+    },
+    "k8s-5g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 369.02890275200025,
+      "std_MTTR_s": null
+    },
+    "live-quota-injected": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "setup_error": "circuit_breaker_3_consecutive_errors",
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "deceptive-2": {
+      "n_runs": 1,
+      "outcome": "flux_degraded",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 1164.7488637300003,
+      "std_MTTR_s": null
+    },
+    "k8s-rollback-1": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 183.92913055000008,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    }
+  },
+  "totals": {
+    "n": 8,
+    "n_models": 1,
+    "n_scenarios": 8
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
