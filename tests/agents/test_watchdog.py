@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 from watchdog import agent as watchdog_agent_mod
 from watchdog.agent import (
+    _coerce_rollout_status,
     _parse_pod_counts,
     capture_health_snapshot,
     is_workload_healthy,
@@ -178,7 +179,7 @@ async def test_capture_health_snapshot_reads_rollout_for_workload() -> None:
 
     async def _call(name, args):
         if name == "rollout_status":
-            return {"content": json.dumps(_rollout_json())}
+            return _rollout_json()
         return {"content": "pod/a Running 1/1\npod/b Running 1/1\npod/c Running 1/1"}
 
     kubectl.direct_call_tool = AsyncMock(side_effect=_call)
@@ -204,6 +205,20 @@ async def test_capture_health_snapshot_reads_rollout_for_workload() -> None:
     assert snap.ready_pods == 3
     assert snap.flux_ready is True
     assert snap.flux_revision == "main@sha1:abc123"
+
+
+def test_coerce_rollout_status_accepts_parsed_dict_and_string() -> None:
+    parsed = _rollout_json()
+    assert _coerce_rollout_status(parsed) == parsed
+    assert _coerce_rollout_status(json.dumps(parsed)) == parsed
+    assert _coerce_rollout_status({"content": json.dumps(parsed)}) == parsed
+
+
+def test_coerce_rollout_status_indeterminate_on_garbage() -> None:
+    with pytest.raises(HealthSnapshotUnavailable):
+        _coerce_rollout_status({"content": "Deployment: web\nDesired: 1"})
+    with pytest.raises(HealthSnapshotUnavailable):
+        _coerce_rollout_status("not json")
 
 
 async def test_capture_health_snapshot_nonworkload_skips_rollout() -> None:
@@ -260,7 +275,7 @@ async def test_run_watchdog_healthy_after_streak(
         if name == "rollout_status":
             payload = sequence[min(calls["i"], len(sequence) - 1)]
             calls["i"] += 1
-            return {"content": json.dumps(payload)}
+            return payload
         return {"content": "pod/a Running 1/1\npod/b Running 1/1\npod/c Running 1/1"}
 
     kubectl = AsyncMock()
@@ -292,7 +307,7 @@ async def test_run_watchdog_degraded_at_deadline(
 
     async def _call(name, args):
         if name == "rollout_status":
-            return {"content": json.dumps(_rollout_json(readyReplicas=0))}
+            return _rollout_json(readyReplicas=0)
         return {"content": "pod/a Running 0/1"}
 
     kubectl.direct_call_tool = AsyncMock(side_effect=_call)
@@ -337,7 +352,7 @@ async def test_run_watchdog_fast_fails_on_progress_deadline(
 
     async def _call(name, args):
         if name == "rollout_status":
-            return {"content": json.dumps(rollout)}
+            return rollout
         return {"content": "pod/a Running 0/1"}
 
     kubectl.direct_call_tool = AsyncMock(side_effect=_call)
