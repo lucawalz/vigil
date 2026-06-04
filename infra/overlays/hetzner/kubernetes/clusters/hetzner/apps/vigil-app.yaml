@@ -6,7 +6,7 @@ metadata:
   labels:
     app: vigil-app
 spec:
-  replicas: 1
+  replicas::
   selector:
     matchLabels:
       app: vigil-app
@@ -48,5 +48,3 @@ spec:
       - name: nginx-config-template
         configMap:
           name: vigil-app-nginx-config
-      nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
