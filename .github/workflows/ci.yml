@@ -40,7 +40,7 @@ jobs:
         run: uv run pytest tests/agents/ -x --tb=short -q
 
   lockfile-drift:
-    if: github.actor != 'dependabot[bot]'
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -95,6 +95,11 @@ jobs:
         with:
           go-version: "1.26"
           cache: true
+      - name: go build (${{ matrix.module }})
+        run: go build ./...
+        working-directory: ${{ matrix.module }}
+        env:
+          CGO_ENABLED: "0"
       - name: go test (${{ matrix.module }})
         run: go test ./... -count=1
         working-directory: ${{ matrix.module }}
@@ -126,20 +131,6 @@ jobs:
           GOPRIVATE: github.com/lucawalz/*
           GONOSUMDB: github.com/lucawalz/*
 
-  go-build:
-    needs: [go-test, go-lint]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.26"
-          cache: true
-      - name: Build all modules
-        run: go build github.com/lucawalz/vigil/...
-        env:
-          CGO_ENABLED: "0"
-
   terraform-lint:
     runs-on: ubuntu-latest
     defaults:
@@ -156,3 +147,22 @@ jobs:
         run: terraform init -backend=false
       - name: terraform validate
         run: terraform validate
+
+  ci-gate:
+    if: always()
+    needs:
+      - python-lint
+      - python-test
+      - lockfile-drift
+      - detect-go-modules
+      - go-lint
+      - go-test
+      - govulncheck
+      - terraform-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all checks to pass
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
+          allowed-skips: lockfile-drift
