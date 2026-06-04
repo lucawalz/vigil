@@ -356,9 +356,7 @@ async def run_diagnosis(
         partial_msgs = agent_run.all_messages()
         if partial_msgs:
             trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
-        raise DiagnosisOutputRetryExhausted(
-            agent_run.usage, partial_msgs, exc
-        ) from exc
+        raise DiagnosisOutputRetryExhausted(agent_run.usage, partial_msgs, exc) from exc
     except UsageLimitExceeded as exc:
         partial_msgs = agent_run.all_messages()
         if partial_msgs:
