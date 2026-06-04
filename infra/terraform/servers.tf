@@ -294,6 +294,7 @@ resource "local_sensitive_file" "vigil_env" {
     OLLAMA_BASE_URL=${var.ollama_base_url}
     %{~endif~}
     LLM_MODEL_NAME=${var.llm_model_name}
+    VIGIL_BLOCK_ALERT_TRIGGERS=true
     LLM_REASONING_EFFORT=none
     DIAGNOSIS_TIMEOUT_S=600
     REMEDIATION_TIMEOUT_S=900

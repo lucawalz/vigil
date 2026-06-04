@@ -246,3 +246,58 @@ async def test_webhook_returns_run_id_and_outcome(
     assert r.status_code == 200
     body = r.json()
     assert "run_id" in body
+
+
+async def test_webhook_blocks_alert_trigger_when_toggle_enabled(
+    test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VIGIL_BLOCK_ALERT_TRIGGERS", "true")
+    mock_run = AsyncMock(return_value=_canned_record())
+    monkeypatch.setattr(main_mod, "run_orchestration", mock_run)
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/webhook",
+            json=_alertmanager_payload(),
+            headers={"Authorization": "Bearer test-secret"},
+        )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ignored"
+    mock_run.assert_not_called()
+
+
+async def test_webhook_allows_eval_trigger_when_toggle_enabled(
+    test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VIGIL_BLOCK_ALERT_TRIGGERS", "true")
+    mock_run = AsyncMock(return_value=_canned_record())
+    monkeypatch.setattr(main_mod, "run_orchestration", mock_run)
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/webhook",
+            params={"scenario": "k8s-1", "seed": 5, "model": "test-model"},
+            json=_alertmanager_payload(),
+            headers={"Authorization": "Bearer test-secret"},
+        )
+    assert r.status_code == 200
+    assert "run_id" in r.json()
+    mock_run.assert_called_once()
+
+
+async def test_webhook_allows_alert_trigger_when_toggle_unset(
+    test_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("VIGIL_BLOCK_ALERT_TRIGGERS", raising=False)
+    mock_run = AsyncMock(return_value=_canned_record())
+    monkeypatch.setattr(main_mod, "run_orchestration", mock_run)
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/webhook",
+            json=_alertmanager_payload(),
+            headers={"Authorization": "Bearer test-secret"},
+        )
+    assert r.status_code == 200
+    assert "run_id" in r.json()
+    mock_run.assert_called_once()

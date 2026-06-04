@@ -82,6 +82,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.info("MCP servers shutting down")
 
 
+_TRUTHY = {"true", "1", "yes"}
+
+
+def _alert_triggers_blocked() -> bool:
+    value = os.environ.get("VIGIL_BLOCK_ALERT_TRIGGERS", "false")
+    return value.strip().lower() in _TRUTHY
+
+
+def _is_eval_triggered(request: Request) -> bool:
+    return "model" in request.query_params
+
+
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -133,6 +145,9 @@ async def webhook(
     seed: int | None = None,
     model: str | None = None,
 ) -> dict[str, str]:
+    if _alert_triggers_blocked() and not _is_eval_triggered(request):
+        log.info("ignoring alert-triggered run: VIGIL_BLOCK_ALERT_TRIGGERS is enabled")
+        return {"status": "ignored", "reason": "alert-triggered runs are disabled"}
     payload = await request.json()
     if not payload.get("alerts"):
         raise HTTPException(
