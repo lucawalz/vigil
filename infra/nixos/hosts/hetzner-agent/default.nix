@@ -28,7 +28,7 @@ let
   };
   flux-mcp = mkMcpServer {
     name = "flux-mcp";
-    vendorHash = "sha256-nDltyTM1580nIz0TzgZ8bOi1ugAFd+8qFtQkk8EYAAc=";
+    vendorHash = "sha256-J6ICNbkn+NwDXd8urVoplljsi9dWVjA9HMKA4ueyk6g=";
   };
   nixos-mcp = mkMcpServer {
     name = "nixos-mcp";
