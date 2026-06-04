@@ -21,6 +21,21 @@ class DiagnosisRequestBudgetExceeded(Exception):
         self.messages = messages
 
 
+class DiagnosisOutputRetryExhausted(Exception):
+    """Diagnosis exhausted output-validation retries before producing a report.
+
+    Carries the usage consumed by the failed attempts so the caller can record
+    real token cost; a bare re-raise would drop it and report zero.
+    """
+
+    def __init__(
+        self, usage: RunUsage, messages: list[ModelMessage], cause: Exception
+    ) -> None:
+        super().__init__(str(cause))
+        self.usage = usage
+        self.messages = messages
+
+
 class DiagnosisReport(BaseModel):
     """Structured output from the Diagnosis agent."""
 

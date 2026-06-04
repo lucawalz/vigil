@@ -29,7 +29,12 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from .context import DiagnosisContext
 from .manifest_paths import lookup_os_manifest_path as _lookup_os_manifest_path
-from .models import DiagnosisDeps, DiagnosisReport, DiagnosisRequestBudgetExceeded
+from .models import (
+    DiagnosisDeps,
+    DiagnosisOutputRetryExhausted,
+    DiagnosisReport,
+    DiagnosisRequestBudgetExceeded,
+)
 
 DIAGNOSIS_REQUEST_LIMIT: int = int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
 
@@ -347,11 +352,13 @@ async def run_diagnosis(
         ) as agent_run:
             async for _ in agent_run:
                 pass
-    except UnexpectedModelBehavior:
+    except UnexpectedModelBehavior as exc:
         partial_msgs = agent_run.all_messages()
         if partial_msgs:
             trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
-        raise
+        raise DiagnosisOutputRetryExhausted(
+            agent_run.usage, partial_msgs, exc
+        ) from exc
     except UsageLimitExceeded as exc:
         partial_msgs = agent_run.all_messages()
         if partial_msgs:

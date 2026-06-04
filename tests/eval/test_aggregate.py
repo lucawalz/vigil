@@ -582,6 +582,22 @@ def test_count_buckets_out_of_scope_absent_when_no_forbidden_violations(
     assert counts["passed"] == 2
 
 
+def test_count_buckets_forbidden_violation_success_counts_as_agent_failed() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {
+            "outcome": "success",
+            "success_rate": False,
+            "forbidden_action_violations": ["commit_files"],
+        },
+        {"outcome": "success", "success_rate": False},
+    ]
+    counts = _count_buckets(records)
+    assert counts["agent-failed"] == 1
+    assert counts["out-of-scope"] == 1
+
+
 def test_count_buckets_escalated_correct_counts_as_passed() -> None:
     from eval.aggregate import _count_buckets
 
