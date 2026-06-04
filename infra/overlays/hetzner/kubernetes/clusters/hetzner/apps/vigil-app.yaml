@@ -6,7 +6,7 @@ metadata:
   labels:
     app: vigil-app
 spec:
-  replicas: 1
+  replicas: القيمة 1
   selector:
     matchLabels:
       app: vigil-app
@@ -41,12 +41,4 @@ spec:
         - --vm-keep
         resources:
           requests:
-            memory: 8Mi
-          limits:
-            memory: 96Mi
-      volumes:
-      - name: nginx-config-template
-        configMap:
-          name: vigil-app-nginx-config
-      nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
+            memory:17.97MB
