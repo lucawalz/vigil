@@ -66,7 +66,7 @@ func callTool(t *testing.T, srv *mcptest.Server, toolName string, args map[strin
 }
 
 func TestGetKustomizationStatus_NoGuard(t *testing.T) {
-	fake := &fakeFluxClient{statusResult: "Kustomization: flux-system/infra\nSuspended: true\n"}
+	fake := &fakeFluxClient{statusResult: "Kustomization: flux-system/infra\nSuspended: true\nLastAppliedRevision: main@sha1:abc1234\n"}
 	srv := buildTestMCPServer(t, fake)
 	defer srv.Close()
 
@@ -75,6 +75,10 @@ func TestGetKustomizationStatus_NoGuard(t *testing.T) {
 	})
 	if result.IsError {
 		t.Errorf("get_kustomization_status should not be guarded, got error: %v", result.Content)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "LastAppliedRevision: main@sha1:abc1234") {
+		t.Errorf("expected last applied revision in response, got: %s", text)
 	}
 }
 

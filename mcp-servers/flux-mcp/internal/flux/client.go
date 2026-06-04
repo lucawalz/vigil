@@ -95,6 +95,10 @@ func (c *realFluxClient) GetKustomizationStatus(ctx context.Context, namespace, 
 				}
 			}
 		}
+		lastApplied, _ := status.(map[string]interface{})["lastAppliedRevision"].(string)
+		fmt.Fprintf(&sb, "LastAppliedRevision: %s\n", lastApplied)
+	} else {
+		sb.WriteString("LastAppliedRevision: \n")
 	}
 
 	return sb.String(), nil
