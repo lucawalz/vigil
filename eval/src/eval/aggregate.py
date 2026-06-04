@@ -261,9 +261,7 @@ def aggregate_runs(
             "n_runs": len(runs),
             "outcome": first_run["outcome"],
             "setup_error": first_run.get("setup_error"),
-            "forbidden_action_violations": first_run.get(
-                "forbidden_action_violations"
-            ),
+            "forbidden_action_violations": first_run.get("forbidden_action_violations"),
             "success_rate": len(successes) / len(runs) if runs else 0.0,
             "mean_MTTR_s": mean_mttr,
             "std_MTTR_s": std_mttr,
