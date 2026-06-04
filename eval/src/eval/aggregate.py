@@ -32,6 +32,7 @@ _OUTCOME_BUCKET: dict[str, str] = {
     "baseline_degraded": "infra-error",
     "abort": "infra-error",
     "setup_error": "infra-error",
+    "harness_timeout": "infra-error",
     "inject_did_not_break": "infra-error",
     "gate_failed": "gate-uncertain",
     "awaiting_human_review": "awaiting-review",
@@ -97,17 +98,22 @@ def _load_records(runs_dir: Path, index_path: Path) -> list[dict]:
     records: list[dict] = []
     if not index_path.exists():
         return records
+    seen: set[str] = set()
     with index_path.open() as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
             idx_rec = json.loads(line)
-            run_file = runs_dir / f"{idx_rec['run_id']}.json"
+            run_id = idx_rec["run_id"]
+            if run_id in seen:
+                continue
+            seen.add(run_id)
+            run_file = runs_dir / f"{run_id}.json"
             if run_file.exists():
                 records.append(json.loads(run_file.read_text()))
             else:
-                log.warning("run JSON missing for %s; skipping", idx_rec["run_id"])
+                log.warning("run JSON missing for %s; skipping", run_id)
     return records
 
 

@@ -373,6 +373,7 @@ def test_aggregate_handles_missing_per_run_json_gracefully(tmp_path: Path) -> No
         ("baseline_degraded", "infra-error"),
         ("abort", "infra-error"),
         ("setup_error", "infra-error"),
+        ("harness_timeout", "infra-error"),
         ("inject_did_not_break", "infra-error"),
         ("gate_failed", "gate-uncertain"),
         ("unknown_literal_xyz", "agent-failed"),
@@ -580,6 +581,29 @@ def test_count_buckets_out_of_scope_absent_when_no_forbidden_violations(
     counts = _count_buckets(records)
     assert counts["out-of-scope"] == 0
     assert counts["passed"] == 2
+
+
+def test_aggregate_dedupes_duplicate_index_lines(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-1", "k8s")
+    _write_run(
+        runs_dir,
+        index_path,
+        run_id="k8s-1_1_m_abc",
+        scenario="k8s-1",
+        seed=1,
+        model="m",
+    )
+    with index_path.open("a") as fh:
+        fh.write(json.dumps({"run_id": "k8s-1_1_m_abc"}) + "\n")
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    assert summary["totals"]["n"] == 1
 
 
 def test_count_buckets_forbidden_violation_success_counts_as_agent_failed() -> None:
