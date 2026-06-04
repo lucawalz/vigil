@@ -294,6 +294,10 @@ resource "local_sensitive_file" "vigil_env" {
     OLLAMA_BASE_URL=${var.ollama_base_url}
     %{~endif~}
     LLM_MODEL_NAME=${var.llm_model_name}
+    LLM_REASONING_EFFORT=none
+    DIAGNOSIS_TIMEOUT_S=600
+    REMEDIATION_TIMEOUT_S=900
+    ORCHESTRATOR_RUN_TIMEOUT_S=2400
     VIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099
     EVAL_RUNS_DIR=/root/vigil/eval/runs
     VIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios
