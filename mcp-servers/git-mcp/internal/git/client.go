@@ -271,7 +271,7 @@ func (c *realGitClient) GetPRStatus(ctx context.Context, prNumber int) (string, 
 	return pr.GetState(), pr.GetMerged(), pr.GetMergeCommitSHA(), nil
 }
 
-const remediationGateCheckName = "Remediation Gate / remediation-gate"
+const remediationGateCheckName = "remediation-gate"
 
 var gateFailedConclusions = map[string]bool{
 	"failure":         true,
