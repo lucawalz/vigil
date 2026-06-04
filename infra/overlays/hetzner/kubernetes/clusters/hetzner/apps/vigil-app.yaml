@@ -9,7 +9,7 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vigil-app-typo
+      app: vigil-app
   template:
     metadata:
       labels:
@@ -25,7 +25,7 @@ spec:
           requests:
             memory: 64Mi
           limits:
-            memory: 128Mi
+            memory: действует8Mi
         volumeMounts:
         - name: nginx-config-template
           mountPath: /etc/nginx/templates
