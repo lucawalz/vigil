@@ -764,6 +764,82 @@ func TestWriteManifestHandler_AcceptsValidYAML(t *testing.T) {
 	}
 }
 
+func TestWriteManifestHandler_RejectsNonIntegerReplicas(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\nspec:\n  replicas: 1\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\nspec:\n  replicas: IQ\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for non-integer replicas")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "schema error") {
+		t.Errorf("expected 'schema error' in error, got: %s", text)
+	}
+	if !strings.Contains(text, "replicas") {
+		t.Errorf("expected offending field 'replicas' in error, got: %s", text)
+	}
+}
+
+func TestWriteManifestHandler_AcceptsValidTypedManifest(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\nspec:\n  replicas: 1\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/deploy.yaml",
+		"patch_body":    "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vigil-app\nspec:\n  replicas: 3\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for valid typed manifest, got error: %v", result.Content)
+	}
+}
+
+func TestWriteManifestHandler_AcceptsUnregisteredKind(t *testing.T) {
+	cloneDir := t.TempDir()
+	seedManifest(t, cloneDir, "apps/kustomization.yaml", "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n- deploy.yaml\n")
+	fake := &fakeGitClient{}
+	state := preloadedState(cloneDir, "remediation/run-001")
+	tool := mcp.NewTool("write_manifest",
+		mcp.WithString("manifest_path", mcp.Required()),
+		mcp.WithString("patch_body", mcp.Required()),
+	)
+	handler := git.HandleWriteManifest(fake, state, testMaxBytes)
+
+	result, err := callHandler(t, "write_manifest", tool, handler, map[string]any{
+		"manifest_path": "apps/kustomization.yaml",
+		"patch_body":    "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n- deploy.yaml\n- service.yaml\n",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success for unregistered kind, got error: %v", result.Content)
+	}
+}
+
 func TestCommitFilesHandler_Success(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{commitSHA: "abc1234"}

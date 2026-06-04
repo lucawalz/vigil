@@ -2,7 +2,9 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 const (
@@ -39,6 +43,7 @@ const (
 	hintReadFileNotFound = "call resolve_manifest_path(kustomize_path, kind, name, namespace) to locate the correct repo-relative path"
 	hintRevertCommit     = "verify the merge commit SHA from wait_for_gate and that the session is initialised"
 	hintProtectedBranch  = "the target branch is protected; target a non-protected branch or adjust VIGIL_PROTECTED_BRANCHES"
+	hintInvalidManifest  = "regenerate the manifest changing only the intended field; preserve every other field at its existing value and type"
 )
 
 var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -140,6 +145,37 @@ func findRuntimeOnlyField(yamlBody string) string {
 	return ""
 }
 
+func validateTypedManifest(yamlBody string) error {
+	decoder := yaml.NewDecoder(strings.NewReader(yamlBody))
+	deserializer := scheme.Codecs.UniversalDeserializer()
+	for {
+		var doc yaml.Node
+		if err := decoder.Decode(&doc); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		raw, err := yaml.Marshal(&doc)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(raw)) == "" || strings.TrimSpace(string(raw)) == "null" {
+			continue
+		}
+		if _, _, err := deserializer.Decode(raw, nil, nil); err != nil {
+			if runtime.IsNotRegisteredError(err) || isMissingKind(err) {
+				continue
+			}
+			return err
+		}
+	}
+}
+
+func isMissingKind(err error) bool {
+	return strings.Contains(err.Error(), "Object 'Kind' is missing")
+}
+
 // If nix-instantiate is missing, the error surfaces to the caller; a misconfigured host must not silently allow writes.
 func validateNixSyntax(ctx context.Context, content string) error {
 	tmp, err := os.CreateTemp("", "vigil-nix-*.nix")
@@ -210,6 +246,9 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 				var doc any
 				if err := yaml.Unmarshal([]byte(patchBody), &doc); err != nil {
 					return mcp.NewToolResultError("patch_body: yaml parse error: " + err.Error()), nil
+				}
+				if err := validateTypedManifest(patchBody); err != nil {
+					return toolError("HandleWriteManifest", "manifest schema error: "+err.Error(), hintInvalidManifest), nil
 				}
 			}
 		}
