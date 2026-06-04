@@ -6,6 +6,9 @@ from common.constants import WATCHDOG_NAMESPACE
 from pydantic import BaseModel
 from pydantic_ai.mcp import MCPServerStdio
 
+_DEFAULT_FLUX_KUSTOMIZATION_NAME = "cluster-apps"
+_DEFAULT_FLUX_KUSTOMIZATION_NAMESPACE = "flux-system"
+
 
 class HealthSnapshotUnavailable(RuntimeError):
     """Health could not be determined from a tool response.
@@ -17,12 +20,22 @@ class HealthSnapshotUnavailable(RuntimeError):
 
 
 class HealthSnapshot(BaseModel):
-    """Pre-remediation baseline + each poll iteration."""
+    """Absolute workload + namespace + Flux health at one poll iteration."""
 
-    ready_pods: int
-    total_pods: int
-    endpoints_healthy: bool
+    workload_found: bool = False
+    generation: int | None = None
+    observed_generation: int | None = None
+    spec_replicas: int | None = None
+    ready_replicas: int | None = None
+    updated_replicas: int | None = None
+    available_replicas: int | None = None
+    available_condition: bool | None = None
+    progressing_ok: bool | None = None
+    progress_deadline_exceeded: bool = False
+    ready_pods: int = 0
+    total_pods: int = 0
     flux_ready: bool | None = None
+    flux_revision: str | None = None
     captured_at: str
 
 
@@ -31,12 +44,18 @@ class WatchdogResult(BaseModel):
 
     degraded: bool
     snapshot: HealthSnapshot | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
 class WatchdogDeps:
-    """kubectl and flux-mcp read scope."""
+    """kubectl and flux-mcp read scope plus the remediation target identity."""
 
     kubectl_mcp: MCPServerStdio
     flux_mcp: MCPServerStdio
     namespace: str = WATCHDOG_NAMESPACE
+    target_kind: str | None = None
+    target_name: str | None = None
+    expected_revision: str | None = None
+    flux_kustomization_name: str = _DEFAULT_FLUX_KUSTOMIZATION_NAME
+    flux_kustomization_namespace: str = _DEFAULT_FLUX_KUSTOMIZATION_NAMESPACE

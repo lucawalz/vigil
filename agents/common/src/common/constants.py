@@ -6,6 +6,8 @@ GIT_COMMIT_BUDGET: int = int(os.environ.get("GIT_COMMIT_BUDGET", "1"))
 
 WATCHDOG_NAMESPACE: str = os.environ.get("WATCHDOG_NAMESPACE", "default")
 
+WATCHDOG_HEALTHY_STREAK_K: int = int(os.environ.get("WATCHDOG_HEALTHY_STREAK_K", "3"))
+
 MCP_CALL_TIMEOUT_S: float = float(os.environ.get("MCP_CALL_TIMEOUT_S", "60"))
 
 CIRCUIT_BREAKER_THRESHOLD: int = int(os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "3"))
