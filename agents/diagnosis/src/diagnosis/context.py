@@ -288,6 +288,16 @@ def _extract_resource_name(fault: FaultEvent) -> str:
     return fault.commonLabels.get("name", "unknown")
 
 
+def _deployment_name_from_pod(pod_name: str) -> str:
+    """Return the Deployment name a pod belongs to.
+
+    Deployment-managed pods are named ``<deployment>-<replicaset-hash>-<pod-hash>``,
+    so dropping the two generated suffixes recovers the workload that owns them.
+    """
+    parts = pod_name.rsplit("-", 2)
+    return parts[0] if len(parts) == 3 else pod_name
+
+
 def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
     namespace_fallback: str | None = None
     for alert in fault.alerts:
@@ -663,16 +673,46 @@ async def build_diagnosis_context(
             diff="",
         )
 
-    live_result = await call_tool(
-        deps.kubectl_mcp,
-        "get_resource_yaml",
-        {"kind": kind, "namespace": namespace, "name": name},
-    )
-    live_yaml = _extract_text(live_result)
-
     resource_name_override: str | None = None
     resolved_kind = kind
-    if kind == "Pod":
+    try:
+        live_result = await call_tool(
+            deps.kubectl_mcp,
+            "get_resource_yaml",
+            {"kind": kind, "namespace": namespace, "name": name},
+        )
+        live_yaml = _extract_text(live_result)
+    except Exception as exc:
+        if kind != "Pod":
+            raise
+        workload = _deployment_name_from_pod(name)
+        try:
+            dep_result = await call_tool(
+                deps.kubectl_mcp,
+                "get_resource_yaml",
+                {"kind": "Deployment", "namespace": namespace, "name": workload},
+            )
+        except Exception:
+            log.warning(
+                "pod %s and workload %s both unresolved, using live pod status: %s",
+                name,
+                workload,
+                exc,
+            )
+            return DiagnosisContext(
+                source_branch=source_branch,
+                manifest_path=None,
+                live_yaml="",
+                declared_yaml="",
+                diff="",
+                live_pod_status=await _fetch_pod_status(deps, namespace),
+            )
+        live_yaml = _extract_text(dep_result)
+        resource_name_override = workload
+        resolved_kind = "Deployment"
+        log.warning("pod %s gone, diagnosed via Deployment/%s: %s", name, workload, exc)
+
+    if resolved_kind == "Pod":
         try:
             dep_name, dep_yaml = await _walk_pod_to_deployment(
                 deps, live_yaml, namespace

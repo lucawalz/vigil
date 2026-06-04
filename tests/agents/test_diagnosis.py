@@ -479,6 +479,191 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
     assert ctx.manifest_path is not None
 
 
+def test_build_diagnosis_context_rolled_pod_resolves_deployment() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+    from pydantic_ai.exceptions import ModelRetry
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KubePodCrashLooping",
+                    "namespace": "default",
+                    "pod": "vigil-app-6895f8ff98-5fdhb",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "KubePodCrashLooping"},
+        commonLabels={"namespace": "default"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="KubePodCrashLooping"}',
+    )
+
+    kust_yaml = (
+        "apiVersion: kustomize.toolkit.fluxcd.io/v1\n"
+        "kind: Kustomization\n"
+        "metadata:\n"
+        "  name: cluster-apps\n"
+        "  namespace: flux-system\n"
+        "spec:\n"
+        "  path: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps\n"
+        "  sourceRef:\n"
+        "    kind: GitRepository\n"
+        "    name: flux-system\n"
+    )
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\n"
+        "kind: GitRepository\n"
+        "metadata:\n"
+        "  name: flux-system\n"
+        "  namespace: flux-system\n"
+        "spec:\n"
+        "  ref:\n"
+        "    branch: main\n"
+    )
+    deployment_yaml = (
+        "apiVersion: apps/v1\n"
+        "kind: Deployment\n"
+        "metadata:\n"
+        "  name: vigil-app\n"
+        "  namespace: default\n"
+        "  annotations:\n"
+        "    kustomize.toolkit.fluxcd.io/name: cluster-apps\n"
+        "    kustomize.toolkit.fluxcd.io/namespace: flux-system\n"
+        "spec:\n"
+        "  template:\n"
+        "    spec:\n"
+        "      containers:\n"
+        "      - image: nginx:stable\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        kind = args.get("kind", "")
+        if kind == "Pod":
+            raise ModelRetry(
+                "GetResourceYAML: get Pod/default/vigil-app-6895f8ff98-5fdhb: "
+                'pods "vigil-app-6895f8ff98-5fdhb" not found'
+            )
+        if kind == "Deployment":
+            assert args.get("name") == "vigil-app"
+            return {"content": deployment_yaml}
+        if kind == "Kustomization":
+            return {"content": kust_yaml}
+        if kind == "GitRepository":
+            return {"content": git_repo_yaml}
+        return {"content": ""}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(return_value={"content": deployment_yaml})
+    mock_nixos = AsyncMock()
+    mock_flux = AsyncMock()
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+        flux_mcp=mock_flux,
+    )
+
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
+    assert ctx.live_yaml == deployment_yaml
+    assert ctx.manifest_path is not None
+
+
+def test_build_diagnosis_context_pod_and_workload_gone_degrades() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+    from pydantic_ai.exceptions import ModelRetry
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KubePodCrashLooping",
+                    "namespace": "default",
+                    "pod": "vigil-app-6895f8ff98-5fdhb",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "KubePodCrashLooping"},
+        commonLabels={"namespace": "default"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="KubePodCrashLooping"}',
+    )
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\n"
+        "kind: GitRepository\n"
+        "metadata:\n"
+        "  name: flux-system\n"
+        "  namespace: flux-system\n"
+        "spec:\n"
+        "  ref:\n"
+        "    branch: main\n"
+    )
+    pods_table = (
+        "NAME                         READY   STATUS\n"
+        "vigil-app-5fc67bd7bf-xcxdv   1/1     Running\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        if tool == "get_pods":
+            return {"content": pods_table}
+        if tool == "get_events":
+            return {"content": ""}
+        kind = args.get("kind", "")
+        if kind == "GitRepository":
+            return {"content": git_repo_yaml}
+        if kind in ("Pod", "Deployment"):
+            raise ModelRetry(f"{kind} not found")
+        return {"content": ""}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(return_value={"content": ""})
+    mock_nixos = AsyncMock()
+    mock_flux = AsyncMock()
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+        flux_mcp=mock_flux,
+    )
+
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
+    assert ctx.live_yaml == ""
+    assert ctx.manifest_path is None
+    assert "vigil-app-5fc67bd7bf-xcxdv" in ctx.live_pod_status
+
+
 def test_build_diagnosis_context_manifest_path_unresolvable() -> None:
     import asyncio
     from unittest.mock import AsyncMock
