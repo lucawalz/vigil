@@ -15,7 +15,12 @@ import os
 from common import trace
 from common.constants import GIT_COMMIT_BUDGET, PROTECTED_BRANCHES
 from common.provider import build_model
-from common.toolset_guards import Breaker, CallBudgetToolset, CircuitBreakerToolset
+from common.toolset_guards import (
+    Breaker,
+    CallBudgetToolset,
+    CircuitBreakerToolset,
+    CircuitBreakerTripped,
+)
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -281,6 +286,12 @@ async def run_remediation(
             agent_run.usage, partial_msgs, exc
         ) from exc
     except UsageLimitExceeded:
+        if run_id:
+            partial_msgs = agent_run.all_messages()
+            if partial_msgs:
+                trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        raise
+    except CircuitBreakerTripped:
         if run_id:
             partial_msgs = agent_run.all_messages()
             if partial_msgs:

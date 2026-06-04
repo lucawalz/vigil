@@ -16,6 +16,7 @@ from common.provider import build_model
 from common.toolset_guards import (
     Breaker,
     CircuitBreakerToolset,
+    CircuitBreakerTripped,
     GlobalToolCallBudgetToolset,
     GlobalToolCounter,
     ToolRepeatLimitToolset,
@@ -362,4 +363,9 @@ async def run_diagnosis(
         if partial_msgs:
             trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
         raise DiagnosisRequestBudgetExceeded(agent_run.usage, partial_msgs) from exc
+    except CircuitBreakerTripped:
+        partial_msgs = agent_run.all_messages()
+        if partial_msgs:
+            trace.write_trace(deps.run_id, "diagnosis", partial_msgs, partial=True)
+        raise
     return agent_run.result.output, agent_run.usage, agent_run.all_messages()

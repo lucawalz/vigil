@@ -17,6 +17,14 @@ from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_ai.toolsets.wrapper import WrapperToolset
 
 
+class CircuitBreakerTripped(Exception):
+    """Raised when consecutive failed MCP tool calls reach the breaker threshold.
+
+    Counted per run across diagnosis and remediation; a successful tool call
+    resets the count. Propagates out of the agent loop to abort the run.
+    """
+
+
 @runtime_checkable
 class Breaker(Protocol):
     """Minimal failure-counting contract a CircuitBreakerToolset drives.

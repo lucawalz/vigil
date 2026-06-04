@@ -2,7 +2,10 @@
 
 from typing import Any, Literal
 
+from common.toolset_guards import CircuitBreakerTripped
 from pydantic import BaseModel, Field
+
+__all__ = ["CircuitBreakerTripped", "FaultEvent", "RunRecord"]
 
 
 class FaultEvent(BaseModel):
@@ -63,11 +66,3 @@ class RunRecord(BaseModel):
     agent_commits: list[str] | None = None
     gate_status: str | None = None
     forbidden_action_violations: list[str] | None = Field(default_factory=list)
-
-
-class CircuitBreakerTripped(Exception):
-    """Raised when consecutive failed MCP tool calls reach the breaker threshold.
-
-    Counted per run across diagnosis and remediation; a successful tool call
-    resets the count. Propagates out of the agent loop to abort the run.
-    """

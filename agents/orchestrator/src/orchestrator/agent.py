@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -19,6 +20,7 @@ from common.constants import (
 )
 from common.mcp_call import call_tool
 from common.provider import build_model
+from common.toolset_guards import CircuitBreakerTripped
 from diagnosis.agent import DIAGNOSIS_REQUEST_LIMIT, run_diagnosis
 from diagnosis.context import (
     ManifestPathUnresolvable,
@@ -40,7 +42,7 @@ from remediation.models import RemediationDeps, RemediationOutputRetryExhausted
 from watchdog.agent import capture_health_snapshot, run_watchdog
 from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps
 
-from .models import CircuitBreakerTripped, FaultEvent, RunRecord
+from .models import FaultEvent, RunRecord
 
 log = logging.getLogger("vigil.orchestrator.agent")
 
@@ -122,6 +124,28 @@ def _count_tool_calls(msgs: list[ModelMessage]) -> int:
         for p in getattr(m, "parts", [])
         if getattr(p, "part_kind", None) == "tool-call"
     )
+
+
+def _count_trace_tool_calls(run_id: str) -> int:
+    """Count tool-call parts in the flushed trace for run_id, or 0 if absent.
+
+    The breaker aborts a run from inside an agent stage, so the orchestrator never
+    sees that stage's message list to tally. Reading the partial trace the stage
+    flushed on its way out recovers the real tool-call count for the abort record.
+    """
+    runs_dir = os.environ.get("EVAL_RUNS_DIR", "eval/runs")
+    path = Path(runs_dir) / f"{run_id}_trace.jsonl"
+    if not path.exists():
+        return 0
+    count = 0
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        message = json.loads(line)
+        for part in message.get("parts", []):
+            if part.get("part_kind") == "tool-call":
+                count += 1
+    return count
 
 
 def _extract_tool_names(msgs: list[ModelMessage]) -> list[str]:
@@ -1039,6 +1063,8 @@ async def _run_orchestration(
         return record
     except CircuitBreakerTripped:
         log.exception("run %s aborted: circuit_breaker", run_id)
+        total_tool_calls = max(total_tool_calls, _count_trace_tool_calls(run_id))
+        iteration_count = max(iteration_count, attempts_count)
         record = _abort_record("circuit_breaker_3_consecutive_errors")
         _write_run_record(record)
         return record
