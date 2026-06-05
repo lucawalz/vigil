@@ -56,6 +56,8 @@ REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "60
 _MAX_DIAGNOSIS_ATTEMPTS = 3
 _RUN_ID_SUFFIX_LEN = 8
 
+_REMEDIATION_BRANCH_PREFIX = "remediation/run-"
+
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
 _COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
@@ -180,6 +182,10 @@ def build_run_id(
     safe_model = re.sub(r"[^a-zA-Z0-9_-]", "-", model)
     run_id = f"{scenario}_{seed_str}_{safe_model}_{sha7}"
     return run_id, seed_str, sha7
+
+
+def _attempt_branch_token(run_id: str, attempt: int) -> str:
+    return f"{run_id}-attempt-{attempt}"
 
 
 def _load_scenario_data(scenario: str) -> dict:
@@ -413,6 +419,7 @@ async def _dispatch_remediation_and_watchdog(
     base_branch: str,
     model,
     run_id: str,
+    agent_branch: str,
     blocked: frozenset[str],
     breaker: _CircuitBreaker,
 ):
@@ -431,6 +438,7 @@ async def _dispatch_remediation_and_watchdog(
                 source_branch=base_branch,
                 model=model,
                 run_id=run_id,
+                agent_branch=agent_branch,
                 blocked_tools=blocked,
                 breaker=breaker,
             )
@@ -456,6 +464,7 @@ async def _dispatch_remediation_and_watchdog(
                             source_branch=base_branch,
                             model=model,
                             run_id=run_id,
+                            agent_branch=agent_branch,
                             blocked_tools=blocked,
                             breaker=breaker,
                         )
@@ -770,15 +779,24 @@ async def _run_orchestration(
                     return record
 
                 base_branch = diagnosis_context.source_branch or "main"
+                branch_token = _attempt_branch_token(run_id, attempt)
+                agent_branch = _REMEDIATION_BRANCH_PREFIX + branch_token
                 try:
                     await call_tool(
                         git_mcp,
                         "create_branch",
-                        {"run_id": run_id, "base_branch": base_branch},
+                        {"run_id": branch_token, "base_branch": base_branch},
                     )
                 except Exception as exc:
-                    log.debug(
-                        "run %s: base_branch pre-call skipped (non-fatal): %s",
+                    if report.recommended_action in _GIT_COMMIT_ACTIONS:
+                        log.error(
+                            "run %s aborted: create_branch_failed: %s", run_id, exc
+                        )
+                        record = _abort_record(f"create_branch_failed: {exc}")
+                        _write_run_record(record)
+                        return record
+                    log.warning(
+                        "run %s: create_branch failed (non-git action): %s",
                         run_id,
                         exc,
                     )
@@ -796,6 +814,7 @@ async def _run_orchestration(
                                 source_branch=base_branch,
                                 model=model,
                                 run_id=run_id,
+                                agent_branch=agent_branch,
                                 blocked_tools=blocked,
                                 breaker=breaker,
                                 require_human_review=True,
@@ -871,6 +890,7 @@ async def _run_orchestration(
                         base_branch,
                         model,
                         run_id,
+                        agent_branch,
                         blocked,
                         breaker,
                     )

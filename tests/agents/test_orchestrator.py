@@ -1029,7 +1029,13 @@ async def test_outcome_rollback_failed(
     degraded_snap = _degraded_snapshot()
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=RuntimeError("revert failed"))
+
+    async def _git_call(name, _args):
+        if name == "revert_commit":
+            raise RuntimeError("revert failed")
+        return {"content": "ok"}
+
+    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=_git_call)
 
     record = await run_orchestration(
         sample_fault_event,
@@ -1074,7 +1080,13 @@ async def test_degraded_without_merge_skips_rollback(
     degraded_snap = _degraded_snapshot()
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=AssertionError("no revert"))
+
+    async def _git_call(name, _args):
+        if name == "revert_commit":
+            raise AssertionError("no revert")
+        return {"content": "ok"}
+
+    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=_git_call)
 
     record = await run_orchestration(
         sample_fault_event,

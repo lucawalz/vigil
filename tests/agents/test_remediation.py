@@ -74,9 +74,8 @@ def test_run_remediation_enforces_usage_limit() -> None:
 
 
 def test_remediation_prompt_mandates_git_commit_sequence() -> None:
-    """All seven git-mcp tool names must appear in the module source."""
+    """The git-mcp tool names of the commit sequence must appear in module source."""
     mod_source = inspect.getsource(_rem_agent_mod)
-    assert "create_branch" in mod_source
     assert "write_manifest" in mod_source
     assert "commit_files" in mod_source
     assert "push_branch" in mod_source

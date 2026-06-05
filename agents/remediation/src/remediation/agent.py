@@ -60,16 +60,17 @@ If recommended_action == "git_commit_k8s":
     - DiagnosisReport.patch_body -- full replacement manifest YAML
     - affected_resources -- list of affected Kubernetes resources
 
+  The remediation branch has already been created and checked out for this run.
+  Do NOT call create_branch. The branch name is provided in the task as
+  agent_branch; record that value into RemediationResult.agent_branch.
+
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
     0. clone_repo(run_id=<run_id>, base_branch=<source_branch>)
        -- initialises the git-mcp session; idempotent if diagnosis already ran.
-    1. create_branch(run_id=<run_id>)
-       -- git-mcp returns 'branch created: remediation/run-<run_id>'.
-       -- record the branch name into RemediationResult.agent_branch.
-    1b. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
-        the current declared content. If the returned content is identical to
-        DiagnosisReport.patch_body, the fix is already in git; escalate
-        rather than opening a no-op PR.
+    1. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
+       the current declared content. If the returned content is identical to
+       DiagnosisReport.patch_body, the fix is already in git; escalate
+       rather than opening a no-op PR.
     2. write_manifest(manifest_path=DiagnosisReport.manifest_path,
                      patch_body=DiagnosisReport.patch_body)
     3. commit_files(message='fix(remediation): <short root cause summary>')
@@ -83,15 +84,15 @@ If recommended_action == "git_commit_k8s":
        -- record RemediationResult.gate_status='merged'.
        -- on failure (tool returns an error containing 'PR closed without merge'):
          a. call close_pr(pr_number=<pr_number>)
-         b. call delete_branch(branch=<branch from step 1>)
+         b. call delete_branch(branch=<the provided agent_branch>)
          c. record RemediationResult.gate_status='closed' and merge_commit_sha=None
          d. return success=False with the action trace and STOP.
     7. flux-mcp.reconcile_kustomization(namespace='flux-system', name='cluster-apps')
        -- triggers Flux to pull the merged commit immediately.
 
   BUDGET / NO-RETRY (GIT_COMMIT_BUDGET=1):
-    Once push_branch and create_pr have been called, do NOT call create_branch,
-    write_manifest, or commit_files again in this run. If the gate fails or
+    Once push_branch and create_pr have been called, do NOT call
+    write_manifest or commit_files again in this run. If the gate fails or
     reconcile_kustomization errors, return RemediationResult with the trace
     so far and STOP. The orchestrator decides the terminal outcome.
 
@@ -117,13 +118,16 @@ If recommended_action == "git_commit_nix":
     - DiagnosisReport.patch_body -- full replacement manifest YAML
     - DiagnosisReport.target_host -- NixOS hostname for nixos-mcp calls
 
+  The remediation branch has already been created and checked out for this run.
+  Do NOT call create_branch. The branch name is provided in the task as
+  agent_branch; record that value into RemediationResult.agent_branch.
+
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
     0. clone_repo(run_id=<run_id>, base_branch=<source_branch>)
        -- idempotent if diagnosis already ran.
-    1. create_branch(run_id=<run_id>)
-    1b. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
-        the current declared content. If identical to DiagnosisReport.patch_body,
-        escalate.
+    1. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
+       the current declared content. If identical to DiagnosisReport.patch_body,
+       escalate.
     2. write_manifest(manifest_path=DiagnosisReport.manifest_path,
                      patch_body=DiagnosisReport.patch_body)
     3. commit_files(message='fix(remediation): <short root cause summary>')
@@ -131,7 +135,9 @@ If recommended_action == "git_commit_nix":
     5. create_pr(title='<short summary>', body='<root cause + evidence>')
        -- base branch is taken from clone_repo.
     6. wait_for_gate(pr_number=<pr_number from create_pr response>)
-       -- on gate failure: call close_pr, delete_branch, return success=False and STOP.
+       -- on gate failure: call close_pr,
+          delete_branch(branch=<the provided agent_branch>),
+          return success=False and STOP.
        -- on gate passed: extract merge sha, record merge_commit_sha and gate_status.
     7. After wait_for_gate returns 'gate passed', call
        nixos-mcp.trigger_reconcile(host=target_host)
@@ -150,7 +156,8 @@ Return a RemediationResult with:
     tool, stage_generation, or trigger_reconcile).
   - merge_commit_sha: parsed from 'gate passed: merged sha=<sha>' on git_commit_k8s
     or git_commit_nix success; None otherwise.
-  - agent_branch: 'remediation/run-<run_id>' on git paths; None otherwise.
+  - agent_branch: the agent_branch value provided in the task, on git paths;
+    None otherwise.
   - agent_commits: list of commit SHAs from commit_files responses on git paths;
     None otherwise.
   - gate_status: 'merged' on gate success, 'closed' on gate failure, None on
@@ -180,6 +187,7 @@ async def run_remediation(
     source_branch: str = "main",
     model: OpenAIChatModel | None = None,
     run_id: str = "",
+    agent_branch: str = "",
     blocked_tools: frozenset[str] = frozenset(),
     breaker: Breaker | None = None,
     require_human_review: bool = False,
@@ -241,8 +249,8 @@ async def run_remediation(
             " git_commit_nix): open the PR for a human to merge, do not gate or"
             " reconcile. After push_branch, call create_pr(..., auto_merge=false)."
             " Then STOP: do NOT call wait_for_gate and do NOT call"
-            " reconcile_kustomization or trigger_reconcile. Record agent_branch and"
-            " agent_commits, set gate_status='awaiting_review', set"
+            " reconcile_kustomization or trigger_reconcile. Record the provided"
+            " agent_branch and agent_commits, set gate_status='awaiting_review', set"
             " merge_commit_sha=None, and return success=True because the PR was"
             " opened successfully for human review."
         )
@@ -253,6 +261,7 @@ async def run_remediation(
         f"affected_resources = {report.affected_resources}. "
         f"recommended_action = {report.recommended_action}. "
         f"source_branch = {source_branch}."
+        f" agent_branch = {agent_branch}."
         f"{constraint_block}"
         f"{review_block}"
     )
