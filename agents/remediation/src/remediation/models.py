@@ -1,8 +1,10 @@
 """Typed contracts for the Remediation agent."""
 
 from dataclasses import dataclass
+from typing import Any
 
-from pydantic import BaseModel
+from common.validators import coerce_null_sentinels
+from pydantic import BaseModel, model_validator
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
@@ -45,6 +47,11 @@ class RemediationResult(BaseModel):
     agent_branch: str | None = None
     agent_commits: list[str] | None = None
     gate_status: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_null_sentinels(cls, data: Any) -> Any:
+        return coerce_null_sentinels(cls, data)
 
 
 @dataclass(frozen=True)
