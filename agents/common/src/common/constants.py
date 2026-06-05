@@ -10,6 +10,12 @@ WATCHDOG_HEALTHY_STREAK_K: int = int(os.environ.get("WATCHDOG_HEALTHY_STREAK_K",
 
 MCP_CALL_TIMEOUT_S: float = float(os.environ.get("MCP_CALL_TIMEOUT_S", "60"))
 
+LLM_REQUEST_TIMEOUT_S: float = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "240"))
+
+LLM_CONNECT_TIMEOUT_S: float = float(os.environ.get("LLM_CONNECT_TIMEOUT_S", "10"))
+
+LLM_MAX_RETRIES: int = int(os.environ.get("LLM_MAX_RETRIES", "1"))
+
 CIRCUIT_BREAKER_THRESHOLD: int = int(os.environ.get("CIRCUIT_BREAKER_THRESHOLD", "3"))
 
 DIAGNOSIS_TOOL_REPEAT_LIMIT: int = int(

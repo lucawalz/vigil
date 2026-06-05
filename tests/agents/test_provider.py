@@ -105,3 +105,38 @@ def test_build_model_anthropic_ignores_reasoning_effort() -> None:
         m = build_model("claude-sonnet-4-6")
     assert m.settings is not None
     assert "openai_reasoning_effort" not in m.settings
+
+
+def test_build_model_openai_client_bounds_timeout_and_retries() -> None:
+    env = {
+        "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+        "OLLAMA_API_KEY": "nokey",
+        "LLM_REQUEST_TIMEOUT_S": "240",
+        "LLM_CONNECT_TIMEOUT_S": "10",
+        "LLM_MAX_RETRIES": "1",
+    }
+    with patch.dict(os.environ, env):
+        from common.constants import (
+            LLM_CONNECT_TIMEOUT_S,
+            LLM_MAX_RETRIES,
+            LLM_REQUEST_TIMEOUT_S,
+        )
+
+        m = build_model("ollama/llama")
+    assert m.client.max_retries == LLM_MAX_RETRIES
+    assert m.client.timeout.read == LLM_REQUEST_TIMEOUT_S
+    assert m.client.timeout.connect == LLM_CONNECT_TIMEOUT_S
+
+
+def test_build_model_anthropic_client_bounds_timeout_and_retries() -> None:
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-fake"}):
+        from common.constants import (
+            LLM_CONNECT_TIMEOUT_S,
+            LLM_MAX_RETRIES,
+            LLM_REQUEST_TIMEOUT_S,
+        )
+
+        m = build_model("claude-sonnet-4-6")
+    assert m.client.max_retries == LLM_MAX_RETRIES
+    assert m.client.timeout.read == LLM_REQUEST_TIMEOUT_S
+    assert m.client.timeout.connect == LLM_CONNECT_TIMEOUT_S
