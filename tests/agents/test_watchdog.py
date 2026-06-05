@@ -185,7 +185,9 @@ async def test_capture_health_snapshot_reads_rollout_for_workload() -> None:
     kubectl.direct_call_tool = AsyncMock(side_effect=_call)
     flux = AsyncMock()
     flux.direct_call_tool = AsyncMock(
-        return_value={"content": "Ready: True\nLastAppliedRevision: main@sha1:abc123"}
+        return_value={
+            "content": '{"found": true, "ready": true, "revision": "main@sha1:abc123"}'
+        }
     )
     deps = WatchdogDeps(
         kubectl_mcp=kubectl,
@@ -225,7 +227,9 @@ async def test_capture_health_snapshot_nonworkload_skips_rollout() -> None:
     kubectl = AsyncMock()
     kubectl.direct_call_tool = AsyncMock(return_value={"content": "pod/a Running 1/1"})
     flux = AsyncMock()
-    flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    flux.direct_call_tool = AsyncMock(
+        return_value={"content": '{"found": true, "ready": true}'}
+    )
     deps = WatchdogDeps(kubectl_mcp=kubectl, flux_mcp=flux, namespace="payments")
 
     snap = await capture_health_snapshot(deps)
@@ -281,7 +285,9 @@ async def test_run_watchdog_healthy_after_streak(
     kubectl = AsyncMock()
     kubectl.direct_call_tool = AsyncMock(side_effect=_call)
     flux = AsyncMock()
-    flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    flux.direct_call_tool = AsyncMock(
+        return_value={"content": '{"found": true, "ready": true}'}
+    )
     deps = WatchdogDeps(
         kubectl_mcp=kubectl,
         flux_mcp=flux,
@@ -312,7 +318,9 @@ async def test_run_watchdog_degraded_at_deadline(
 
     kubectl.direct_call_tool = AsyncMock(side_effect=_call)
     flux = AsyncMock()
-    flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    flux.direct_call_tool = AsyncMock(
+        return_value={"content": '{"found": true, "ready": true}'}
+    )
     deps = WatchdogDeps(
         kubectl_mcp=kubectl,
         flux_mcp=flux,
@@ -357,7 +365,9 @@ async def test_run_watchdog_fast_fails_on_progress_deadline(
 
     kubectl.direct_call_tool = AsyncMock(side_effect=_call)
     flux = AsyncMock()
-    flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    flux.direct_call_tool = AsyncMock(
+        return_value={"content": '{"found": true, "ready": true}'}
+    )
     deps = WatchdogDeps(
         kubectl_mcp=kubectl,
         flux_mcp=flux,
@@ -381,7 +391,9 @@ async def test_run_watchdog_skips_indeterminate_reads(
     kubectl = AsyncMock()
     kubectl.direct_call_tool = AsyncMock(return_value={"content": 42})
     flux = AsyncMock()
-    flux.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    flux.direct_call_tool = AsyncMock(
+        return_value={"content": '{"found": true, "ready": true}'}
+    )
     deps = WatchdogDeps(kubectl_mcp=kubectl, flux_mcp=flux)
 
     result = await run_watchdog(deps)

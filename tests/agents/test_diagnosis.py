@@ -1328,9 +1328,9 @@ def test_build_diagnosis_context_kustomization_apply_error_enrichment() -> None:
         "spec:\n  ref:\n    branch: chore/eval-cluster-baseline\n"
     )
     kust_status_text = (
-        "Kustomization: flux-system/cluster-apps\n"
-        "Conditions:\n"
-        "  Ready: False — ReconciliationFailed\n"
+        '{"kind": "Kustomization", "namespace": "flux-system", '
+        '"name": "cluster-apps", "found": true, "ready": false, '
+        '"reason": "ReconciliationFailed", "message": "", "revision": ""}'
     )
     kust_raw_yaml = (
         "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\n"
@@ -1459,8 +1459,10 @@ def test_build_diagnosis_context_kustomization_dependency_fallback() -> None:
     )
     _dep_msg = "dependency 'flux-system/cluster-infrastructure' is not ready"
     kust_status_text = (
-        "Kustomization: flux-system/cluster-apps\n"
-        f"Conditions:\n  Ready: False — {_dep_msg}\n"
+        '{"kind": "Kustomization", "namespace": "flux-system", '
+        '"name": "cluster-apps", "found": true, "ready": false, '
+        f'"reason": "DependencyNotReady", "message": "{_dep_msg}", '
+        '"revision": ""}'
     )
 
     async def kubectl_side_effect(tool, args):

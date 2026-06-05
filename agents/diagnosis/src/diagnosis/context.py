@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import yaml
+from common.flux_status import coerce_flux_status
 from common.mcp_call import call_tool
 
 if TYPE_CHECKING:
@@ -577,7 +578,15 @@ async def build_diagnosis_context(
             "get_kustomization_status",
             {"namespace": namespace, "name": name},
         )
-        kust_status_text = _extract_text(kust_status_result)
+        kust_status = coerce_flux_status(kust_status_result)
+        kust_status_text = (
+            f"Kustomization: {kust_status.get('namespace', '')}/"
+            f"{kust_status.get('name', '')}\n"
+            f"Ready: {kust_status.get('ready')}\n"
+            f"Reason: {kust_status.get('reason', '')}\n"
+            f"Message: {kust_status.get('message', '')}\n"
+            f"LastAppliedRevision: {kust_status.get('revision', '')}"
+        )
 
         apply_error, failing_kind, failing_name = _extract_kustomization_apply_error(
             kust_raw_text

@@ -130,7 +130,9 @@ async def test_webhook_to_audit_log_end_to_end(
     )
     test_app.state.kubectl_mcp = AsyncMock()
     flux_mock = AsyncMock()
-    flux_mock.direct_call_tool = AsyncMock(return_value={"content": "Ready: True"})
+    flux_mock.direct_call_tool = AsyncMock(
+        return_value={"content": '{"found": true, "ready": true}'}
+    )
     test_app.state.flux_mcp = flux_mock
     test_app.state.nixos_mcp = AsyncMock()
     test_app.state.git_mcp = AsyncMock()

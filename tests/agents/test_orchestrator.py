@@ -301,7 +301,7 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     )
     mock_flux_mcp.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": "Ready: True"}
+            {"content": '{"found": true, "ready": true}'}
             if tool == "get_kustomization_status"
             else {"content": "reconciled"}
         )
@@ -989,7 +989,7 @@ async def test_outcome_rollback_succeeded(
     )
     mock_flux_mcp.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": "Ready: True"}
+            {"content": '{"found": true, "ready": true}'}
             if tool == "get_kustomization_status"
             else {"content": "ok"}
         )
@@ -1567,7 +1567,7 @@ async def test_rollback_when_watchdog_stays_degraded(
     )
     mock_flux_mcp.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": "Ready: True"}
+            {"content": '{"found": true, "ready": true}'}
             if tool == "get_kustomization_status"
             else {"content": "reconciled"}
         )

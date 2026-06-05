@@ -1,28 +1,31 @@
 from __future__ import annotations
 
-import re
+import json
+
+_ENVELOPE_KEYS = ("content", "text", "result")
 
 
-def parse_kust_text(text: str) -> dict:
-    revision_match = re.search(r"LastAppliedRevision:\s*(\S+)", text)
-    revision = revision_match.group(1) if revision_match else None
-    m = re.search(r"^\s*Ready:\s*([A-Za-z]+)(?:\s+-\s*(.*))?$", text, re.MULTILINE)
-    if m:
-        return {
-            "ready": m.group(1),
-            "reason": (m.group(2) or "").strip(),
-            "message": "",
-            "revision": revision,
-        }
-    return {
-        "ready": "Unknown",
-        "reason": "parse_error",
-        "message": text[:200],
-        "revision": revision,
-    }
+def coerce_flux_status(result: object) -> dict:
+    """Normalise a flux-mcp status tool result into its structured dict.
 
-
-def extract_mcp_text(result: object) -> str:
-    if isinstance(result, dict) and "content" in result:
-        return str(result["content"])
-    return str(result)
+    flux-mcp returns kustomization and gitrepository status as a JSON object
+    carrying a ``found`` field. Callers may receive it already decoded as a
+    dict, as a JSON string, or wrapped in an MCP envelope (``{"content": ...}``);
+    all three are accepted.
+    """
+    payload: object = result
+    if isinstance(payload, dict) and "found" not in payload:
+        for key in _ENVELOPE_KEYS:
+            if key in payload:
+                payload = payload[key]
+                break
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"flux status not JSON-decodable: {payload[:120]}"
+            ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError("flux status missing structured fields")
+    return payload

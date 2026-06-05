@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,6 +63,47 @@ func (c *realFluxClient) ReconcileKustomization(ctx context.Context, namespace, 
 	return fmt.Sprintf("kustomization %s/%s reconciliation requested", namespace, name), nil
 }
 
+type fluxStatusJSON struct {
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Found     bool   `json:"found"`
+	Ready     *bool  `json:"ready"`
+	Reason    string `json:"reason"`
+	Message   string `json:"message"`
+	Revision  string `json:"revision"`
+	Suspended bool   `json:"suspended"`
+}
+
+func readyCondition(status map[string]interface{}) (*bool, string, string) {
+	conditions, ok := status["conditions"].([]interface{})
+	if !ok {
+		return nil, "", ""
+	}
+	for _, c := range conditions {
+		cond, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if condType, _ := cond["type"].(string); condType == "Ready" {
+			condStatus, _ := cond["status"].(string)
+			reason, _ := cond["reason"].(string)
+			message, _ := cond["message"].(string)
+			ready := condStatus == "True"
+			return &ready, reason, message
+		}
+	}
+	return nil, "", ""
+}
+
+func marshalFluxStatus(s fluxStatusJSON) (string, error) {
+	out, err := json.Marshal(s)
+	if err != nil {
+		return "", fmt.Errorf("marshal flux status: %w", err)
+	}
+	return string(out), nil
+}
+
 func (c *realFluxClient) GetKustomizationStatus(ctx context.Context, namespace, name string) (string, error) {
 	obj, err := c.dynClient.Resource(kustomizationGVR).Namespace(namespace).Get(
 		ctx, name, metav1.GetOptions{},
@@ -72,36 +112,15 @@ func (c *realFluxClient) GetKustomizationStatus(ctx context.Context, namespace, 
 		return "", fmt.Errorf("get kustomization %s/%s: %w", namespace, name, err)
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Kustomization: %s/%s\n", namespace, name)
-
-	spec, _, _ := unstructuredNested(obj.Object, "spec")
-	if spec != nil {
-		if suspended, ok := spec.(map[string]interface{})["suspend"].(bool); ok {
-			fmt.Fprintf(&sb, "Suspended: %v\n", suspended)
-		}
+	out := fluxStatusJSON{Kind: "Kustomization", Namespace: namespace, Name: name, Found: true}
+	if spec, ok := obj.Object["spec"].(map[string]interface{}); ok {
+		out.Suspended, _ = spec["suspend"].(bool)
 	}
-
-	status, _, _ := unstructuredNested(obj.Object, "status")
-	if status != nil {
-		if conditions, ok := status.(map[string]interface{})["conditions"].([]interface{}); ok {
-			sb.WriteString("Conditions:\n")
-			for _, c := range conditions {
-				if cond, ok := c.(map[string]interface{}); ok {
-					condType, _ := cond["type"].(string)
-					condStatus, _ := cond["status"].(string)
-					condMsg, _ := cond["message"].(string)
-					fmt.Fprintf(&sb, "  %s: %s — %s\n", condType, condStatus, condMsg)
-				}
-			}
-		}
-		lastApplied, _ := status.(map[string]interface{})["lastAppliedRevision"].(string)
-		fmt.Fprintf(&sb, "LastAppliedRevision: %s\n", lastApplied)
-	} else {
-		sb.WriteString("LastAppliedRevision: \n")
+	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
+		out.Ready, out.Reason, out.Message = readyCondition(status)
+		out.Revision, _ = status["lastAppliedRevision"].(string)
 	}
-
-	return sb.String(), nil
+	return marshalFluxStatus(out)
 }
 
 func (c *realFluxClient) GetGitRepositoryStatus(ctx context.Context, namespace, name string) (string, error) {
@@ -112,28 +131,12 @@ func (c *realFluxClient) GetGitRepositoryStatus(ctx context.Context, namespace, 
 		return "", fmt.Errorf("get gitrepository %s/%s: %w", namespace, name, err)
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "GitRepository: %s/%s\n", namespace, name)
-
-	status, _, _ := unstructuredNested(obj.Object, "status")
-	if status != nil {
-		if conditions, ok := status.(map[string]interface{})["conditions"].([]interface{}); ok {
-			sb.WriteString("Conditions:\n")
-			for _, c := range conditions {
-				if cond, ok := c.(map[string]interface{}); ok {
-					condType, _ := cond["type"].(string)
-					condStatus, _ := cond["status"].(string)
-					condMsg, _ := cond["message"].(string)
-					fmt.Fprintf(&sb, "  %s: %s — %s\n", condType, condStatus, condMsg)
-				}
-			}
+	out := fluxStatusJSON{Kind: "GitRepository", Namespace: namespace, Name: name, Found: true}
+	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
+		out.Ready, out.Reason, out.Message = readyCondition(status)
+		if artifact, ok := status["artifact"].(map[string]interface{}); ok {
+			out.Revision, _ = artifact["revision"].(string)
 		}
 	}
-
-	return sb.String(), nil
-}
-
-func unstructuredNested(obj map[string]interface{}, key string) (interface{}, bool, error) {
-	v, ok := obj[key]
-	return v, ok, nil
+	return marshalFluxStatus(out)
 }

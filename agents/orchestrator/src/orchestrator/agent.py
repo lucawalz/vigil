@@ -19,7 +19,7 @@ from common.constants import (
     GIT_COMMIT_BUDGET,
     WATCHDOG_NAMESPACE,
 )
-from common.flux_status import extract_mcp_text, parse_kust_text
+from common.flux_status import coerce_flux_status
 from common.mcp_call import call_tool
 from common.provider import build_model
 from common.toolset_guards import CircuitBreakerTripped
@@ -399,7 +399,7 @@ async def _resolve_gitrepository_revision(flux_mcp: MCPServerStdio) -> str | Non
             "get_gitrepository_status",
             {"namespace": "flux-system", "name": "flux-system"},
         )
-        data = parse_kust_text(extract_mcp_text(result))
+        data = coerce_flux_status(result)
         return data.get("revision")
     except Exception:
         log.debug("gitrepository revision unavailable for expected_revision")

@@ -24,7 +24,7 @@ import os
 from datetime import datetime, timezone
 
 from common.constants import WATCHDOG_HEALTHY_STREAK_K
-from common.flux_status import extract_mcp_text, parse_kust_text
+from common.flux_status import coerce_flux_status
 from common.mcp_call import call_tool
 
 from .models import (
@@ -210,8 +210,9 @@ async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:
                 "name": deps.flux_kustomization_name,
             },
         )
-        kust_data = parse_kust_text(extract_mcp_text(kust_result))
-        flux_ready = kust_data.get("ready") == "True"
+        kust_data = coerce_flux_status(kust_result)
+        ready_value = kust_data.get("ready")
+        flux_ready = ready_value if isinstance(ready_value, bool) else None
         flux_revision = kust_data.get("revision")
     except (RuntimeError, ValueError, AttributeError, TimeoutError) as exc:
         log.warning("flux kustomization status unavailable: %s", exc)

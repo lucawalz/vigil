@@ -66,7 +66,7 @@ func callTool(t *testing.T, srv *mcptest.Server, toolName string, args map[strin
 }
 
 func TestGetKustomizationStatus_NoGuard(t *testing.T) {
-	fake := &fakeFluxClient{statusResult: "Kustomization: flux-system/infra\nSuspended: true\nLastAppliedRevision: main@sha1:abc1234\n"}
+	fake := &fakeFluxClient{statusResult: `{"kind":"Kustomization","namespace":"flux-system","name":"infra","found":true,"ready":true,"revision":"main@sha1:abc1234","suspended":true}`}
 	srv := buildTestMCPServer(t, fake)
 	defer srv.Close()
 
@@ -77,8 +77,8 @@ func TestGetKustomizationStatus_NoGuard(t *testing.T) {
 		t.Errorf("get_kustomization_status should not be guarded, got error: %v", result.Content)
 	}
 	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "LastAppliedRevision: main@sha1:abc1234") {
-		t.Errorf("expected last applied revision in response, got: %s", text)
+	if !strings.Contains(text, `"revision":"main@sha1:abc1234"`) {
+		t.Errorf("expected revision in response, got: %s", text)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestReconcileKustomization_NoGuard(t *testing.T) {
 
 func TestGetGitRepositoryStatus_Success(t *testing.T) {
 	fake := &fakeFluxClient{
-		gitRepositoryStatusResult: "GitRepository: flux-system/flux-system\nConditions:\n  Ready: True — Applied revision: main/abc1234\n",
+		gitRepositoryStatusResult: `{"kind":"GitRepository","namespace":"flux-system","name":"flux-system","found":true,"ready":true,"revision":"main@sha1:abc1234"}`,
 	}
 	srv := buildTestMCPServer(t, fake)
 	defer srv.Close()
@@ -113,8 +113,8 @@ func TestGetGitRepositoryStatus_Success(t *testing.T) {
 		t.Errorf("expected success, got error: %v", result.Content)
 	}
 	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "GitRepository: flux-system/flux-system") {
-		t.Errorf("expected GitRepository header in response, got: %s", text)
+	if !strings.Contains(text, `"kind":"GitRepository"`) {
+		t.Errorf("expected GitRepository kind in response, got: %s", text)
 	}
 }
 

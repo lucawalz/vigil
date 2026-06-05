@@ -54,7 +54,7 @@ def mock_flux_mcp() -> AsyncMock:
     m.call_tool = AsyncMock(return_value={"content": "kustomization ok"})
     m.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": "Ready: True"}
+            {"content": '{"found": true, "ready": true, "revision": null}'}
             if tool == "get_kustomization_status"
             else {"content": "ok"}
         )
