@@ -143,27 +143,26 @@ def _apply_workload_status(snapshot_fields: dict, status: dict) -> None:
             )
 
 
-def _coerce_rollout_status(result: object) -> dict:
-    """Return the rollout_status payload as a dict.
+_ROLLOUT_ENVELOPE_KEYS = ("content", "text", "result")
 
-    pydantic-ai auto-decodes a tool result whose text begins with "{" via
-    pydantic_core.from_json, so a JSON rollout_status arrives already parsed; it
-    may otherwise be a JSON string or a {"content": ...} wrapper. A payload that
-    is none of these is surfaced as an indeterminate poll rather than aborting
-    the run.
-    """
-    if isinstance(result, dict) and "content" not in result:
-        return result
-    text = extract_mcp_text(result)
-    try:
-        parsed = json.loads(text)
-    except (TypeError, ValueError) as exc:
-        raise HealthSnapshotUnavailable(
-            f"rollout_status not JSON-decodable: {text[:120]}"
-        ) from exc
-    if not isinstance(parsed, dict):
-        raise HealthSnapshotUnavailable("rollout_status payload is not an object")
-    return parsed
+
+def _coerce_rollout_status(result: object) -> dict:
+    payload: object = result
+    if isinstance(payload, dict) and "found" not in payload:
+        for key in _ROLLOUT_ENVELOPE_KEYS:
+            if key in payload:
+                payload = payload[key]
+                break
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError) as exc:
+            raise HealthSnapshotUnavailable(
+                f"rollout_status not JSON-decodable: {payload[:120]}"
+            ) from exc
+    if not (isinstance(payload, dict) and "found" in payload):
+        raise HealthSnapshotUnavailable("rollout_status missing workload fields")
+    return payload
 
 
 async def capture_health_snapshot(deps: WatchdogDeps) -> HealthSnapshot:

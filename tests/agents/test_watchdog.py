@@ -207,18 +207,18 @@ async def test_capture_health_snapshot_reads_rollout_for_workload() -> None:
     assert snap.flux_revision == "main@sha1:abc123"
 
 
-def test_coerce_rollout_status_accepts_parsed_dict_and_string() -> None:
+def test_coerce_rollout_status_resolves_every_transport_shape() -> None:
     parsed = _rollout_json()
     assert _coerce_rollout_status(parsed) == parsed
     assert _coerce_rollout_status(json.dumps(parsed)) == parsed
-    assert _coerce_rollout_status({"content": json.dumps(parsed)}) == parsed
+    for key in ("content", "text", "result"):
+        assert _coerce_rollout_status({key: json.dumps(parsed)}) == parsed
 
 
-def test_coerce_rollout_status_indeterminate_on_garbage() -> None:
-    with pytest.raises(HealthSnapshotUnavailable):
-        _coerce_rollout_status({"content": "Deployment: web\nDesired: 1"})
-    with pytest.raises(HealthSnapshotUnavailable):
-        _coerce_rollout_status("not json")
+def test_coerce_rollout_status_indeterminate_on_unresolvable() -> None:
+    for bad in ({"content": "Deployment: web\nDesired: 1"}, "not json", {"foo": "bar"}):
+        with pytest.raises(HealthSnapshotUnavailable):
+            _coerce_rollout_status(bad)
 
 
 async def test_capture_health_snapshot_nonworkload_skips_rollout() -> None:
