@@ -1595,6 +1595,141 @@ def test_build_diagnosis_context_kustomization_dependency_fallback() -> None:
     assert "cluster-apps" in ctx.live_yaml
 
 
+def test_fetch_admission_objects_lists_out_of_band_quota() -> None:
+    """An injected quota with no events is surfaced and marked out-of-band."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import _fetch_admission_objects
+    from diagnosis.models import DiagnosisDeps
+
+    quota_list_yaml = (
+        "apiVersion: v1\nkind: List\nitems:\n"
+        "- apiVersion: v1\n  kind: ResourceQuota\n"
+        "  metadata:\n    name: injected-quota\n    namespace: apps\n"
+        "  spec:\n    hard:\n      pods: '0'\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        if tool == "get_resource_yaml" and args.get("kind") == "ResourceQuota":
+            return {"content": quota_list_yaml}
+        return {"content": "apiVersion: v1\nkind: List\nitems: []\n"}
+
+    async def git_side_effect(tool, args):
+        if tool == "resolve_manifest_path":
+            raise RuntimeError("not found in git")
+        return {"content": "ok"}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+
+    deps = DiagnosisDeps(
+        run_id="test-admission",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=AsyncMock(),
+        git_mcp=mock_git,
+        flux_mcp=AsyncMock(),
+    )
+
+    objects = asyncio.run(_fetch_admission_objects(deps, "apps", "apps/overlay"))
+
+    quotas = [o for o in objects if o.kind == "ResourceQuota"]
+    assert len(quotas) == 1
+    assert quotas[0].name == "injected-quota"
+    assert quotas[0].declared_in_git is False
+    assert quotas[0].git_path is None
+
+
+def test_fetch_admission_objects_marks_git_declared_quota() -> None:
+    """A quota resolvable in git is marked declared_in_git with its path."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import _fetch_admission_objects
+    from diagnosis.models import DiagnosisDeps
+
+    quota_list_yaml = (
+        "apiVersion: v1\nkind: List\nitems:\n"
+        "- apiVersion: v1\n  kind: ResourceQuota\n"
+        "  metadata:\n    name: declared-quota\n    namespace: apps\n"
+        "  spec:\n    hard:\n      pods: '5'\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        if tool == "get_resource_yaml" and args.get("kind") == "ResourceQuota":
+            return {"content": quota_list_yaml}
+        return {"content": "apiVersion: v1\nkind: List\nitems: []\n"}
+
+    async def git_side_effect(tool, args):
+        if tool == "resolve_manifest_path":
+            return {"path": "apps/overlay/declared-quota.yaml"}
+        return {"content": "ok"}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+
+    deps = DiagnosisDeps(
+        run_id="test-admission-git",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=AsyncMock(),
+        git_mcp=mock_git,
+        flux_mcp=AsyncMock(),
+    )
+
+    objects = asyncio.run(_fetch_admission_objects(deps, "apps", "apps/overlay"))
+
+    quotas = [o for o in objects if o.kind == "ResourceQuota"]
+    assert len(quotas) == 1
+    assert quotas[0].name == "declared-quota"
+    assert quotas[0].declared_in_git is True
+    assert quotas[0].git_path == "apps/overlay/declared-quota.yaml"
+
+
+def test_fetch_admission_objects_falls_back_to_events() -> None:
+    """When listing fails for every kind, events still surface quotas."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import _fetch_admission_objects
+    from diagnosis.models import DiagnosisDeps
+
+    rq_yaml = (
+        "apiVersion: v1\nkind: ResourceQuota\n"
+        "metadata:\n  name: event-quota\n  namespace: apps\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        if tool == "get_resource_yaml" and args.get("name") == "":
+            raise RuntimeError("list path unavailable")
+        if tool == "get_resource_yaml" and args.get("name") == "event-quota":
+            return {"content": rq_yaml}
+        if tool == "get_events":
+            return {"content": "FailedCreate exceeded quota: event-quota, used"}
+        return {"content": ""}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=RuntimeError("no git"))
+
+    deps = DiagnosisDeps(
+        run_id="test-admission-events",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=AsyncMock(),
+        git_mcp=mock_git,
+        flux_mcp=AsyncMock(),
+    )
+
+    objects = asyncio.run(_fetch_admission_objects(deps, "apps", "apps/overlay"))
+
+    assert [o.name for o in objects] == ["event-quota"]
+    assert objects[0].declared_in_git is False
+
+
 def _canned_context_for_msg():
     from diagnosis.context import DiagnosisContext
 

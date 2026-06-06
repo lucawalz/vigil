@@ -338,10 +338,62 @@ _KUST_RESOURCE_RE = re.compile(
 
 _QUOTA_NAME_RE = re.compile(r"exceeded quota:\s*([^\s,]+)")
 
+_ADMISSION_KINDS: tuple[str, ...] = ("ResourceQuota", "LimitRange")
+_ADMISSION_SUMMARY_MAX_CHARS = 500
+
 
 def _extract_quota_names_from_events(events_text: str) -> list[str]:
     """Return deduplicated ResourceQuota names from FailedCreate event messages."""
     return list(dict.fromkeys(_QUOTA_NAME_RE.findall(events_text)))
+
+
+def _parse_admission_list(list_yaml: str) -> list[dict]:
+    """Return item dicts from a kubectl List YAML, tolerating malformed input."""
+    try:
+        data = yaml.safe_load(list_yaml)
+    except yaml.YAMLError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    items = data.get("items")
+    return [item for item in items if isinstance(item, dict)] if items else []
+
+
+async def _resolve_admission_git_path(
+    deps: DiagnosisDeps,
+    kind: str,
+    name: str,
+    namespace: str,
+    kustomize_path: str | None,
+) -> str | None:
+    """Return the git manifest path for an admission object, or None if absent."""
+    if not kustomize_path:
+        return None
+    try:
+        path_result = await call_tool(
+            deps.git_mcp,
+            "resolve_manifest_path",
+            {
+                "kustomize_path": kustomize_path,
+                "kind": kind,
+                "name": name,
+                "namespace": namespace,
+            },
+        )
+        git_path = (
+            path_result.get("path")
+            if isinstance(path_result, dict)
+            else _extract_text(path_result)
+        )
+        return git_path or None
+    except Exception as exc:
+        log.debug(
+            "resolve_manifest_path failed for %s/%s, treating as out-of-band: %s",
+            kind,
+            name,
+            exc,
+        )
+        return None
 
 
 async def _get_kustomize_spec_path(deps: DiagnosisDeps, live_text: str) -> str | None:
@@ -407,15 +459,53 @@ def _extract_kustomization_apply_error(
     return best_msg, None, None
 
 
-async def _fetch_admission_objects(
+async def _list_admission_objects(
     deps: DiagnosisDeps,
     namespace: str,
-    source_branch: str,
+    kustomize_path: str | None,
+) -> list[AdmissionObject] | None:
+    """List live admission objects in the namespace; None if every kind list fails."""
+    objects: list[AdmissionObject] = []
+    any_listed = False
+    for kind in _ADMISSION_KINDS:
+        try:
+            list_result = await call_tool(
+                deps.kubectl_mcp,
+                "get_resource_yaml",
+                {"kind": kind, "namespace": namespace, "name": ""},
+            )
+            list_text = _extract_text(list_result)
+        except Exception as exc:
+            log.debug("listing %s in %s failed: %s", kind, namespace, exc)
+            continue
+        any_listed = True
+        for item in _parse_admission_list(list_text):
+            name = (item.get("metadata") or {}).get("name", "")
+            if not name:
+                continue
+            git_path = await _resolve_admission_git_path(
+                deps, kind, name, namespace, kustomize_path
+            )
+            objects.append(
+                AdmissionObject(
+                    kind=kind,
+                    name=name,
+                    namespace=namespace,
+                    summary=yaml.safe_dump(item)[:_ADMISSION_SUMMARY_MAX_CHARS],
+                    declared_in_git=git_path is not None,
+                    git_path=git_path,
+                )
+            )
+    return objects if any_listed else None
+
+
+async def _discover_admission_objects_from_events(
+    deps: DiagnosisDeps,
+    namespace: str,
     kustomize_path: str | None,
 ) -> list[AdmissionObject]:
-    """Discover ResourceQuota objects from namespace events and check git."""
+    """Fall back to naming ResourceQuotas from namespace events when listing fails."""
     objects: list[AdmissionObject] = []
-
     try:
         events_result = await call_tool(
             deps.kubectl_mcp,
@@ -442,46 +532,38 @@ async def _fetch_admission_objects(
         except Exception as exc:
             log.debug("ResourceQuota/%s fetch failed, skipping: %s", quota_name, exc)
             continue
-
-        declared_in_git = False
-        git_path: str | None = None
-        if kustomize_path:
-            try:
-                path_result = await call_tool(
-                    deps.git_mcp,
-                    "resolve_manifest_path",
-                    {
-                        "kustomize_path": kustomize_path,
-                        "kind": "ResourceQuota",
-                        "name": quota_name,
-                        "namespace": namespace,
-                    },
-                )
-                git_path = (
-                    path_result.get("path")
-                    if isinstance(path_result, dict)
-                    else _extract_text(path_result)
-                )
-                declared_in_git = bool(git_path)
-            except Exception as exc:
-                log.debug(
-                    "resolve_manifest_path failed for ResourceQuota/%s, skipping: %s",
-                    quota_name,
-                    exc,
-                )
-
+        git_path = await _resolve_admission_git_path(
+            deps, "ResourceQuota", quota_name, namespace, kustomize_path
+        )
         objects.append(
             AdmissionObject(
                 kind="ResourceQuota",
                 name=quota_name,
                 namespace=namespace,
-                summary=rq_text[:500],
-                declared_in_git=declared_in_git,
+                summary=rq_text[:_ADMISSION_SUMMARY_MAX_CHARS],
+                declared_in_git=git_path is not None,
                 git_path=git_path,
             )
         )
-
     return objects
+
+
+async def _fetch_admission_objects(
+    deps: DiagnosisDeps,
+    namespace: str,
+    kustomize_path: str | None,
+) -> list[AdmissionObject]:
+    """Surface live admission objects in the namespace, even ones with no events.
+
+    Listing exposes out-of-band ResourceQuotas and LimitRanges that emit no
+    FailedCreate events; event-based discovery only supplements when listing fails.
+    """
+    listed = await _list_admission_objects(deps, namespace, kustomize_path)
+    if listed is not None:
+        return listed
+    return await _discover_admission_objects_from_events(
+        deps, namespace, kustomize_path
+    )
 
 
 async def _fetch_pod_status(deps: DiagnosisDeps, namespace: str) -> str:
@@ -775,7 +857,7 @@ async def build_diagnosis_context(
     live_pod_status = await _fetch_pod_status(deps, namespace)
     kustomize_path = await _get_kustomize_spec_path(deps, live_yaml)
     live_admission_objects = await _fetch_admission_objects(
-        deps, namespace, source_branch, kustomize_path
+        deps, namespace, kustomize_path
     )
     return DiagnosisContext(
         source_branch=source_branch,
