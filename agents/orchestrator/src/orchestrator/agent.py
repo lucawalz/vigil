@@ -35,7 +35,11 @@ from diagnosis.models import (
     DiagnosisOutputRetryExhausted,
     DiagnosisRequestBudgetExceeded,
 )
-from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+from pydantic_ai.exceptions import (
+    ModelRetry,
+    UnexpectedModelBehavior,
+    UsageLimitExceeded,
+)
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
@@ -669,6 +673,13 @@ async def _run_orchestration(
                         setup_error=str(exc),
                         attempts=attempts_count,
                     )
+                    _write_run_record(record)
+                    return record
+                except ModelRetry as exc:
+                    log.warning(
+                        "run %s: diagnosis-context build failed: %s", run_id, exc
+                    )
+                    record = _abort_record(f"diagnosis_context_failed: {exc}")
                     _write_run_record(record)
                     return record
 

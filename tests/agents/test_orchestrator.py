@@ -2073,6 +2073,45 @@ async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
     run_diagnosis_mock.assert_not_called()
 
 
+async def test_orchestrator_classifies_diagnosis_context_model_retry(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic_ai.exceptions import ModelRetry
+
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        orch_mod,
+        "capture_health_snapshot",
+        AsyncMock(return_value=_canned_baseline()),
+    )
+    run_diagnosis_mock = AsyncMock(return_value=(_canned_report(), RunUsage(), []))
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod,
+        "build_diagnosis_context",
+        AsyncMock(side_effect=ModelRetry("get_nix_path returned isError")),
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "abort"
+    assert record.setup_error is not None
+    assert record.setup_error.startswith("diagnosis_context_failed:")
+    run_diagnosis_mock.assert_not_called()
+
+
 async def test_orchestrator_escalates_on_resource_kind_unresolvable(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
