@@ -54,3 +54,32 @@ def test_diagnosis_report_coerces_patch_body_sentinel() -> None:
         patch_body="None",
     )
     assert report.patch_body is None
+
+
+_VALID_DIAGNOSIS = {
+    "root_cause": "image tag wrong",
+    "root_cause_component": "vigil-app:bad-tag-v9",
+    "affected_resources": ["default/vigil-app"],
+    "evidence": "Failed to pull image",
+    "drift_classification": "live_only_drift",
+    "recommended_action": "flux_reconcile",
+    "confidence": 0.9,
+}
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("High", "high"),
+        (" critical ", "critical"),
+        ("low", "low"),
+    ],
+)
+def test_diagnosis_report_normalizes_severity(raw: str, expected: str) -> None:
+    report = DiagnosisReport(**_VALID_DIAGNOSIS, severity=raw)
+    assert report.severity == expected
+
+
+def test_diagnosis_report_rejects_unknown_severity() -> None:
+    with pytest.raises(ValidationError):
+        DiagnosisReport(**_VALID_DIAGNOSIS, severity="urgent")

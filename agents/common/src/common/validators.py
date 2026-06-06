@@ -29,6 +29,18 @@ def _nullable_field_names(model_cls: type[BaseModel]) -> frozenset[str]:
     return names
 
 
+def normalize_enum(value: Any) -> Any:
+    """Strip and lowercase a string enum value; leave non-strings untouched.
+
+    LLMs occasionally emit enum members with stray case or whitespace (e.g.
+    "High "); normalising only case/whitespace avoids a wasted validation retry
+    while still rejecting genuinely unknown members.
+    """
+    if isinstance(value, str):
+        return value.strip().lower()
+    return value
+
+
 def coerce_null_sentinels(model_cls: type[BaseModel], data: Any) -> Any:
     """Replace null-sentinel strings with None on nullable fields only.
 

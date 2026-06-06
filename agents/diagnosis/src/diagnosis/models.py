@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from common.validators import coerce_null_sentinels
+from common.validators import coerce_null_sentinels, normalize_enum
 from pydantic import BaseModel, Field, model_validator
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.messages import ModelMessage
@@ -106,6 +106,13 @@ class DiagnosisReport(BaseModel):
     @classmethod
     def _coerce_null_sentinels(cls, data: Any) -> Any:
         return coerce_null_sentinels(cls, data)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_severity(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "severity" in data:
+            data = {**data, "severity": normalize_enum(data["severity"])}
+        return data
 
     @model_validator(mode="after")
     def _drift_action_consistent(self) -> "DiagnosisReport":
