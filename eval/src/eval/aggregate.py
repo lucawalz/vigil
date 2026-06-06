@@ -163,7 +163,9 @@ def _correct_escalation_success(records: list[dict], scenarios_dir: Path) -> Non
             expected = _expected_action_for_scenario(
                 scenarios_dir, r.get("scenario", "")
             )
-            r["success_rate"] = expected == "escalate"
+            r["success_rate"] = expected == "escalate" and (
+                r.get("diagnosis_accuracy") is True
+            )
 
 
 def _correct_outcome_success(records: list[dict], scenarios_dir: Path) -> None:

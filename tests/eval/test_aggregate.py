@@ -740,6 +740,71 @@ def test_expected_outcome_does_not_mark_mismatched_outcome(tmp_path: Path) -> No
     assert summary["by_scenario"]["k8s-rollback-1"]["success_rate"] == 0.0
 
 
+def _make_escalate_scenarios_dir(base: Path, scenario_id: str) -> Path:
+    d = base / scenario_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "scenario.yaml").write_text(
+        f"id: {scenario_id}\nname: test\nlayer: cross\n"
+        "root_cause_component: x\nexpected_action: escalate\n"
+        "expected_resolution_path: x\ninject_params: {}\n"
+    )
+    return base
+
+
+def test_correct_escalation_requires_correct_diagnosis(tmp_path: Path) -> None:
+    from eval.aggregate import _correct_escalation_success
+
+    scenarios_dir = tmp_path / "scenarios"
+    _make_escalate_scenarios_dir(scenarios_dir, "cross-escalate-1")
+
+    records = [
+        {
+            "scenario": "cross-escalate-1",
+            "outcome": "escalated",
+            "success_rate": None,
+            "diagnosis_accuracy": True,
+        }
+    ]
+    _correct_escalation_success(records, scenarios_dir)
+    assert records[0]["success_rate"] is True
+
+
+def test_correct_escalation_fails_when_diagnosis_wrong(tmp_path: Path) -> None:
+    from eval.aggregate import _correct_escalation_success
+
+    scenarios_dir = tmp_path / "scenarios"
+    _make_escalate_scenarios_dir(scenarios_dir, "cross-escalate-1")
+
+    records = [
+        {
+            "scenario": "cross-escalate-1",
+            "outcome": "escalated",
+            "success_rate": None,
+            "diagnosis_accuracy": False,
+        }
+    ]
+    _correct_escalation_success(records, scenarios_dir)
+    assert records[0]["success_rate"] is False
+
+
+def test_correct_escalation_fails_when_diagnosis_unscored(tmp_path: Path) -> None:
+    from eval.aggregate import _correct_escalation_success
+
+    scenarios_dir = tmp_path / "scenarios"
+    _make_escalate_scenarios_dir(scenarios_dir, "cross-escalate-1")
+
+    records = [
+        {
+            "scenario": "cross-escalate-1",
+            "outcome": "escalated",
+            "success_rate": None,
+            "diagnosis_accuracy": None,
+        }
+    ]
+    _correct_escalation_success(records, scenarios_dir)
+    assert records[0]["success_rate"] is False
+
+
 def test_aggregate_handles_mixed_str_and_int_seeds(tmp_path: Path) -> None:
     from eval.aggregate import aggregate_runs
 
