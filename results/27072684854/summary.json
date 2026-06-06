@@ -1,0 +1,250 @@
+{
+  "by_model": {
+    "qwen3.5:cloud": {
+      "n_runs": 13,
+      "n_attempts": 11,
+      "success_rate": 0.5384615384615384,
+      "success_rate_given_attempt": 0.6363636363636364,
+      "mean_MTTR_s": 187.80965132671432,
+      "std_MTTR_s": 68.7926117211397,
+      "diagnosis_accuracy": 0.7272727272727273,
+      "diag_n": 11,
+      "destructive_repair_rate": 0.07692307692307693,
+      "rollback_triggered_rate": 0.0,
+      "rollback_success_rate": null,
+      "n_eligible": 11,
+      "mean_input_tokens": 131373.72727272726,
+      "mean_output_tokens": 6078.818181818182,
+      "mean_tool_calls": 14.545454545454545,
+      "mean_iteration_count": 8
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 277.30218615300004,
+      "std_MTTR_s": null
+    },
+    "k8s-2g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 218.20638418800002,
+      "std_MTTR_s": null
+    },
+    "k8s-3g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 216.85549956599993,
+      "std_MTTR_s": null
+    },
+    "k8s-4g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 217.49845140800016,
+      "std_MTTR_s": null
+    },
+    "k8s-5g": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "setup_error": "circuit_breaker_3_consecutive_errors",
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "live-quota-injected": {
+      "n_runs": 1,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 40.77766155400013,
+      "std_MTTR_s": null
+    },
+    "deceptive-2": {
+      "n_runs": 1,
+      "outcome": "flux_degraded",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 649.0777781769998,
+      "std_MTTR_s": null
+    },
+    "k8s-rollback-1": {
+      "n_runs": 1,
+      "outcome": "flux_degraded",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 996.8585154329999,
+      "std_MTTR_s": null
+    },
+    "os-1": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 157.15087331,
+      "std_MTTR_s": null
+    },
+    "os-1g": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 167.90932320599995,
+      "std_MTTR_s": null
+    },
+    "os-drift-sysctl": {
+      "n_runs": 1,
+      "outcome": "abort",
+      "setup_error": "unhandled_exception",
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null
+    },
+    "os-stale-generation": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 59.74484145600013,
+      "std_MTTR_s": null
+    },
+    "disk-pressure": {
+      "n_runs": 1,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 79.88752035699986,
+      "std_MTTR_s": null
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 0,
+      "total": 0,
+      "accuracy": null,
+      "per_model": {}
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 0,
+          "total": 1
+        }
+      }
+    }
+  },
+  "totals": {
+    "n": 13,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
