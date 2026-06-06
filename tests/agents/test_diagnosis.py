@@ -1332,6 +1332,54 @@ def test_build_diagnosis_context_constructed_path_missing_raises() -> None:
         asyncio.run(build_diagnosis_context(deps, fault))
 
 
+def test_kustomization_apply_error_parses_namespaced_slash_form() -> None:
+    """Slash form Kind/namespace/name yields kind and bare name without namespace."""
+    from diagnosis.context import _extract_kustomization_apply_error
+
+    kust_yaml = (
+        "status:\n"
+        "  conditions:\n"
+        "  - reason: ReconciliationFailed\n"
+        "    status: 'False'\n"
+        "    message: 'Deployment/default/vigil-app dry-run failed: forbidden'\n"
+    )
+    _msg, kind, name = _extract_kustomization_apply_error(kust_yaml)
+    assert kind == "Deployment"
+    assert name == "vigil-app"
+
+
+def test_kustomization_apply_error_parses_slash_form_without_namespace() -> None:
+    """Slash form Kind/name (no namespace segment) still parses correctly."""
+    from diagnosis.context import _extract_kustomization_apply_error
+
+    kust_yaml = (
+        "status:\n"
+        "  conditions:\n"
+        "  - reason: ReconciliationFailed\n"
+        "    status: 'False'\n"
+        "    message: 'ConfigMap/app-config apply failed: conflict'\n"
+    )
+    _msg, kind, name = _extract_kustomization_apply_error(kust_yaml)
+    assert kind == "ConfigMap"
+    assert name == "app-config"
+
+
+def test_kustomization_apply_error_parses_quoted_form() -> None:
+    """Quoted form Kind.group \"name\" remains supported."""
+    from diagnosis.context import _extract_kustomization_apply_error
+
+    kust_yaml = (
+        "status:\n"
+        "  conditions:\n"
+        "  - reason: ReconciliationFailed\n"
+        "    status: 'False'\n"
+        "    message: 'Deployment.apps \"vigil-app\" is invalid: spec.selector'\n"
+    )
+    _msg, kind, name = _extract_kustomization_apply_error(kust_yaml)
+    assert kind == "Deployment"
+    assert name == "vigil-app"
+
+
 def test_build_diagnosis_context_kustomization_apply_error_enrichment() -> None:
     """FluxKustomizationFailed: apply error resolves child resource manifest context."""
     import asyncio

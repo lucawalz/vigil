@@ -331,7 +331,7 @@ def _extract_k8s_kind_namespace_name(fault: FaultEvent) -> tuple[str, str, str]:
 
 _KUST_RESOURCE_RE = re.compile(
     r"(?:([A-Za-z]+)(?:\.[\w.]+)?\s+\"([^\"]+)\""
-    r"|([A-Za-z]+)/([^\s:]+))"
+    r"|([A-Za-z]+)/(?:([^\s:/]+)/)?([^\s:/]+))"
     r"\s+(?:apply failed|dry-run failed|is invalid)",
     re.IGNORECASE,
 )
@@ -403,7 +403,7 @@ def _extract_kustomization_apply_error(
     if m:
         if m.group(1):
             return best_msg, m.group(1), m.group(2)
-        return best_msg, m.group(3), m.group(4)
+        return best_msg, m.group(3), m.group(5)
     return best_msg, None, None
 
 
