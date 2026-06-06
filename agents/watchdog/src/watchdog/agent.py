@@ -49,6 +49,10 @@ HEALTHY_STREAK_K = WATCHDOG_HEALTHY_STREAK_K
 _WORKLOAD_KINDS = frozenset({"Deployment", "StatefulSet"})
 _PROGRESS_DEADLINE_REASON = "ProgressDeadlineExceeded"
 
+_ACTIVE_RUNNING = "Active: active (running)"
+_OS_CHECK_SYSTEMD = "systemd"
+_OS_CHECK_SYSCTL = "sysctl"
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -275,6 +279,59 @@ def is_workload_healthy(
     return True
 
 
+def _coerce_tool_text(result: object) -> str:
+    if isinstance(result, dict):
+        content = result.get("content", result)
+    else:
+        content = result
+    return content if isinstance(content, str) else str(content)
+
+
+async def _os_target_healthy(deps: WatchdogDeps) -> bool:
+    """Report whether the NixOS host has converged to the declared OS state.
+
+    systemd targets are healthy when the unit reports Active: active (running);
+    sysctl targets when the live value equals os_check_expected; absent a
+    specific check, a host is healthy when it has at least one generation.
+    """
+    if deps.nixos_mcp is None or not deps.target_host:
+        return False
+    if deps.os_check_kind == _OS_CHECK_SYSTEMD and deps.os_check_key:
+        result = await call_tool(
+            deps.nixos_mcp,
+            "get_systemd_status",
+            {"host": deps.target_host, "unit": deps.os_check_key},
+        )
+        return _ACTIVE_RUNNING in _coerce_tool_text(result)
+    if deps.os_check_kind == _OS_CHECK_SYSCTL and deps.os_check_key:
+        result = await call_tool(
+            deps.nixos_mcp,
+            "get_sysctl",
+            {"host": deps.target_host, "key": deps.os_check_key},
+        )
+        return _coerce_tool_text(result).strip() == deps.os_check_expected
+    result = await call_tool(
+        deps.nixos_mcp, "get_generations", {"host": deps.target_host}
+    )
+    return bool(_coerce_tool_text(result).strip())
+
+
+async def _run_os_watchdog(deps: WatchdogDeps) -> WatchdogResult:
+    """Poll an OS host with the same window/streak rules as the K8s path."""
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + WINDOW_S
+    healthy_streak = 0
+    while loop.time() < deadline:
+        if await _os_target_healthy(deps):
+            healthy_streak += 1
+            if healthy_streak >= HEALTHY_STREAK_K:
+                return WatchdogResult(degraded=False, snapshot=None, reason="healthy")
+        else:
+            healthy_streak = 0
+        await asyncio.sleep(POLL_INTERVAL_S)
+    return WatchdogResult(degraded=True, snapshot=None, reason="deadline_reached")
+
+
 async def run_watchdog(deps: WatchdogDeps) -> WatchdogResult:
     """Poll until the target is healthy for K consecutive observations.
 
@@ -284,8 +341,13 @@ async def run_watchdog(deps: WatchdogDeps) -> WatchdogResult:
     WATCHDOG_WINDOW_S deadline without a healthy streak returns degraded=True,
     reason="deadline_reached" carrying the last snapshot. An indeterminate read
     (HealthSnapshotUnavailable) skips that poll rather than fabricating a result.
-    No rollback action is taken here -- the Orchestrator decides.
+    OS host targets (target_host set, target_kind None) verify the declared
+    NixOS state via nixos-mcp instead. No rollback action is taken here -- the
+    Orchestrator decides.
     """
+    if deps.target_host and deps.target_kind is None:
+        return await _run_os_watchdog(deps)
+
     loop = asyncio.get_event_loop()
     deadline = loop.time() + WINDOW_S
     last_snapshot: HealthSnapshot | None = None

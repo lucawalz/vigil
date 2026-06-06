@@ -59,3 +59,8 @@ class WatchdogDeps:
     expected_revision: str | None = None
     flux_kustomization_name: str = _DEFAULT_FLUX_KUSTOMIZATION_NAME
     flux_kustomization_namespace: str = _DEFAULT_FLUX_KUSTOMIZATION_NAMESPACE
+    nixos_mcp: MCPServerStdio | None = None
+    target_host: str | None = None
+    os_check_kind: str | None = None
+    os_check_key: str | None = None
+    os_check_expected: str | None = None

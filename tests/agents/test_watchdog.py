@@ -414,3 +414,142 @@ def test_watchdog_source_has_no_mutation_tool_names() -> None:
     src = inspect.getsource(watchdog_agent_mod)
     for forbidden in ("apply_patch", "rollout_undo", "suspend_kustomization"):
         assert forbidden not in src, f"Watchdog must not reference {forbidden}"
+
+
+def test_watchdog_deps_os_fields_default_to_none() -> None:
+    deps = WatchdogDeps(kubectl_mcp=AsyncMock(), flux_mcp=AsyncMock())
+    assert deps.nixos_mcp is None
+    assert deps.target_host is None
+    assert deps.os_check_kind is None
+    assert deps.os_check_key is None
+    assert deps.os_check_expected is None
+
+
+async def test_run_watchdog_os_systemd_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 5.0)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    nixos = AsyncMock()
+    nixos.direct_call_tool = AsyncMock(
+        return_value={"content": "Active: active (running) since Mon"}
+    )
+    deps = WatchdogDeps(
+        kubectl_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+        nixos_mcp=nixos,
+        target_host="worker-1",
+        os_check_kind="systemd",
+        os_check_key="nginx.service",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is False
+    assert result.reason == "healthy"
+
+
+async def test_run_watchdog_os_systemd_inactive_degrades(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 0.2)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    nixos = AsyncMock()
+    nixos.direct_call_tool = AsyncMock(
+        return_value={"content": "Active: inactive (dead)"}
+    )
+    deps = WatchdogDeps(
+        kubectl_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+        nixos_mcp=nixos,
+        target_host="worker-1",
+        os_check_kind="systemd",
+        os_check_key="nginx.service",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is True
+    assert result.reason == "deadline_reached"
+
+
+async def test_run_watchdog_os_sysctl_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 5.0)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    nixos = AsyncMock()
+    nixos.direct_call_tool = AsyncMock(return_value={"content": "1"})
+    deps = WatchdogDeps(
+        kubectl_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+        nixos_mcp=nixos,
+        target_host="worker-1",
+        os_check_kind="sysctl",
+        os_check_key="net.ipv4.ip_forward",
+        os_check_expected="1",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is False
+    assert result.reason == "healthy"
+
+
+async def test_run_watchdog_os_sysctl_mismatch_degrades(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 0.2)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    nixos = AsyncMock()
+    nixos.direct_call_tool = AsyncMock(return_value={"content": "0"})
+    deps = WatchdogDeps(
+        kubectl_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+        nixos_mcp=nixos,
+        target_host="worker-1",
+        os_check_kind="sysctl",
+        os_check_key="net.ipv4.ip_forward",
+        os_check_expected="1",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is True
+    assert result.reason == "deadline_reached"
+
+
+async def test_run_watchdog_os_path_does_not_call_kubectl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 5.0)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 1)
+
+    kubectl = AsyncMock()
+    kubectl.direct_call_tool = AsyncMock()
+    nixos = AsyncMock()
+    nixos.direct_call_tool = AsyncMock(
+        return_value={"content": "Active: active (running)"}
+    )
+    deps = WatchdogDeps(
+        kubectl_mcp=kubectl,
+        flux_mcp=AsyncMock(),
+        nixos_mcp=nixos,
+        target_host="worker-1",
+        os_check_kind="systemd",
+        os_check_key="nginx.service",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is False
+    kubectl.direct_call_tool.assert_not_called()
