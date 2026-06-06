@@ -903,6 +903,7 @@ async def _run_orchestration(
                         agent_branch=remediation_result.agent_branch,
                         agent_commits=remediation_result.agent_commits,
                         gate_status=remediation_result.gate_status,
+                        merge_commit_sha=remediation_result.merge_commit_sha,
                         attempts=attempts_count,
                     )
                     log.info(
@@ -1132,6 +1133,7 @@ async def _run_orchestration(
                 agent_branch=final_remediation_result.agent_branch,
                 agent_commits=final_remediation_result.agent_commits,
                 gate_status=final_remediation_result.gate_status,
+                merge_commit_sha=final_remediation_result.merge_commit_sha,
                 forbidden_action_violations=forbidden_violations,
                 attempts=attempts_count,
             )

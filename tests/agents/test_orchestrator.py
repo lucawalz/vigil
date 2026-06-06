@@ -183,6 +183,7 @@ async def test_run_orchestration_happy_path(
     assert record.agent_branch == "remediation/run-k8s-1"
     assert record.agent_commits == ["deadbeef1234567"]
     assert record.gate_status == "merged"
+    assert record.merge_commit_sha == "deadbeef1234567"
     written = (tmp_path / "runs" / f"{record.run_id}.json").read_text()
     assert json.loads(written)["run_id"] == record.run_id
     index_lines = (tmp_path / "runs_index.jsonl").read_text().strip().splitlines()
@@ -377,6 +378,41 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
     assert required.issubset(present)
     assert record.MTTR_s is not None
     assert record.MTTR_s >= 0.0
+
+
+async def test_merged_run_records_merge_commit_sha(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    diag_rv = (_canned_report(), RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert "merge_commit_sha" in RunRecord.model_fields
+    assert record.merge_commit_sha == "deadbeef1234567"
+    written = json.loads((tmp_path / "runs" / f"{record.run_id}.json").read_text())
+    assert written["merge_commit_sha"] == "deadbeef1234567"
 
 
 async def test_run_orchestration_run_id_format(
