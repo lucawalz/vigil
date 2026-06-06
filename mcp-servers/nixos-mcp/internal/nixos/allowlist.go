@@ -10,11 +10,15 @@ var allowList = map[string]map[string]bool{
 	"nix-env":                 {},
 	"nixos-rebuild":           {"test": true, "dry-activate": true},
 	"switch-to-configuration": {"test": true, "boot": true},
-	"systemctl":               {"is-active": true, "status": true, "start": true, "stop": true},
+	"systemctl":               {"is-active": true, "status": true, "start": true, "stop": true, "restart": true},
 	"sysctl":                  {},
 	"journalctl":              {},
 	"etcdctl":                 {"snapshot": true},
 	"kubectl":                 {"get": true},
+}
+
+var restartableUnits = map[string]bool{
+	"systemd-sysctl": true,
 }
 
 func splitChainedCommand(cmd string) []string {
@@ -68,6 +72,30 @@ func validateCommand(cmd string) error {
 		if !found || !permitted[sub] {
 			return fmt.Errorf("sub-command not in allow-list: %s %s", binary, sub)
 		}
+		if binary == "systemctl" && sub == "restart" {
+			if err := validateRestartUnit(tokens); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func validateRestartUnit(tokens []string) error {
+	args := tokens[1:]
+	seenRestart := false
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if !seenRestart {
+			seenRestart = true
+			continue
+		}
+		if !restartableUnits[arg] {
+			return fmt.Errorf("systemctl restart unit not in allow-list: %s", arg)
+		}
+		return nil
+	}
+	return fmt.Errorf("systemctl restart requires an allow-listed unit")
 }

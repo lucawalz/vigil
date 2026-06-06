@@ -144,12 +144,15 @@ func (c *realNixOSClient) GetGenerations(ctx context.Context, host string) (stri
 	return c.runSSH(ctx, host, "nix-env -p /nix/var/nix/profiles/system --list-generations")
 }
 
-func (c *realNixOSClient) StageGeneration(ctx context.Context, host string, generation int) (string, error) {
-	cmd := fmt.Sprintf(
-		"sudo systemctl start rollback-gate.timer && sudo nix-env --switch-generation %d -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test",
+func stageGenerationCommand(generation int) string {
+	return fmt.Sprintf(
+		"sudo systemctl start rollback-gate.timer && sudo nix-env --switch-generation %d -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test && sudo systemctl restart systemd-sysctl",
 		generation,
 	)
-	return c.runSSH(ctx, host, cmd)
+}
+
+func (c *realNixOSClient) StageGeneration(ctx context.Context, host string, generation int) (string, error) {
+	return c.runSSH(ctx, host, stageGenerationCommand(generation))
 }
 
 func (c *realNixOSClient) CommitGeneration(ctx context.Context, host string) (string, error) {

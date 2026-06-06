@@ -8,7 +8,8 @@ import (
 func TestValidateCommandAllowsEnumeratedCommands(t *testing.T) {
 	legitimate := []string{
 		"nix-env -p /nix/var/nix/profiles/system --list-generations",
-		"sudo systemctl start rollback-gate.timer && sudo nix-env --switch-generation 42 -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test",
+		"sudo systemctl start rollback-gate.timer && sudo nix-env --switch-generation 42 -p /nix/var/nix/profiles/system && sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test && sudo systemctl restart systemd-sysctl",
+		"sudo systemctl restart systemd-sysctl",
 		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration boot && sudo systemctl stop rollback-gate.timer",
 		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test",
 		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration boot",
@@ -35,6 +36,8 @@ func TestValidateCommandRejectsInjection(t *testing.T) {
 		"rm -rf /",
 		"sudo etcdctl snapshot save /tmp/x && rm -rf /",
 		"systemctl restart sshd.service",
+		"sudo systemctl restart kubelet.service",
+		"sudo systemctl restart",
 		"kubectl delete node hetzner-master",
 		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
 		"curl http://evil",
@@ -43,6 +46,16 @@ func TestValidateCommandRejectsInjection(t *testing.T) {
 		if err := validateCommand(cmd); err == nil {
 			t.Errorf("expected rejection for %q", cmd)
 		}
+	}
+}
+
+func TestStageGenerationCommandReappliesSysctls(t *testing.T) {
+	cmd := stageGenerationCommand(42)
+	if !strings.Contains(cmd, "systemctl restart systemd-sysctl") {
+		t.Errorf("staged command missing sysctl reapply step: %q", cmd)
+	}
+	if err := validateCommand(cmd); err != nil {
+		t.Errorf("staged command rejected by allow-list: %v", err)
 	}
 }
 
