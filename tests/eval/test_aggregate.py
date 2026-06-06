@@ -373,10 +373,9 @@ def test_aggregate_handles_missing_per_run_json_gracefully(tmp_path: Path) -> No
         ("baseline_degraded", "infra-error"),
         ("abort", "infra-error"),
         ("setup_error", "infra-error"),
-        ("harness_timeout", "infra-error"),
         ("inject_did_not_break", "infra-error"),
         ("gate_failed", "gate-uncertain"),
-        ("unknown_literal_xyz", "agent-failed"),
+        ("unknown_literal_xyz", "infra-error"),
     ],
 )
 def test_bucket_outcome_mapping(literal: str, expected_bucket: str) -> None:
@@ -385,6 +384,30 @@ def test_bucket_outcome_mapping(literal: str, expected_bucket: str) -> None:
     assert _bucket_outcome(literal) == expected_bucket, (
         f"_bucket_outcome({literal!r}) expected {expected_bucket!r}"
     )
+
+
+def test_gate_failed_without_merge_counts_as_agent_failed() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [{"outcome": "gate_failed", "gate_status": "closed"}]
+    counts = _count_buckets(records)
+    assert counts["agent-failed"] == 1
+    assert counts["gate-uncertain"] == 0
+
+
+def test_gate_failed_after_merge_counts_as_gate_uncertain() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {
+            "outcome": "gate_failed",
+            "gate_status": "closed",
+            "merge_commit_sha": "deadbeef",
+        }
+    ]
+    counts = _count_buckets(records)
+    assert counts["gate-uncertain"] == 1
+    assert counts["agent-failed"] == 0
 
 
 def _write_run_with_outcome(

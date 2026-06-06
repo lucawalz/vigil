@@ -32,18 +32,36 @@ _OUTCOME_BUCKET: dict[str, str] = {
     "baseline_degraded": "infra-error",
     "abort": "infra-error",
     "setup_error": "infra-error",
-    "harness_timeout": "infra-error",
     "inject_did_not_break": "infra-error",
     "gate_failed": "gate-uncertain",
     "awaiting_human_review": "awaiting-review",
 }
+
+_UNKNOWN_OUTCOME_BUCKET = "infra-error"
+
+_CLOSED_GATE = "closed"
 
 _AGENT_BUDGET_ABORT_PREFIXES = ("diagnosis_request_limit_",)
 _AGENT_BUDGET_ABORT_REASONS = frozenset({"iteration_limit"})
 
 
 def _bucket_outcome(literal: str) -> str:
-    return _OUTCOME_BUCKET.get(literal, "agent-failed")
+    bucket = _OUTCOME_BUCKET.get(literal)
+    if bucket is None:
+        log.warning(
+            "unmapped outcome %r; bucketing as %s", literal, _UNKNOWN_OUTCOME_BUCKET
+        )
+        return _UNKNOWN_OUTCOME_BUCKET
+    return bucket
+
+
+def _bucket_gate_failed(record: dict) -> str:
+    if (
+        record.get("gate_status") == _CLOSED_GATE
+        and record.get("merge_commit_sha") is None
+    ):
+        return "agent-failed"
+    return "gate-uncertain"
 
 
 def _is_agent_budget_abort(reason: str) -> bool:
@@ -80,9 +98,10 @@ def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
             str(r.get("setup_error") or "")
         ):
             counts["agent-failed"] += 1
+        elif outcome == "gate_failed":
+            counts[_bucket_gate_failed(r)] += 1
         else:
-            bucket = _bucket_outcome(outcome)
-            counts[bucket] = counts.get(bucket, 0) + 1
+            counts[_bucket_outcome(outcome)] += 1
     counts["not-run"] = max(0, n_planned - n_seen)
     return counts
 
