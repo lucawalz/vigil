@@ -2522,6 +2522,52 @@ async def test_gate_failed_does_not_retry(
     assert run_diagnosis_mock.call_count == 1
 
 
+async def test_blocked_tool_refusal_does_not_retry(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    refused_rem = RemediationResult(
+        success=False,
+        actions_taken=["refused_protected_branch"],
+        tool_calls_count=0,
+        mutation_attempted=False,
+    )
+    rem_mock = AsyncMock(
+        return_value=(refused_rem, RunUsage(input_tokens=10, output_tokens=5), [])
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", rem_mock)
+    degraded_rv = WatchdogResult(
+        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
+    )
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "escalated"
+    assert record.attempts == 1
+    assert run_diagnosis_mock.call_count == 1
+    assert rem_mock.call_count == 1
+
+
 async def test_earlier_merge_preserved_when_retry_escalates(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,

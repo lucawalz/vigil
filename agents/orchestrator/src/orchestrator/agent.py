@@ -64,6 +64,27 @@ _REMEDIATION_BRANCH_PREFIX = "remediation/run-"
 
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
+_REFUSAL_MARKERS: frozenset[str] = frozenset(
+    {"refused_protected_branch", "refused_blocked_tool"}
+)
+
+
+def _is_blocked_tool_refusal(remediation_result) -> bool:
+    """Report whether remediation refused without attempting any mutation.
+
+    A blocked or forbidden tool is the only safe path the model has when the
+    declared fix needs a tool it is denied; it returns success=False with no
+    mutation and no gate interaction. Retrying re-runs an identical refusal and
+    burns the attempt budget for nothing, so the run is finalized at once.
+    """
+    if remediation_result.success or remediation_result.mutation_attempted:
+        return False
+    if remediation_result.gate_status is not None:
+        return False
+    return any(
+        marker in _REFUSAL_MARKERS for marker in remediation_result.actions_taken
+    )
+
 _COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
 
 _RUN_LOCK = asyncio.Lock()
@@ -1003,6 +1024,17 @@ async def _run_orchestration(
                     rollback_triggered = False
                     rollback_success = None
                     break
+
+                if merged_attempt is None and _is_blocked_tool_refusal(
+                    remediation_result
+                ):
+                    log.info(
+                        "run %s: remediation refused a blocked tool, not retrying",
+                        run_id,
+                    )
+                    record = _escalate_record(report, diag_msgs, iteration_count)
+                    _write_run_record(record)
+                    return record
 
                 if watchdog_result.degraded:
                     if attempt < _MAX_DIAGNOSIS_ATTEMPTS:
