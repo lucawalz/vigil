@@ -296,24 +296,28 @@ async def _os_target_healthy(deps: WatchdogDeps) -> bool:
     """
     if deps.nixos_mcp is None or not deps.target_host:
         return False
-    if deps.os_check_kind == _OS_CHECK_SYSTEMD and deps.os_check_key:
+    try:
+        if deps.os_check_kind == _OS_CHECK_SYSTEMD and deps.os_check_key:
+            result = await call_tool(
+                deps.nixos_mcp,
+                "get_systemd_status",
+                {"host": deps.target_host, "unit": deps.os_check_key},
+            )
+            return _ACTIVE_RUNNING in _coerce_tool_text(result)
+        if deps.os_check_kind == _OS_CHECK_SYSCTL and deps.os_check_key:
+            result = await call_tool(
+                deps.nixos_mcp,
+                "get_sysctl",
+                {"host": deps.target_host, "key": deps.os_check_key},
+            )
+            return _coerce_tool_text(result).strip() == deps.os_check_expected
         result = await call_tool(
-            deps.nixos_mcp,
-            "get_systemd_status",
-            {"host": deps.target_host, "unit": deps.os_check_key},
+            deps.nixos_mcp, "get_generations", {"host": deps.target_host}
         )
-        return _ACTIVE_RUNNING in _coerce_tool_text(result)
-    if deps.os_check_kind == _OS_CHECK_SYSCTL and deps.os_check_key:
-        result = await call_tool(
-            deps.nixos_mcp,
-            "get_sysctl",
-            {"host": deps.target_host, "key": deps.os_check_key},
-        )
-        return _coerce_tool_text(result).strip() == deps.os_check_expected
-    result = await call_tool(
-        deps.nixos_mcp, "get_generations", {"host": deps.target_host}
-    )
-    return bool(_coerce_tool_text(result).strip())
+        return bool(_coerce_tool_text(result).strip())
+    except Exception as exc:
+        log.warning("os watchdog probe failed, treating poll as unhealthy: %s", exc)
+        return False
 
 
 async def _run_os_watchdog(deps: WatchdogDeps) -> WatchdogResult:

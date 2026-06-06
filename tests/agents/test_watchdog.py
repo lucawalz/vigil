@@ -527,6 +527,31 @@ async def test_run_watchdog_os_sysctl_mismatch_degrades(
     assert result.reason == "deadline_reached"
 
 
+async def test_run_watchdog_os_probe_failure_degrades_without_propagating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 0.2)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    nixos = AsyncMock()
+    nixos.direct_call_tool = AsyncMock(side_effect=Exception("probe down"))
+    deps = WatchdogDeps(
+        kubectl_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+        nixos_mcp=nixos,
+        target_host="worker-1",
+        os_check_kind="sysctl",
+        os_check_key="net.ipv4.ip_forward",
+        os_check_expected="1",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is True
+    assert result.reason == "deadline_reached"
+
+
 async def test_run_watchdog_os_path_does_not_call_kubectl(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
