@@ -86,41 +86,54 @@ async def test_toolset_calls_success_on_successful_tool_call() -> None:
     assert cb.consecutive == 0
 
 
-async def test_toolset_calls_error_and_reraises_on_failed_tool_call() -> None:
+async def test_toolset_recoverable_hint_does_not_count_and_reraises() -> None:
     cb = _CircuitBreaker()
     wrapped = AsyncMock()
-    wrapped.call_tool = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+    wrapped.call_tool = AsyncMock(
+        side_effect=ModelRetry("path not found, call resolve_manifest_path")
+    )
     toolset = _make_toolset(cb, wrapped)
 
     with pytest.raises(ModelRetry):
+        await toolset.call_tool("read_file", {}, None, None)
+    assert cb.consecutive == 0
+
+
+async def test_toolset_counts_hard_error_and_reraises() -> None:
+    cb = _CircuitBreaker()
+    wrapped = AsyncMock()
+    wrapped.call_tool = AsyncMock(side_effect=ConnectionError("transport down"))
+    toolset = _make_toolset(cb, wrapped)
+
+    with pytest.raises(ConnectionError):
         await toolset.call_tool("get_pods", {}, None, None)
     assert cb.consecutive == 1
 
 
-async def test_toolset_trips_after_threshold_consecutive_failures() -> None:
+async def test_toolset_trips_after_threshold_consecutive_hard_errors() -> None:
     cb = _CircuitBreaker()
     wrapped = AsyncMock()
-    wrapped.call_tool = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+    wrapped.call_tool = AsyncMock(side_effect=RuntimeError("MCP crashed"))
     toolset = _make_toolset(cb, wrapped)
 
     for _ in range(CIRCUIT_BREAKER_THRESHOLD - 1):
-        with pytest.raises(ModelRetry):
+        with pytest.raises(RuntimeError):
             await toolset.call_tool("get_pods", {}, None, None)
 
     with pytest.raises(CircuitBreakerTripped):
         await toolset.call_tool("get_pods", {}, None, None)
 
 
-async def test_toolset_success_between_failures_resets_count() -> None:
+async def test_toolset_success_between_hard_errors_resets_count() -> None:
     cb = _CircuitBreaker()
-    failing = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+    failing = AsyncMock(side_effect=RuntimeError("MCP crashed"))
     ok = AsyncMock(return_value={"content": "ok"})
     wrapped = AsyncMock()
     toolset = _make_toolset(cb, wrapped)
 
     wrapped.call_tool = failing
     for _ in range(CIRCUIT_BREAKER_THRESHOLD - 1):
-        with pytest.raises(ModelRetry):
+        with pytest.raises(RuntimeError):
             await toolset.call_tool("get_pods", {}, None, None)
 
     wrapped.call_tool = ok
@@ -129,9 +142,28 @@ async def test_toolset_success_between_failures_resets_count() -> None:
 
     wrapped.call_tool = failing
     for _ in range(CIRCUIT_BREAKER_THRESHOLD - 1):
-        with pytest.raises(ModelRetry):
+        with pytest.raises(RuntimeError):
             await toolset.call_tool("get_pods", {}, None, None)
     assert cb.consecutive == CIRCUIT_BREAKER_THRESHOLD - 1
+
+
+async def test_toolset_diagnosis_search_loop_never_trips_breaker() -> None:
+    cb = _CircuitBreaker()
+    wrapped = AsyncMock()
+    wrapped.call_tool = AsyncMock(
+        side_effect=ModelRetry("path not found, call resolve_manifest_path")
+    )
+    toolset = _make_toolset(cb, wrapped)
+
+    for _ in range(CIRCUIT_BREAKER_THRESHOLD):
+        with pytest.raises(ModelRetry):
+            await toolset.call_tool("read_file", {}, None, None)
+    assert cb.consecutive == 0
+
+    wrapped.call_tool = AsyncMock(side_effect=ConnectionError("transport down"))
+    with pytest.raises(ConnectionError):
+        await toolset.call_tool("get_pods", {}, None, None)
+    assert cb.consecutive == 1
 
 
 def _mock_diagnosis_context() -> AsyncMock:
@@ -311,7 +343,7 @@ async def test_run_orchestration_aborts_when_wired_breaker_trips(
     )
     monkeypatch.setattr(orch_mod, "build_diagnosis_context", _mock_diagnosis_context())
 
-    failing_tool = AsyncMock(side_effect=ModelRetry("MCP tool call failed"))
+    failing_tool = AsyncMock(side_effect=ConnectionError("MCP transport down"))
 
     async def _drive_breaker_until_trip(
         *_args: object, breaker=None, **_kwargs: object
@@ -322,7 +354,7 @@ async def test_run_orchestration_aborts_when_wired_breaker_trips(
         while True:
             try:
                 await toolset.call_tool("get_pods", {}, None, None)
-            except ModelRetry:
+            except ConnectionError:
                 continue
 
     monkeypatch.setattr(

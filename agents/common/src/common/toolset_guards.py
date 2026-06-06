@@ -148,16 +148,14 @@ class GlobalToolCallBudgetToolset(WrapperToolset[AgentDepsT]):
 
 @dataclass
 class CircuitBreakerToolset(WrapperToolset[AgentDepsT]):
-    """Drives a shared Breaker from real MCP tool-call outcomes within one run.
+    """Drives a shared Breaker from hard MCP tool-call outcomes within one run.
 
-    pydantic-ai surfaces an MCP tool failure as ModelRetry out of the wrapped
-    call_tool; a successful call returns normally. Each ModelRetry counts as a
-    failure and each success resets the run-wide consecutive count. The same
+    A successful call resets the run-wide consecutive count; a hard failure
+    (transport error, MCP crash) counts toward the breaker threshold. The same
     instance must back every wrapped toolset so failures accumulate across stages.
 
     Wrap this on the outside of FilteredToolset/CallBudgetToolset so the breaker
-    observes the delegated MCP outcome. Non-ModelRetry exceptions (e.g. a budget
-    guard's rejection) pass through untouched and never count as MCP failures.
+    observes the delegated MCP outcome.
     """
 
     breaker: Breaker
@@ -172,6 +170,8 @@ class CircuitBreakerToolset(WrapperToolset[AgentDepsT]):
         try:
             result = await self.wrapped.call_tool(name, tool_args, ctx, tool)
         except ModelRetry:
+            raise
+        except Exception:
             self.breaker.error()
             raise
         self.breaker.success()
