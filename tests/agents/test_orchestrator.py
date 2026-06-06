@@ -35,7 +35,7 @@ from orchestrator.models import CircuitBreakerTripped, FaultEvent, RunRecord
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.usage import RunUsage
 from remediation.models import RemediationOutputRetryExhausted, RemediationResult
-from watchdog.models import HealthSnapshot, WatchdogResult
+from watchdog.models import HealthSnapshot, WatchdogDeps, WatchdogResult
 
 _ACTION_DRIFT: dict[str, str] = {
     "flux_reconcile": "live_only_drift",
@@ -1179,6 +1179,72 @@ async def test_sequential_watchdog_k8s_path(
     assert len(rem_done_at) == 1
     assert len(wtch_started_at) == 1
     assert wtch_started_at[0] > rem_done_at[0]
+
+
+async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from orchestrator.agent import (
+        _CircuitBreaker,
+        _dispatch_remediation_and_watchdog,
+    )
+
+    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+
+    event = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KernelParameterDrift",
+                    "node": "hetzner-worker-1",
+                    "sysctl_key": "net.ipv4.ip_forward",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "KernelParameterDrift"},
+        commonLabels={"node": "hetzner-worker-1"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="KernelParameterDrift"}',
+    )
+
+    watchdog_deps = WatchdogDeps(kubectl_mcp=AsyncMock(), flux_mcp=AsyncMock())
+    captured_deps: list[WatchdogDeps] = []
+
+    async def _rem_side_effect(*args, **kwargs):
+        return (_canned_remediation(), RunUsage(input_tokens=10, output_tokens=5), [])
+
+    async def _wtch_side_effect(deps):
+        captured_deps.append(deps)
+        return _watchdog_ok()
+
+    monkeypatch.setattr(orch_mod, "run_remediation", _rem_side_effect)
+    monkeypatch.setattr(orch_mod, "run_watchdog", _wtch_side_effect)
+
+    await _dispatch_remediation_and_watchdog(
+        report,
+        MagicMock(),
+        watchdog_deps,
+        "main",
+        MagicMock(),
+        "run-os-1",
+        "remediation/run-os-1",
+        frozenset(),
+        _CircuitBreaker(),
+        event,
+        os_expected_value="1",
+    )
+
+    assert len(captured_deps) == 1
+    assert captured_deps[0].os_check_expected == "1"
+    assert captured_deps[0].os_check_kind == "sysctl"
 
 
 async def test_outcome_gate_failed(

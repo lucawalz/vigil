@@ -477,6 +477,7 @@ async def _dispatch_remediation_and_watchdog(
     blocked: frozenset[str],
     breaker: _CircuitBreaker,
     event: FaultEvent,
+    os_expected_value: str | None = None,
 ):
     target_deps = replace(
         watchdog_deps,
@@ -492,7 +493,7 @@ async def _dispatch_remediation_and_watchdog(
             target_host=report.target_host,
             os_check_kind=os_check_kind,
             os_check_key=os_check_key,
-            os_check_expected=None,
+            os_check_expected=os_expected_value,
         )
 
     if report.recommended_action == "git_commit_k8s":
@@ -980,6 +981,7 @@ async def _run_orchestration(
                         blocked,
                         breaker,
                         event,
+                        os_expected_value=diagnosis_context.os_expected_value,
                     )
                 except asyncio.TimeoutError:
                     log.error(

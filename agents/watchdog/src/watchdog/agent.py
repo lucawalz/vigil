@@ -279,6 +279,11 @@ def is_workload_healthy(
     return True
 
 
+def _parse_sysctl_value(text: str) -> str:
+    _, _, value = text.rpartition("=")
+    return value.strip()
+
+
 def _coerce_tool_text(result: object) -> str:
     if isinstance(result, dict):
         content = result.get("content", result)
@@ -310,7 +315,9 @@ async def _os_target_healthy(deps: WatchdogDeps) -> bool:
                 "get_sysctl",
                 {"host": deps.target_host, "key": deps.os_check_key},
             )
-            return _coerce_tool_text(result).strip() == deps.os_check_expected
+            return (
+                _parse_sysctl_value(_coerce_tool_text(result)) == deps.os_check_expected
+            )
         result = await call_tool(
             deps.nixos_mcp, "get_generations", {"host": deps.target_host}
         )

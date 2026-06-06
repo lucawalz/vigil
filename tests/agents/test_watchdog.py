@@ -485,7 +485,9 @@ async def test_run_watchdog_os_sysctl_match(
     monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
 
     nixos = AsyncMock()
-    nixos.direct_call_tool = AsyncMock(return_value={"content": "1"})
+    nixos.direct_call_tool = AsyncMock(
+        return_value={"content": "net.ipv4.ip_forward = 1"}
+    )
     deps = WatchdogDeps(
         kubectl_mcp=AsyncMock(),
         flux_mcp=AsyncMock(),
@@ -510,7 +512,9 @@ async def test_run_watchdog_os_sysctl_mismatch_degrades(
     monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
 
     nixos = AsyncMock()
-    nixos.direct_call_tool = AsyncMock(return_value={"content": "0"})
+    nixos.direct_call_tool = AsyncMock(
+        return_value={"content": "net.ipv4.ip_forward = 0"}
+    )
     deps = WatchdogDeps(
         kubectl_mcp=AsyncMock(),
         flux_mcp=AsyncMock(),

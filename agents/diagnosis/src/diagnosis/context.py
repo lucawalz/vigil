@@ -41,6 +41,7 @@ class DiagnosisContext:
     diff: str
     live_pod_status: str = field(default="")
     live_admission_objects: list[AdmissionObject] = field(default_factory=list)
+    os_expected_value: str | None = None
 
 
 class ManifestPathUnresolvable(RuntimeError):
@@ -138,6 +139,13 @@ def _extract_sysctl_key(fault: FaultEvent) -> str | None:
         if key:
             return key
     return fault.commonLabels.get("sysctl_key") or fault.groupLabels.get("sysctl_key")
+
+
+def _declared_sysctl_value(declared_nix: str, key: str) -> str | None:
+    match = re.search(r'"' + re.escape(key) + r'"\s*=\s*([^;]+);', declared_nix)
+    if not match:
+        return None
+    return match.group(1).split()[-1].strip('"')
 
 
 def extract_systemd_unit(fault: FaultEvent) -> str | None:
@@ -637,12 +645,16 @@ async def build_diagnosis_context(
         declared_yaml = _extract_text(declared_result)
 
         diff = _compute_diff(live_yaml, declared_yaml)
+        os_expected_value = (
+            _declared_sysctl_value(declared_yaml, sysctl_key) if sysctl_key else None
+        )
         return DiagnosisContext(
             source_branch=source_branch,
             manifest_path=manifest_path,
             live_yaml=live_yaml,
             declared_yaml=declared_yaml,
             diff=diff,
+            os_expected_value=os_expected_value,
         )
 
     kind, namespace, name = _extract_k8s_kind_namespace_name(fault)

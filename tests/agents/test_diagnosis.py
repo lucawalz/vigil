@@ -341,6 +341,7 @@ def test_diagnosis_context_required_fields() -> None:
         "diff",
         "live_pod_status",
         "live_admission_objects",
+        "os_expected_value",
     }
     assert fields["source_branch"].type in (str, "str")
     assert fields["manifest_path"].type in ("str | None", "Optional[str]")
@@ -1166,6 +1167,107 @@ def test_build_diagnosis_context_os_sysctl_key_surfaces_live_value() -> None:
     )
 
     assert ctx.live_yaml == live_sysctl_value
+
+
+def test_declared_sysctl_value_extracts_mkdefault_literal() -> None:
+    from diagnosis.context import _declared_sysctl_value
+
+    declared = (
+        "{ lib, ... }:\n"
+        "{\n"
+        '  boot.kernel.sysctl."net.bridge.bridge-nf-call-iptables" = '
+        "lib.mkDefault 1;\n"
+        "}\n"
+    )
+
+    assert _declared_sysctl_value(declared, "net.bridge.bridge-nf-call-iptables") == "1"
+
+
+def test_declared_sysctl_value_strips_quotes_and_missing_key() -> None:
+    from diagnosis.context import _declared_sysctl_value
+
+    declared = 'boot.kernel.sysctl."net.ipv4.ip_forward" = mkForce "0";\n'
+
+    assert _declared_sysctl_value(declared, "net.ipv4.ip_forward") == "0"
+    assert _declared_sysctl_value(declared, "net.ipv4.conf.all.forwarding") is None
+
+
+def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from diagnosis.models import DiagnosisDeps
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KernelParameterDrift",
+                    "node": "hetzner-worker-1",
+                    "sysctl_key": "net.ipv4.ip_forward",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "KernelParameterDrift"},
+        commonLabels={"node": "hetzner-worker-1"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="KernelParameterDrift"}',
+    )
+
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\n"
+        "kind: GitRepository\n"
+        "metadata:\n"
+        "  name: flux-system\n"
+        "  namespace: flux-system\n"
+        "spec:\n"
+        "  ref:\n"
+        "    branch: main\n"
+    )
+    declared_nix = (
+        "{ lib, ... }:\n"
+        "{\n"
+        '  boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;\n'
+        "}\n"
+    )
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
+
+    async def nixos_side_effect(tool, args):
+        if tool == "get_nix_path":
+            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+        if tool == "get_sysctl":
+            return {"content": "net.ipv4.ip_forward = 0"}
+        return {"content": "state"}
+
+    mock_nixos = AsyncMock()
+    mock_nixos.direct_call_tool = AsyncMock(side_effect=nixos_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(return_value={"content": declared_nix})
+    mock_flux = AsyncMock()
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+        flux_mcp=mock_flux,
+    )
+
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
+
+    assert ctx.os_expected_value == "1"
 
 
 def _make_fault(labels: dict):
