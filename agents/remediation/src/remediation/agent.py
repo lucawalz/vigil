@@ -41,6 +41,17 @@ REMEDIATION_REQUEST_LIMIT: int = int(os.environ.get("REMEDIATION_REQUEST_LIMIT",
 _COMMIT_TOOL_NAME = "commit_files"
 _COMMIT_GENERATION_TOOL_NAME = "commit_generation"
 
+_ESSENTIAL_MUTATING_TOOLS: dict[str, frozenset[str]] = {
+    "flux_reconcile": frozenset({"reconcile_kustomization"}),
+    "git_commit_k8s": frozenset(
+        {"write_manifest", "commit_files", "push_branch", "create_pr"}
+    ),
+    "git_commit_nix": frozenset(
+        {"write_manifest", "commit_files", "push_branch", "create_pr"}
+    ),
+    "nixos_rebuild": frozenset({"stage_generation"}),
+}
+
 _SYSTEM_PROMPT = """\
 You are the Remediation stage of the vigil fault-response pipeline. Execute one of
 four action classes, determined by recommended_action from the DiagnosisReport.
@@ -196,6 +207,19 @@ async def run_remediation(
         refused = RemediationResult(
             success=False,
             actions_taken=["refused_protected_branch"],
+            tool_calls_count=0,
+            mutation_attempted=False,
+        )
+        return refused, RunUsage(), []
+
+    essential_blocked = (
+        _ESSENTIAL_MUTATING_TOOLS.get(report.recommended_action, frozenset())
+        & blocked_tools
+    )
+    if essential_blocked:
+        refused = RemediationResult(
+            success=False,
+            actions_taken=["refused_blocked_tool"],
             tool_calls_count=0,
             mutation_attempted=False,
         )

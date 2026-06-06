@@ -430,6 +430,80 @@ async def test_run_remediation_default_omits_human_review_block(
     assert "auto_merge=false" not in captured["task"]
 
 
+async def test_run_remediation_refuses_when_essential_tool_blocked(
+    mock_git_mcp: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blocked essential git tool yields a deterministic refusal with no model run."""
+
+    def _fail_iter(*a: object, **k: object) -> object:
+        raise AssertionError("agent loop must not run when essential tool is blocked")
+
+    monkeypatch.setattr(_rem_agent_mod.remediation_agent, "iter", _fail_iter)
+
+    result, _usage, msgs = await run_remediation(
+        deps=_deps(mock_git_mcp),
+        report=_git_commit_report(),
+        source_branch="remediation/run-x",
+        blocked_tools=frozenset({"write_manifest", "commit_files", "create_pr"}),
+    )
+    assert result.success is False
+    assert result.actions_taken == ["refused_blocked_tool"]
+    assert result.mutation_attempted is False
+    assert msgs == []
+    mock_git_mcp.call_tool.assert_not_awaited()
+
+
+async def test_run_remediation_partial_block_reaches_agent(
+    mock_git_mcp: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Blocking a tool outside the action's essential set must not early-return."""
+    reached = RemediationResult(
+        success=True,
+        actions_taken=["clone_repo"],
+        tool_calls_count=1,
+        mutation_attempted=False,
+    )
+
+    class _FakeRun:
+        async def __aenter__(self) -> "_FakeRun":
+            return self
+
+        async def __aexit__(self, *args: object) -> bool:
+            return False
+
+        def __aiter__(self) -> "_FakeRun":
+            return self
+
+        async def __anext__(self) -> object:
+            raise StopAsyncIteration
+
+        def all_messages(self) -> list[object]:
+            return []
+
+        @property
+        def usage(self) -> object:
+            return MagicMock()
+
+        @property
+        def result(self) -> object:
+            return MagicMock(output=reached)
+
+    monkeypatch.setattr(
+        _rem_agent_mod.remediation_agent, "iter", lambda *a, **k: _FakeRun()
+    )
+
+    result, _usage, _msgs = await run_remediation(
+        deps=_deps(mock_git_mcp),
+        report=_git_commit_report(),
+        source_branch="remediation/run-x",
+        blocked_tools=frozenset({"reconcile_kustomization"}),
+    )
+    assert result is reached
+    assert result.actions_taken != ["refused_blocked_tool"]
+
+
 async def test_run_remediation_allows_non_protected_branch(
     mock_git_mcp: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
