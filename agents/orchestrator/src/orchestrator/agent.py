@@ -29,6 +29,8 @@ from diagnosis.context import (
     ResourceKindUnresolvable,
     build_diagnosis_context,
     extract_alert_namespace,
+    extract_sysctl_key,
+    extract_systemd_unit,
 )
 from diagnosis.models import (
     DiagnosisDeps,
@@ -84,6 +86,7 @@ def _is_blocked_tool_refusal(remediation_result) -> bool:
     return any(
         marker in _REFUSAL_MARKERS for marker in remediation_result.actions_taken
     )
+
 
 _COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
 
@@ -452,6 +455,17 @@ async def _resolve_gitrepository_revision(flux_mcp: MCPServerStdio) -> str | Non
         return None
 
 
+def _os_watchdog_check(event: FaultEvent) -> tuple[str | None, str | None]:
+    """Map a fault event onto an OS verification (check_kind, check_key) pair."""
+    unit = extract_systemd_unit(event)
+    if unit:
+        return "systemd", unit
+    key = extract_sysctl_key(event)
+    if key:
+        return "sysctl", key
+    return None, None
+
+
 async def _dispatch_remediation_and_watchdog(
     report,
     remediation_deps: RemediationDeps,
@@ -462,6 +476,7 @@ async def _dispatch_remediation_and_watchdog(
     agent_branch: str,
     blocked: frozenset[str],
     breaker: _CircuitBreaker,
+    event: FaultEvent,
 ):
     target_deps = replace(
         watchdog_deps,
@@ -469,6 +484,16 @@ async def _dispatch_remediation_and_watchdog(
         target_name=report.resource_name,
         namespace=report.resource_namespace or watchdog_deps.namespace,
     )
+
+    if report.target_host:
+        os_check_kind, os_check_key = _os_watchdog_check(event)
+        target_deps = replace(
+            target_deps,
+            target_host=report.target_host,
+            os_check_kind=os_check_kind,
+            os_check_key=os_check_key,
+            os_check_expected=None,
+        )
 
     if report.recommended_action == "git_commit_k8s":
         async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
@@ -585,6 +610,7 @@ async def _run_orchestration(
         kubectl_mcp=kubectl_mcp,
         flux_mcp=flux_mcp,
         namespace=extract_alert_namespace(event, WATCHDOG_NAMESPACE),
+        nixos_mcp=nixos_mcp,
     )
 
     mutation_attempted = False
@@ -953,6 +979,7 @@ async def _run_orchestration(
                         agent_branch,
                         blocked,
                         breaker,
+                        event,
                     )
                 except asyncio.TimeoutError:
                     log.error(
@@ -1096,9 +1123,7 @@ async def _run_orchestration(
                     rollback_success = None
                 break
 
-            final_report = (
-                merged_attempt.report if merged_attempt else last_report
-            )
+            final_report = merged_attempt.report if merged_attempt else last_report
             final_remediation_result = (
                 merged_attempt.remediation_result
                 if merged_attempt
@@ -1112,9 +1137,7 @@ async def _run_orchestration(
 
             if merged_attempt is not None and outcome == "abort":
                 outcome = (
-                    "success"
-                    if not final_watchdog_result.degraded
-                    else "flux_degraded"
+                    "success" if not final_watchdog_result.degraded else "flux_degraded"
                 )
 
             mttr_s = asyncio.get_event_loop().time() - t0

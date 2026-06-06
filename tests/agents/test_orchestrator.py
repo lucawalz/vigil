@@ -1828,6 +1828,73 @@ async def test_nixos_rebuild_action_routes_to_remediation(
     assert commit_calls[0].args[1] == {"host": "hetzner-1"}
 
 
+async def test_os_report_yields_watchdog_deps_with_nixos_target(
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    os_event = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "NodeSystemdUnitFailed",
+                    "node": "worker-1",
+                    "systemd_unit": "nginx.service",
+                },
+                "annotations": {"summary": "unit down"},
+                "startsAt": "2026-04-18T10:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "NodeSystemdUnitFailed"},
+        commonLabels={"node": "worker-1"},
+        commonAnnotations={"summary": "unit down"},
+        externalURL="http://alertmanager.monitoring:9093",
+        version="4",
+        groupKey='{}:{alertname="NodeSystemdUnitFailed"}',
+    )
+    nixos_report = _canned_report_with_action("nixos_rebuild", target_host="worker-1")
+    diag_rv = (nixos_report, RunUsage(input_tokens=100, output_tokens=50), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    captured: list = []
+
+    async def _capture_watchdog(deps):
+        captured.append(deps)
+        return _watchdog_ok()
+
+    monkeypatch.setattr(orch_mod, "run_watchdog", _capture_watchdog)
+    mock_nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "committed"})
+
+    await run_orchestration(
+        os_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+        scenario="os-1",
+    )
+
+    assert len(captured) == 1
+    deps = captured[0]
+    assert deps.nixos_mcp is mock_nixos_mcp
+    assert deps.target_host == "worker-1"
+    assert deps.os_check_kind == "systemd"
+    assert deps.os_check_key == "nginx.service"
+    assert deps.target_kind is None
+
+
 async def test_nixos_rebuild_success_commit_generation_failure_surfaced(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,

@@ -960,6 +960,51 @@ def test_build_diagnosis_context_os_happy_path() -> None:
     assert ctx.manifest_path == "infra/nixos/hosts/hetzner-worker-1.nix"
 
 
+def _os_fault(labels: dict[str, str]) -> "object":
+    from orchestrator.models import FaultEvent
+
+    return FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": labels,
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": labels.get("alertname", "x")},
+        commonLabels={},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey="{}",
+    )
+
+
+def test_extract_systemd_unit_wrapper_returns_unit() -> None:
+    from diagnosis.context import extract_systemd_unit
+
+    fault = _os_fault({"alertname": "UnitFailed", "systemd_unit": "nginx.service"})
+    assert extract_systemd_unit(fault) == "nginx.service"
+
+
+def test_extract_systemd_unit_wrapper_returns_none_when_absent() -> None:
+    from diagnosis.context import extract_systemd_unit
+
+    fault = _os_fault({"alertname": "UnitFailed"})
+    assert extract_systemd_unit(fault) is None
+
+
+def test_extract_sysctl_key_wrapper_returns_key() -> None:
+    from diagnosis.context import extract_sysctl_key
+
+    fault = _os_fault({"alertname": "SysctlDrift", "sysctl_key": "net.ipv4.ip_forward"})
+    assert extract_sysctl_key(fault) == "net.ipv4.ip_forward"
+
+
 def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     import asyncio
     from unittest.mock import AsyncMock

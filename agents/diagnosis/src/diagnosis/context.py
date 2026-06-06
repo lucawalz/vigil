@@ -140,6 +140,16 @@ def _extract_sysctl_key(fault: FaultEvent) -> str | None:
     return fault.commonLabels.get("sysctl_key") or fault.groupLabels.get("sysctl_key")
 
 
+def extract_systemd_unit(fault: FaultEvent) -> str | None:
+    """Return the systemd unit named in the alert, or None."""
+    return _extract_systemd_unit(fault)
+
+
+def extract_sysctl_key(fault: FaultEvent) -> str | None:
+    """Return the sysctl key named in the alert, or None."""
+    return _extract_sysctl_key(fault)
+
+
 def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
     try:
         data = yaml.safe_load(live_text)
