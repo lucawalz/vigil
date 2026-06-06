@@ -16,16 +16,17 @@ import (
 )
 
 type fakeK8sClient struct {
-	pods            string
-	describePod     string
-	logs            string
-	rolloutStatus   string
-	events          string
-	describeNode    string
-	taints          string
-	deleteResource  string
-	getResourceYAML string
-	err             error
+	pods             string
+	describePod      string
+	logs             string
+	rolloutStatus    string
+	events           string
+	describeNode     string
+	taints           string
+	deleteResource   string
+	getResourceYAML  string
+	listResourceYAML string
+	err              error
 }
 
 var _ k8s.K8sClient = &fakeK8sClient{}
@@ -68,6 +69,10 @@ func (f *fakeK8sClient) DeleteResource(_ context.Context, _, _, _ string) (strin
 
 func (f *fakeK8sClient) GetResourceYAML(_ context.Context, _, _, _ string) (string, error) {
 	return f.getResourceYAML, f.err
+}
+
+func (f *fakeK8sClient) ListResourceYAML(_ context.Context, _, _ string) (string, error) {
+	return f.listResourceYAML, f.err
 }
 
 func callGetPods(t *testing.T, fake *fakeK8sClient, maxBytes int, args map[string]any) (*mcp.CallToolResult, error) {
@@ -247,7 +252,7 @@ func callGetResourceYaml(t *testing.T, fake *fakeK8sClient, maxBytes int, args m
 		Tool: mcp.NewTool("get_resource_yaml",
 			mcp.WithString("kind", mcp.Required()),
 			mcp.WithString("namespace", mcp.Required()),
-			mcp.WithString("name", mcp.Required()),
+			mcp.WithString("name"),
 		),
 		Handler: k8s.HandleGetResourceYaml(fake, maxBytes),
 	})
@@ -314,20 +319,38 @@ func TestGetResourceYamlHandler_MissingNamespace(t *testing.T) {
 	}
 }
 
-func TestGetResourceYamlHandler_MissingName(t *testing.T) {
-	fake := &fakeK8sClient{}
+func TestGetResourceYamlHandler_OmittedNameLists(t *testing.T) {
+	listYAML := "apiVersion: v1\nkind: List\nitems:\n- kind: ResourceQuota\n  metadata:\n    name: rq-1\n"
+	fake := &fakeK8sClient{listResourceYAML: listYAML}
 	result, err := callGetResourceYaml(t, fake, 4096, map[string]any{
-		"kind": "Deployment", "namespace": "default",
+		"kind": "ResourceQuota", "namespace": "default",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Errorf("expected success listing resources, got error result")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "kind: List") || !strings.Contains(text, "rq-1") {
+		t.Errorf("expected List YAML in response, got: %s", text)
+	}
+}
+
+func TestGetResourceYamlHandler_OmittedNameListError(t *testing.T) {
+	fake := &fakeK8sClient{err: fmt.Errorf("connection refused")}
+	result, err := callGetResourceYaml(t, fake, 4096, map[string]any{
+		"kind": "ResourceQuota", "namespace": "default",
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
 	}
 	if !result.IsError {
-		t.Error("expected IsError=true for missing name")
+		t.Error("expected IsError=true for list domain error")
 	}
 	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "name") {
-		t.Errorf("expected 'name' in error message, got: %s", text)
+	if !strings.Contains(text, "ListResourceYAML") {
+		t.Errorf("expected 'ListResourceYAML' in error message, got: %s", text)
 	}
 }
 

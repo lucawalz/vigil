@@ -153,7 +153,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 
 	s.AddTool(
 		mcp.NewTool("get_resource_yaml",
-			mcp.WithDescription("Get live YAML for any Kubernetes resource (system fields stripped)"),
+			mcp.WithDescription("Get live YAML for any Kubernetes resource (system fields stripped); omit name to list all resources of the kind in the namespace as a List"),
 			mcp.WithString("kind",
 				mcp.Required(),
 				mcp.Description("Resource kind e.g. Deployment, ConfigMap, HorizontalPodAutoscaler"),
@@ -163,8 +163,7 @@ func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
 				mcp.Description("Kubernetes namespace (empty string for cluster-scoped resources)"),
 			),
 			mcp.WithString("name",
-				mcp.Required(),
-				mcp.Description("Resource name"),
+				mcp.Description("Resource name; omit to list all resources of the kind in the namespace"),
 			),
 			mcp.WithOutputSchema[TextResult](),
 		),

@@ -201,9 +201,13 @@ func HandleGetResourceYaml(client K8sClient, maxBytes int) server.ToolHandlerFun
 		if !ok || ns == "" {
 			return mcp.NewToolResultError("namespace: missing or wrong type"), nil
 		}
-		name, ok := args["name"].(string)
-		if !ok || name == "" {
-			return mcp.NewToolResultError("name: missing or wrong type"), nil
+		name, _ := args["name"].(string)
+		if name == "" {
+			output, err := client.ListResourceYAML(ctx, kind, ns)
+			if err != nil {
+				return toolError("ListResourceYAML", err.Error(), hintGetResourceYAML), nil
+			}
+			return mcp.NewToolResultText(truncateOutput(output, maxBytes)), nil
 		}
 		output, err := client.GetResourceYAML(ctx, kind, ns, name)
 		if err != nil {

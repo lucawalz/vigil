@@ -3,11 +3,17 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -156,6 +162,66 @@ func TestRolloutStatus_StatefulSet(t *testing.T) {
 	}
 	if ws.Conditions == nil || len(ws.Conditions) != 0 {
 		t.Errorf("statefulset conditions should serialize as empty array, got %+v", ws.Conditions)
+	}
+}
+
+func resourceQuota(namespace, name string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "ResourceQuota",
+		"metadata": map[string]any{
+			"name":            name,
+			"namespace":       namespace,
+			"resourceVersion": "999",
+		},
+		"spec":   map[string]any{"hard": map[string]any{"pods": "1"}},
+		"status": map[string]any{"used": map[string]any{"pods": "1"}},
+	}}
+}
+
+func TestListResourceYAML_NamespacedList(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}
+	scheme := runtime.NewScheme()
+	dc := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
+		scheme,
+		map[schema.GroupVersionResource]string{gvr: "ResourceQuotaList"},
+		resourceQuota("default", "rq-a"),
+		resourceQuota("default", "rq-b"),
+		resourceQuota("other", "rq-elsewhere"),
+	)
+	cs := kubefake.NewSimpleClientset()
+	cs.Resources = []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Kind: "ResourceQuota", Name: "resourcequotas", Namespaced: true},
+			},
+		},
+	}
+	rm := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "", Version: "v1"}})
+	rm.AddSpecific(
+		schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ResourceQuota"},
+		gvr,
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequota"},
+		meta.RESTScopeNamespace,
+	)
+	c := &realK8sClient{cs: cs, dc: dc, rm: rm}
+
+	out, err := c.ListResourceYAML(context.Background(), "ResourceQuota", "default")
+	if err != nil {
+		t.Fatalf("ListResourceYAML: %v", err)
+	}
+	if !strings.Contains(out, "items:") {
+		t.Errorf("expected an items collection, got:\n%s", out)
+	}
+	if !strings.Contains(out, "rq-a") || !strings.Contains(out, "rq-b") {
+		t.Errorf("expected both default quotas in output, got:\n%s", out)
+	}
+	if strings.Contains(out, "rq-elsewhere") {
+		t.Errorf("expected other-namespace quota excluded, got:\n%s", out)
+	}
+	if strings.Contains(out, "status:") {
+		t.Errorf("expected status stripped from items, got:\n%s", out)
 	}
 }
 

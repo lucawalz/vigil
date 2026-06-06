@@ -37,6 +37,7 @@ type K8sClient interface {
 	GetTaints(ctx context.Context, node string) (string, error)
 	DeleteResource(ctx context.Context, kind, namespace, name string) (string, error)
 	GetResourceYAML(ctx context.Context, kind, namespace, name string) (string, error)
+	ListResourceYAML(ctx context.Context, kind, namespace string) (string, error)
 }
 
 type realK8sClient struct {
@@ -280,17 +281,49 @@ func (c *realK8sClient) GetResourceYAML(ctx context.Context, kind, namespace, na
 	if err != nil {
 		return "", fmt.Errorf("get %s/%s/%s: %w", kind, namespace, name, err)
 	}
-	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-	unstructured.RemoveNestedField(obj.Object, "metadata", "resourceVersion")
-	unstructured.RemoveNestedField(obj.Object, "metadata", "uid")
-	unstructured.RemoveNestedField(obj.Object, "metadata", "generation")
-	unstructured.RemoveNestedField(obj.Object, "metadata", "creationTimestamp")
-	unstructured.RemoveNestedField(obj.Object, "status")
+	stripSystemFields(obj.Object)
 	out, err := sigsyaml.Marshal(obj.Object)
 	if err != nil {
 		return "", fmt.Errorf("marshal yaml: %w", err)
 	}
 	return string(out), nil
+}
+
+func (c *realK8sClient) ListResourceYAML(ctx context.Context, kind, namespace string) (string, error) {
+	gvk, err := c.resolveKind(kind)
+	if err != nil {
+		return "", err
+	}
+	mapping, err := c.rm.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return "", fmt.Errorf("map kind %s: %w", kind, err)
+	}
+	var list *unstructured.UnstructuredList
+	if mapping.Scope.Name() == meta.RESTScopeNameRoot {
+		list, err = c.dc.Resource(mapping.Resource).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = c.dc.Resource(mapping.Resource).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return "", fmt.Errorf("list %s/%s: %w", kind, namespace, err)
+	}
+	for i := range list.Items {
+		stripSystemFields(list.Items[i].Object)
+	}
+	out, err := sigsyaml.Marshal(list.UnstructuredContent())
+	if err != nil {
+		return "", fmt.Errorf("marshal yaml: %w", err)
+	}
+	return string(out), nil
+}
+
+func stripSystemFields(obj map[string]any) {
+	unstructured.RemoveNestedField(obj, "metadata", "managedFields")
+	unstructured.RemoveNestedField(obj, "metadata", "resourceVersion")
+	unstructured.RemoveNestedField(obj, "metadata", "uid")
+	unstructured.RemoveNestedField(obj, "metadata", "generation")
+	unstructured.RemoveNestedField(obj, "metadata", "creationTimestamp")
+	unstructured.RemoveNestedField(obj, "status")
 }
 
 func (c *realK8sClient) resolveKind(kind string) (schema.GroupVersionKind, error) {
