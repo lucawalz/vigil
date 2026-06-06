@@ -108,14 +108,19 @@ func HandleCreateBranch(client GitClient, state SessionState, maxBytes int) serv
 			return mcp.NewToolResultError("HandleCreateBranch: session not initialised; call clone_repo first"), nil
 		}
 
+		base, _ := args["base_branch"].(string)
+		if base == "" {
+			base = state.BaseBranch()
+		}
+
 		branch := branchPrefix + runID
-		if err := client.CreateBranch(ctx, cloneDir, branch); err != nil {
+		if err := client.CreateBranch(ctx, cloneDir, branch, base); err != nil {
 			return toolError("HandleCreateBranch", err.Error(), hintCreateBranch), nil
 		}
 		state.SetBranch(branch)
 
-		if base, _ := args["base_branch"].(string); base != "" {
-			state.SetBaseBranch(base)
+		if explicit, _ := args["base_branch"].(string); explicit != "" {
+			state.SetBaseBranch(explicit)
 		}
 
 		return mcp.NewToolResultText(truncateOutput("branch created: "+branch, maxBytes)), nil

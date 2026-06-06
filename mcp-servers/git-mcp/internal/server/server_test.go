@@ -11,7 +11,7 @@ import (
 type fakeGitClient struct{}
 
 func (f *fakeGitClient) Clone(_ context.Context, _, _ string) (string, error) { return "", nil }
-func (f *fakeGitClient) CreateBranch(_ context.Context, _, _ string) error    { return nil }
+func (f *fakeGitClient) CreateBranch(_ context.Context, _, _, _ string) error { return nil }
 func (f *fakeGitClient) WriteFile(_ context.Context, _, _, _ string) error    { return nil }
 func (f *fakeGitClient) CommitFiles(_ context.Context, _, _, _ string) (string, error) {
 	return "", nil

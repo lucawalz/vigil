@@ -27,30 +27,32 @@ const (
 )
 
 type fakeGitClient struct {
-	cloneDir           string
-	gotBaseBranch      string
-	gotBase            string
-	commitSHA          string
-	prNumber           int
-	prState            string
-	prMerged           bool
-	prMergeSHA         string
-	revertSHA          string
-	lastRevertBranch   string
-	pushCalls          int
-	err                error
-	getPRCalls         int
-	autoMergeErr       error
-	autoMergeCalls     int
-	closePRErr         error
-	closePRCalls       int
-	deleteBranchErr    error
-	deleteBranchCalls  int
-	readFileOut        string
-	readFileErr        error
-	checkRunFailed     bool
-	checkRunConclusion string
-	checkRunErr        error
+	cloneDir            string
+	gotBaseBranch       string
+	gotBase             string
+	gotCreateBranchBase string
+	mergeableState      string
+	commitSHA           string
+	prNumber            int
+	prState             string
+	prMerged            bool
+	prMergeSHA          string
+	revertSHA           string
+	lastRevertBranch    string
+	pushCalls           int
+	err                 error
+	getPRCalls          int
+	autoMergeErr        error
+	autoMergeCalls      int
+	closePRErr          error
+	closePRCalls        int
+	deleteBranchErr     error
+	deleteBranchCalls   int
+	readFileOut         string
+	readFileErr         error
+	checkRunFailed      bool
+	checkRunConclusion  string
+	checkRunErr         error
 }
 
 var _ git.GitClient = &fakeGitClient{}
@@ -60,7 +62,8 @@ func (f *fakeGitClient) Clone(_ context.Context, _, baseBranch string) (string, 
 	return f.cloneDir, f.err
 }
 
-func (f *fakeGitClient) CreateBranch(_ context.Context, _, _ string) error {
+func (f *fakeGitClient) CreateBranch(_ context.Context, _, _, baseBranch string) error {
+	f.gotCreateBranchBase = baseBranch
 	return f.err
 }
 

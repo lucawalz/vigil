@@ -35,7 +35,7 @@ const (
 
 type GitClient interface {
 	Clone(ctx context.Context, authURL, baseBranch string) (cloneDir string, err error)
-	CreateBranch(ctx context.Context, cloneDir, branch string) error
+	CreateBranch(ctx context.Context, cloneDir, branch, baseBranch string) error
 	WriteFile(ctx context.Context, cloneDir, manifestPath, content string) error
 	CommitFiles(ctx context.Context, cloneDir, branch, message string) (sha string, err error)
 	Push(ctx context.Context, cloneDir, branch string) error
@@ -116,7 +116,10 @@ func (c *realGitClient) Clone(ctx context.Context, authURL, baseBranch string) (
 	return dir, nil
 }
 
-func (c *realGitClient) CreateBranch(_ context.Context, cloneDir, branch string) error {
+func (c *realGitClient) CreateBranch(ctx context.Context, cloneDir, branch, baseBranch string) error {
+	if baseBranch == "" {
+		baseBranch = defaultBaseBranch
+	}
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
 		return sanitiseAuthError(fmt.Errorf("create_branch: open repo: %w", err), c.cfg.AuthURL())
@@ -125,12 +128,31 @@ func (c *realGitClient) CreateBranch(_ context.Context, cloneDir, branch string)
 	if err != nil {
 		return sanitiseAuthError(fmt.Errorf("create_branch: worktree: %w", err), c.cfg.AuthURL())
 	}
-	err = wt.Checkout(&git.CheckoutOptions{
+
+	fetchErr := r.FetchContext(ctx, &git.FetchOptions{
+		RefSpecs: []gitconfig.RefSpec{
+			gitconfig.RefSpec("refs/heads/" + baseBranch + ":refs/remotes/origin/" + baseBranch),
+		},
+		Auth: &githttp.BasicAuth{Username: gitAccessToken, Password: c.cfg.GitHubToken},
+	})
+	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+		return sanitiseAuthError(fmt.Errorf("create_branch: fetch base %s: %w", baseBranch, fetchErr), c.cfg.AuthURL())
+	}
+
+	ref, err := r.Reference(plumbing.NewRemoteReferenceName("origin", baseBranch), true)
+	if err != nil {
+		return sanitiseAuthError(fmt.Errorf("create_branch: resolve base %s: %w", baseBranch, err), c.cfg.AuthURL())
+	}
+
+	if err := wt.Reset(&git.ResetOptions{Mode: git.HardReset, Commit: ref.Hash()}); err != nil {
+		return sanitiseAuthError(fmt.Errorf("create_branch: reset to base %s: %w", baseBranch, err), c.cfg.AuthURL())
+	}
+
+	if err := wt.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.NewBranchReferenceName(branch),
 		Create: true,
 		Keep:   false,
-	})
-	if err != nil {
+	}); err != nil {
 		return sanitiseAuthError(fmt.Errorf("create_branch: checkout: %w", err), c.cfg.AuthURL())
 	}
 	return nil
