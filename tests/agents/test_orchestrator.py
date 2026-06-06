@@ -2734,6 +2734,58 @@ async def test_earlier_merge_preserved_when_retry_gate_fails(
     assert record.agent_branch == "remediation/run-k8s-1"
 
 
+async def test_late_escalate_after_merged_degraded_rolls_back(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+
+    merge_report = _canned_report()
+    escalate_report = _canned_report_with_action("escalate")
+    merge_rv = (merge_report, RunUsage(input_tokens=50, output_tokens=20), [])
+    escalate_rv = (escalate_report, RunUsage(input_tokens=30, output_tokens=10), [])
+    run_diagnosis_mock = AsyncMock(side_effect=[merge_rv, merge_rv, escalate_rv])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_rv = WatchdogResult(
+        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
+    )
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = AsyncMock(
+        return_value={"content": "reverted: cafebabe"}
+    )
+    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert run_diagnosis_mock.call_count == 3
+    assert record.outcome == "rollback_succeeded"
+    assert record.rollback_triggered is True
+    assert record.rollback_success is True
+    assert record.destructive_repair is False
+    revert_calls = [
+        c
+        for c in mock_git_mcp.direct_call_tool.call_args_list
+        if c.args and c.args[0] == "revert_commit"
+    ]
+    assert len(revert_calls) == 1
+
+
 def _confidence_report(action: str, confidence: float) -> DiagnosisReport:
     is_git = action in {"git_commit_k8s", "git_commit_nix"}
     return DiagnosisReport(

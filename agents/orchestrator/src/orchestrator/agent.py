@@ -1079,36 +1079,7 @@ async def _run_orchestration(
                             _MAX_DIAGNOSIS_ATTEMPTS,
                         )
                         continue
-                    rollback_report = (
-                        merged_attempt.report if merged_attempt else last_report
-                    )
-                    rollback_result = (
-                        merged_attempt.remediation_result
-                        if merged_attempt
-                        else last_remediation_result
-                    )
-                    if _has_rollback_target(
-                        rollback_report.recommended_action,
-                        rollback_result.merge_commit_sha,
-                    ):
-                        rollback_triggered = True
-                        rollback_success = await _issue_rollback(
-                            rollback_report.recommended_action,
-                            git_mcp,
-                            flux_mcp,
-                            nixos_mcp,
-                            rollback_result.merge_commit_sha,
-                            rollback_report.target_host,
-                        )
-                        outcome = (
-                            "rollback_succeeded"
-                            if rollback_success
-                            else "rollback_failed"
-                        )
-                    else:
-                        outcome = "flux_degraded"
-                        rollback_triggered = False
-                        rollback_success = None
+                    outcome = "flux_degraded"
                 else:
                     if report.recommended_action == "nixos_rebuild":
                         if await _commit_nixos_generation(
@@ -1130,15 +1101,41 @@ async def _run_orchestration(
                 else last_remediation_result
             )
             final_watchdog_result = (
-                merged_attempt.watchdog_result
-                if merged_attempt
-                else last_watchdog_result
+                last_watchdog_result
+                if last_watchdog_result is not None
+                else (merged_attempt.watchdog_result if merged_attempt else None)
             )
 
             if merged_attempt is not None and outcome == "abort":
                 outcome = (
                     "success" if not final_watchdog_result.degraded else "flux_degraded"
                 )
+
+            if (
+                merged_attempt is not None
+                and final_watchdog_result is not None
+                and final_watchdog_result.degraded
+            ):
+                if _has_rollback_target(
+                    final_report.recommended_action,
+                    final_remediation_result.merge_commit_sha,
+                ):
+                    rollback_triggered = True
+                    rollback_success = await _issue_rollback(
+                        final_report.recommended_action,
+                        git_mcp,
+                        flux_mcp,
+                        nixos_mcp,
+                        final_remediation_result.merge_commit_sha,
+                        final_report.target_host,
+                    )
+                    outcome = (
+                        "rollback_succeeded" if rollback_success else "rollback_failed"
+                    )
+                else:
+                    outcome = "flux_degraded"
+                    rollback_triggered = False
+                    rollback_success = None
 
             mttr_s = asyncio.get_event_loop().time() - t0
             ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
