@@ -122,6 +122,10 @@ func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, strin
 	return f.checkRunFailed, f.checkRunConclusion, f.checkRunErr
 }
 
+func (f *fakeGitClient) GetMergeableState(_ context.Context, _ int) (string, error) {
+	return f.mergeableState, nil
+}
+
 type fakeSessionState struct {
 	mu            sync.Mutex
 	runID         string
@@ -1313,6 +1317,65 @@ func TestWaitForGateHandler_GateCheckFailed(t *testing.T) {
 	}
 	if !strings.Contains(text, "failure") {
 		t.Errorf("expected conclusion in error, got: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_FailsFastWhenUnmergeableAndUngated(t *testing.T) {
+	fake := &fakeGitClient{
+		prState:        "open",
+		prMerged:       false,
+		mergeableState: "dirty",
+	}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("wait_for_gate",
+		mcp.WithNumber("pr_number", mcp.Required()),
+		mcp.WithNumber("timeout_seconds"),
+	)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+
+	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
+		"pr_number":       float64(42),
+		"timeout_seconds": float64(30),
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for unmergeable, ungated PR")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "unmergeable") {
+		t.Errorf("expected 'unmergeable' in error, got: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_DirtyButGatedDoesNotFailFast(t *testing.T) {
+	fake := &fakeGitClient{
+		prState:            "open",
+		prMerged:           false,
+		mergeableState:     "dirty",
+		checkRunConclusion: "success",
+	}
+	state := &fakeSessionState{}
+	tool := mcp.NewTool("wait_for_gate",
+		mcp.WithNumber("pr_number", mcp.Required()),
+		mcp.WithNumber("timeout_seconds"),
+	)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+
+	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
+		"pr_number":       float64(42),
+		"timeout_seconds": float64(1),
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true (timeout), got success")
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "timed out") {
+		t.Errorf("expected timeout error when gate present, got: %s", text)
 	}
 }
 

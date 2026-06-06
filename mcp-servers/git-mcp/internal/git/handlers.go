@@ -23,6 +23,8 @@ const (
 	branchPrefix                     = "remediation/run-"
 	pollIntervalSeconds              = 15
 	defaultWaitForGateTimeoutSeconds = 480
+	unmergeableGateGraceProbes       = 4
+	mergeableStateDirty              = "dirty"
 )
 
 const DefaultPollInterval = pollIntervalSeconds * time.Second
@@ -383,6 +385,8 @@ func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.D
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
+		unmergeableProbes := 0
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -408,6 +412,19 @@ func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.D
 					return toolError("HandleWaitForGate",
 						fmt.Sprintf("gate check failed (conclusion=%s)", conclusion),
 						hintWaitForGate), nil
+				}
+
+				mergeableState, msErr := client.GetMergeableState(ctx, prNumber)
+				gateAbsent := checkErr == nil && conclusion == ""
+				if msErr == nil && mergeableState == mergeableStateDirty && gateAbsent {
+					unmergeableProbes++
+					if unmergeableProbes >= unmergeableGateGraceProbes {
+						return toolError("HandleWaitForGate",
+							"PR is unmergeable (mergeable_state=dirty) and no remediation-gate check dispatched; branch likely not based on current base",
+							hintWaitForGate), nil
+					}
+				} else {
+					unmergeableProbes = 0
 				}
 			}
 		}

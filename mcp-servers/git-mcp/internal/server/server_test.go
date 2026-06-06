@@ -34,6 +34,9 @@ func (f *fakeGitClient) ResolveManifestPath(_ context.Context, _, _, _, _, _ str
 func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, string, error) {
 	return false, "", nil
 }
+func (f *fakeGitClient) GetMergeableState(_ context.Context, _ int) (string, error) {
+	return "", nil
+}
 
 var _ git.GitClient = &fakeGitClient{}
 

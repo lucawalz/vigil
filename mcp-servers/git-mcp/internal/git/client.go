@@ -43,6 +43,7 @@ type GitClient interface {
 	EnableAutoMerge(ctx context.Context, prNumber int) error
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
 	GetCheckRunStatus(ctx context.Context, prNumber int) (gateFailed bool, conclusion string, err error)
+	GetMergeableState(ctx context.Context, prNumber int) (string, error)
 	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (revertSHA string, err error)
 	ClosePR(ctx context.Context, prNumber int) error
 	DeleteBranch(ctx context.Context, branch string) error
@@ -322,6 +323,14 @@ func (c *realGitClient) GetCheckRunStatus(ctx context.Context, prNumber int) (bo
 		}
 	}
 	return false, "", nil
+}
+
+func (c *realGitClient) GetMergeableState(ctx context.Context, prNumber int) (string, error) {
+	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
+	if err != nil {
+		return "", fmt.Errorf("get_mergeable_state: get pr: %w", err)
+	}
+	return pr.GetMergeableState(), nil
 }
 
 func (c *realGitClient) ClosePR(ctx context.Context, prNumber int) error {
