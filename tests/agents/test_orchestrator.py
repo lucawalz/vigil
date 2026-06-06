@@ -2486,6 +2486,105 @@ async def test_gate_failed_does_not_retry(
     assert run_diagnosis_mock.call_count == 1
 
 
+async def test_earlier_merge_preserved_when_retry_escalates(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+
+    merge_report = _canned_report()
+    escalate_report = _canned_report_with_action("escalate")
+    merge_rv = (merge_report, RunUsage(input_tokens=50, output_tokens=20), [])
+    escalate_rv = (escalate_report, RunUsage(input_tokens=30, output_tokens=10), [])
+    run_diagnosis_mock = AsyncMock(side_effect=[merge_rv, escalate_rv])
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_rv = WatchdogResult(
+        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
+    )
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert run_diagnosis_mock.call_count == 2
+    assert record.outcome != "escalated"
+    assert record.agent_commits == ["deadbeef1234567"]
+    assert record.agent_branch == "remediation/run-k8s-1"
+
+
+async def test_earlier_merge_preserved_when_retry_gate_fails(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    gate_failed_rem = RemediationResult(
+        success=False,
+        actions_taken=["create_branch", "write_manifest", "commit_files", "create_pr"],
+        tool_calls_count=4,
+        mutation_attempted=True,
+        merge_commit_sha=None,
+        agent_branch="remediation/run-attempt-2",
+        agent_commits=["facefeed0000000"],
+        gate_status="closed",
+    )
+    rem_mock = AsyncMock(
+        side_effect=[
+            (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), []),
+            (gate_failed_rem, RunUsage(input_tokens=80, output_tokens=20), []),
+        ]
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", rem_mock)
+    healthy_after_retry = WatchdogResult(
+        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
+    )
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(return_value=healthy_after_retry)
+    )
+    mock_git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
+    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome != "gate_failed"
+    assert record.agent_commits == ["deadbeef1234567"]
+    assert record.agent_branch == "remediation/run-k8s-1"
+
+
 def _confidence_report(action: str, confidence: float) -> DiagnosisReport:
     is_git = action in {"git_commit_k8s", "git_commit_nix"}
     return DiagnosisReport(

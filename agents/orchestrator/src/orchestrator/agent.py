@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -67,6 +67,21 @@ _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_n
 _COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
 
 _RUN_LOCK = asyncio.Lock()
+
+
+@dataclass(frozen=True)
+class _AttemptResult:
+    """A diagnosis-remediation-verification attempt that merged a live mutation.
+
+    Captured for the earliest attempt whose remediation produced a merge so a
+    later re-diagnosis that escalates or gate-fails cannot mask the run's real
+    effect on the cluster: the final record and any rollback target the earliest
+    merge, not the last attempt's verdict.
+    """
+
+    report: object
+    remediation_result: object
+    watchdog_result: object
 
 
 class _CircuitBreaker:
@@ -635,6 +650,7 @@ async def _run_orchestration(
             last_report = None
             last_remediation_result = None
             last_watchdog_result = None
+            merged_attempt: _AttemptResult | None = None
             outcome: str = "abort"
 
             for attempt in range(1, _MAX_DIAGNOSIS_ATTEMPTS + 1):
@@ -771,14 +787,14 @@ async def _run_orchestration(
                 trace.write_trace(run_id, "diagnosis", diag_msgs)
                 iteration_count += 1
 
-                if report.recommended_action == "escalate":
+                if report.recommended_action == "escalate" and merged_attempt is None:
                     record = _escalate_record(report, diag_msgs, iteration_count)
                     log.info("run %s finished outcome=escalated", run_id)
                     _write_run_record(record)
                     return record
 
                 tier = _confidence_tier(report)
-                if tier == "escalate":
+                if tier == "escalate" and merged_attempt is None:
                     record = _escalate_record(report, diag_msgs, iteration_count)
                     log.info(
                         "run %s finished outcome=escalated (confidence=%.2f action=%s)",
@@ -788,6 +804,17 @@ async def _run_orchestration(
                     )
                     _write_run_record(record)
                     return record
+
+                if (
+                    report.recommended_action == "escalate" or tier == "escalate"
+                ) and merged_attempt is not None:
+                    log.info(
+                        "run %s: attempt %d re-diagnosed escalate; "
+                        "preserving earlier merged attempt",
+                        run_id,
+                        attempt,
+                    )
+                    break
 
                 base_branch = diagnosis_context.source_branch or "main"
                 branch_token = _attempt_branch_token(run_id, attempt)
@@ -948,9 +975,19 @@ async def _run_orchestration(
                 last_watchdog_result = watchdog_result
 
                 if (
+                    merged_attempt is None
+                    and remediation_result.merge_commit_sha is not None
+                ):
+                    merged_attempt = _AttemptResult(
+                        report, remediation_result, watchdog_result
+                    )
+
+                if (
                     report.recommended_action == "git_commit_k8s"
                     and remediation_result.gate_status == "closed"
                 ):
+                    if merged_attempt is not None:
+                        break
                     outcome = "gate_failed"
                     rollback_triggered = False
                     rollback_success = None
@@ -982,18 +1019,26 @@ async def _run_orchestration(
                             _MAX_DIAGNOSIS_ATTEMPTS,
                         )
                         continue
+                    rollback_report = (
+                        merged_attempt.report if merged_attempt else last_report
+                    )
+                    rollback_result = (
+                        merged_attempt.remediation_result
+                        if merged_attempt
+                        else last_remediation_result
+                    )
                     if _has_rollback_target(
-                        last_report.recommended_action,
-                        last_remediation_result.merge_commit_sha,
+                        rollback_report.recommended_action,
+                        rollback_result.merge_commit_sha,
                     ):
                         rollback_triggered = True
                         rollback_success = await _issue_rollback(
-                            last_report.recommended_action,
+                            rollback_report.recommended_action,
                             git_mcp,
                             flux_mcp,
                             nixos_mcp,
-                            last_remediation_result.merge_commit_sha,
-                            last_report.target_host,
+                            rollback_result.merge_commit_sha,
+                            rollback_report.target_host,
                         )
                         outcome = (
                             "rollback_succeeded"
@@ -1018,15 +1063,36 @@ async def _run_orchestration(
                     rollback_success = None
                 break
 
+            final_report = (
+                merged_attempt.report if merged_attempt else last_report
+            )
+            final_remediation_result = (
+                merged_attempt.remediation_result
+                if merged_attempt
+                else last_remediation_result
+            )
+            final_watchdog_result = (
+                merged_attempt.watchdog_result
+                if merged_attempt
+                else last_watchdog_result
+            )
+
+            if merged_attempt is not None and outcome == "abort":
+                outcome = (
+                    "success"
+                    if not final_watchdog_result.degraded
+                    else "flux_degraded"
+                )
+
             mttr_s = asyncio.get_event_loop().time() - t0
             ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             forbidden_violations = _check_forbidden_actions(scenario, actions_taken)
-            accuracy = _score_diagnosis_accuracy(scenario, last_report)
-            final_degraded = last_watchdog_result.degraded
+            accuracy = _score_diagnosis_accuracy(scenario, final_report)
+            final_degraded = final_watchdog_result.degraded
             mutation_applied = (
-                last_remediation_result.merge_commit_sha is not None
-                if last_report.recommended_action in _DECLARATIVE_ACTIONS
+                final_remediation_result.merge_commit_sha is not None
+                if final_report.recommended_action in _DECLARATIVE_ACTIONS
                 else mutation_attempted
             )
             record = RunRecord(
@@ -1039,8 +1105,8 @@ async def _run_orchestration(
                 ended_at=ended_at,
                 outcome=outcome,
                 success_rate=(
-                    last_remediation_result.success
-                    and not last_watchdog_result.degraded
+                    final_remediation_result.success
+                    and not final_watchdog_result.degraded
                     and not forbidden_violations
                     and accuracy is not False
                     and outcome != _COMMIT_GENERATION_FAILED_OUTCOME
@@ -1063,9 +1129,9 @@ async def _run_orchestration(
                 autonomy_level="full",
                 actions_taken=actions_taken,
                 model_version=model_name,
-                agent_branch=last_remediation_result.agent_branch,
-                agent_commits=last_remediation_result.agent_commits,
-                gate_status=last_remediation_result.gate_status,
+                agent_branch=final_remediation_result.agent_branch,
+                agent_commits=final_remediation_result.agent_commits,
+                gate_status=final_remediation_result.gate_status,
                 forbidden_action_violations=forbidden_violations,
                 attempts=attempts_count,
             )
