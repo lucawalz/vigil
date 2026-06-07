@@ -1369,6 +1369,94 @@ def test_resolve_nix_imports_cycle_guard_and_failures() -> None:
     assert call_count["n"] == 2
 
 
+def test_build_diagnosis_context_namespace_surfaces_pod_and_admission() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from diagnosis.models import DiagnosisDeps
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KubePodNotReady",
+                    "namespace": "default",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "KubePodNotReady"},
+        commonLabels={"namespace": "default"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="KubePodNotReady"}',
+    )
+
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\n"
+        "kind: GitRepository\n"
+        "metadata:\n"
+        "  name: flux-system\n"
+        "  namespace: flux-system\n"
+        "spec:\n"
+        "  ref:\n"
+        "    branch: main\n"
+    )
+    quota_list_yaml = (
+        "apiVersion: v1\nkind: List\nitems:\n"
+        "- apiVersion: v1\n  kind: ResourceQuota\n"
+        "  metadata:\n    name: injected-quota\n    namespace: default\n"
+        "  spec:\n    hard:\n      pods: '0'\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        if tool == "get_resource_yaml" and args.get("kind") == "GitRepository":
+            return {"content": git_repo_yaml}
+        if tool == "get_resource_yaml" and args.get("kind") == "ResourceQuota":
+            return {"content": quota_list_yaml}
+        if tool == "get_resource_yaml":
+            return {"content": "apiVersion: v1\nkind: List\nitems: []\n"}
+        if tool == "get_pods":
+            return {"content": "api-0   0/1   Pending"}
+        if tool == "get_events":
+            return {"content": "FailedCreate exceeded quota: injected-quota"}
+        return {"content": ""}
+
+    async def git_side_effect(tool, args):
+        if tool == "resolve_manifest_path":
+            raise RuntimeError("not in git")
+        return {"content": "ok"}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+
+    deps = DiagnosisDeps(
+        run_id="test-ns",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=AsyncMock(),
+        git_mcp=mock_git,
+        flux_mcp=AsyncMock(),
+    )
+
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
+
+    assert ctx.manifest_path is None
+    assert ctx.live_pod_status
+    assert "Pending" in ctx.live_pod_status
+    quotas = [o for o in ctx.live_admission_objects if o.kind == "ResourceQuota"]
+    assert [q.name for q in quotas] == ["injected-quota"]
+
+
 def _make_fault(labels: dict):
     from orchestrator.models import FaultEvent
 

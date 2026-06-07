@@ -742,12 +742,16 @@ async def build_diagnosis_context(
     if kind == "Namespace":
         alert_labels = [a.get("labels", {}) for a in fault.alerts]
         live_yaml = f"namespace: {namespace}\nalert_labels: {alert_labels}"
+        live_pod_status = await _fetch_pod_status(deps, namespace)
+        live_admission_objects = await _fetch_admission_objects(deps, namespace, None)
         return DiagnosisContext(
             source_branch=source_branch,
             manifest_path=None,
             live_yaml=live_yaml,
             declared_yaml="",
             diff="",
+            live_pod_status=live_pod_status,
+            live_admission_objects=live_admission_objects,
         )
 
     if kind == "Kustomization":
