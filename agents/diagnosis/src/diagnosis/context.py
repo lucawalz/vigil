@@ -666,210 +666,223 @@ async def _fetch_pod_status(deps: DiagnosisDeps, namespace: str) -> str:
     return "\n\n".join(parts)
 
 
-async def build_diagnosis_context(
-    deps: DiagnosisDeps, fault: FaultEvent
+async def _build_os_context(
+    deps: DiagnosisDeps,
+    fault: FaultEvent,
+    source_branch: str,
+    target_host: str,
 ) -> DiagnosisContext:
-    source_branch = await _resolve_source_branch(deps)
-    await call_tool(
-        deps.git_mcp,
-        "clone_repo",
-        {"run_id": deps.run_id, "base_branch": source_branch},
+    manifest_path_result = await call_tool(
+        deps.nixos_mcp,
+        "get_nix_path",
+        {"hostname": target_host},
     )
-    target_host = _extract_target_host(fault)
+    manifest_path = _extract_text(manifest_path_result)
 
-    if target_host:
-        manifest_path_result = await call_tool(
+    systemd_unit = _extract_systemd_unit(fault)
+    sysctl_key = _extract_sysctl_key(fault)
+    if systemd_unit:
+        live_result = await call_tool(
             deps.nixos_mcp,
-            "get_nix_path",
-            {"hostname": target_host},
+            "get_systemd_status",
+            {"host": target_host, "unit": systemd_unit},
         )
-        manifest_path = _extract_text(manifest_path_result)
+    elif sysctl_key:
+        live_result = await call_tool(
+            deps.nixos_mcp,
+            "get_sysctl",
+            {"host": target_host, "key": sysctl_key},
+        )
+    else:
+        live_result = await call_tool(
+            deps.nixos_mcp,
+            "get_journal",
+            {"host": target_host, "lines": 50},
+        )
+    live_yaml = _extract_text(live_result)
 
-        systemd_unit = _extract_systemd_unit(fault)
-        sysctl_key = _extract_sysctl_key(fault)
-        if systemd_unit:
-            live_result = await call_tool(
-                deps.nixos_mcp,
-                "get_systemd_status",
-                {"host": target_host, "unit": systemd_unit},
+    declared_result = await call_tool(
+        deps.git_mcp,
+        "read_file",
+        {"branch": source_branch, "path": manifest_path},
+    )
+    declared_yaml = _extract_text(declared_result)
+
+    imported = await _resolve_nix_imports(
+        deps,
+        source_branch,
+        manifest_path,
+        declared_yaml,
+        visited={manifest_path},
+        depth=0,
+    )
+    declared_full = declared_yaml + ("\n" + imported if imported else "")
+
+    diff = _compute_diff(live_yaml, declared_full)
+    os_expected_value = (
+        _declared_sysctl_value(declared_full, sysctl_key) if sysctl_key else None
+    )
+    return DiagnosisContext(
+        source_branch=source_branch,
+        manifest_path=manifest_path,
+        live_yaml=live_yaml,
+        declared_yaml=declared_full,
+        diff=diff,
+        os_expected_value=os_expected_value,
+    )
+
+
+async def _build_namespace_context(
+    deps: DiagnosisDeps,
+    fault: FaultEvent,
+    source_branch: str,
+    namespace: str,
+) -> DiagnosisContext:
+    alert_labels = [a.get("labels", {}) for a in fault.alerts]
+    live_yaml = f"namespace: {namespace}\nalert_labels: {alert_labels}"
+    live_pod_status = await _fetch_pod_status(deps, namespace)
+    live_admission_objects = await _fetch_admission_objects(deps, namespace, None)
+    return DiagnosisContext(
+        source_branch=source_branch,
+        manifest_path=None,
+        live_yaml=live_yaml,
+        declared_yaml="",
+        diff="",
+        live_pod_status=live_pod_status,
+        live_admission_objects=live_admission_objects,
+    )
+
+
+async def _build_kustomization_context(
+    deps: DiagnosisDeps,
+    source_branch: str,
+    namespace: str,
+    name: str,
+) -> DiagnosisContext:
+    kust_raw_result = await call_tool(
+        deps.kubectl_mcp,
+        "get_resource_yaml",
+        {"kind": "Kustomization", "namespace": namespace, "name": name},
+    )
+    kust_raw_text = _extract_text(kust_raw_result)
+    kust_status_result = await call_tool(
+        deps.flux_mcp,
+        "get_kustomization_status",
+        {"namespace": namespace, "name": name},
+    )
+    kust_status = coerce_flux_status(kust_status_result)
+    kust_status_text = (
+        f"Kustomization: {kust_status.get('namespace', '')}/"
+        f"{kust_status.get('name', '')}\n"
+        f"Ready: {kust_status.get('ready')}\n"
+        f"Reason: {kust_status.get('reason', '')}\n"
+        f"Message: {kust_status.get('message', '')}\n"
+        f"LastAppliedRevision: {kust_status.get('revision', '')}"
+    )
+
+    apply_error, failing_kind, failing_name = _extract_kustomization_apply_error(
+        kust_raw_text
+    )
+
+    if failing_kind and failing_name:
+        try:
+            failing_live_result = await call_tool(
+                deps.kubectl_mcp,
+                "get_resource_yaml",
+                {
+                    "kind": failing_kind,
+                    "namespace": namespace,
+                    "name": failing_name,
+                },
             )
-        elif sysctl_key:
-            live_result = await call_tool(
-                deps.nixos_mcp,
-                "get_sysctl",
-                {"host": target_host, "key": sysctl_key},
+            failing_live_yaml = _extract_text(failing_live_result)
+        except Exception as exc:
+            log.debug(
+                "failing %s/%s live state unavailable: %s",
+                failing_kind,
+                failing_name,
+                exc,
             )
-        else:
-            live_result = await call_tool(
-                deps.nixos_mcp,
-                "get_journal",
-                {"host": target_host, "lines": 50},
-            )
-        live_yaml = _extract_text(live_result)
+            failing_live_yaml = ""
 
-        declared_result = await call_tool(
-            deps.git_mcp,
-            "read_file",
-            {"branch": source_branch, "path": manifest_path},
+        kust_data = yaml.safe_load(kust_raw_text) if kust_raw_text else {}
+        spec_path = (
+            (kust_data.get("spec") or {}).get("path", "").lstrip("./")
+            if isinstance(kust_data, dict)
+            else ""
         )
-        declared_yaml = _extract_text(declared_result)
-
-        imported = await _resolve_nix_imports(
-            deps,
-            source_branch,
-            manifest_path,
-            declared_yaml,
-            visited={manifest_path},
-            depth=0,
-        )
-        declared_full = declared_yaml + ("\n" + imported if imported else "")
-
-        diff = _compute_diff(live_yaml, declared_full)
-        os_expected_value = (
-            _declared_sysctl_value(declared_full, sysctl_key) if sysctl_key else None
-        )
-        return DiagnosisContext(
-            source_branch=source_branch,
-            manifest_path=manifest_path,
-            live_yaml=live_yaml,
-            declared_yaml=declared_full,
-            diff=diff,
-            os_expected_value=os_expected_value,
-        )
-
-    kind, namespace, name = _extract_k8s_kind_namespace_name(fault)
-
-    if kind == "Namespace":
-        alert_labels = [a.get("labels", {}) for a in fault.alerts]
-        live_yaml = f"namespace: {namespace}\nalert_labels: {alert_labels}"
-        live_pod_status = await _fetch_pod_status(deps, namespace)
-        live_admission_objects = await _fetch_admission_objects(deps, namespace, None)
-        return DiagnosisContext(
-            source_branch=source_branch,
-            manifest_path=None,
-            live_yaml=live_yaml,
-            declared_yaml="",
-            diff="",
-            live_pod_status=live_pod_status,
-            live_admission_objects=live_admission_objects,
-        )
-
-    if kind == "Kustomization":
-        kust_raw_result = await call_tool(
-            deps.kubectl_mcp,
-            "get_resource_yaml",
-            {"kind": "Kustomization", "namespace": namespace, "name": name},
-        )
-        kust_raw_text = _extract_text(kust_raw_result)
-        kust_status_result = await call_tool(
-            deps.flux_mcp,
-            "get_kustomization_status",
-            {"namespace": namespace, "name": name},
-        )
-        kust_status = coerce_flux_status(kust_status_result)
-        kust_status_text = (
-            f"Kustomization: {kust_status.get('namespace', '')}/"
-            f"{kust_status.get('name', '')}\n"
-            f"Ready: {kust_status.get('ready')}\n"
-            f"Reason: {kust_status.get('reason', '')}\n"
-            f"Message: {kust_status.get('message', '')}\n"
-            f"LastAppliedRevision: {kust_status.get('revision', '')}"
-        )
-
-        apply_error, failing_kind, failing_name = _extract_kustomization_apply_error(
-            kust_raw_text
-        )
-
-        if failing_kind and failing_name:
+        child_manifest_path: str | None = None
+        child_declared_yaml = ""
+        if spec_path and failing_live_yaml:
             try:
-                failing_live_result = await call_tool(
-                    deps.kubectl_mcp,
-                    "get_resource_yaml",
+                path_result = await call_tool(
+                    deps.git_mcp,
+                    "resolve_manifest_path",
                     {
+                        "kustomize_path": spec_path,
                         "kind": failing_kind,
-                        "namespace": namespace,
                         "name": failing_name,
+                        "namespace": namespace,
                     },
                 )
-                failing_live_yaml = _extract_text(failing_live_result)
+                child_manifest_path = (
+                    path_result.get("path")
+                    if isinstance(path_result, dict)
+                    else _extract_text(path_result)
+                )
+                declared_result = await call_tool(
+                    deps.git_mcp,
+                    "read_file",
+                    {"branch": source_branch, "path": child_manifest_path},
+                )
+                child_declared_yaml = _extract_text(declared_result)
             except Exception as exc:
                 log.debug(
-                    "failing %s/%s live state unavailable: %s",
+                    "child manifest resolution failed for %s/%s under %s: %s",
                     failing_kind,
                     failing_name,
+                    spec_path,
                     exc,
                 )
-                failing_live_yaml = ""
+                child_manifest_path = None
 
-            kust_data = yaml.safe_load(kust_raw_text) if kust_raw_text else {}
-            spec_path = (
-                (kust_data.get("spec") or {}).get("path", "").lstrip("./")
-                if isinstance(kust_data, dict)
-                else ""
+        live_yaml_parts = [kust_status_text]
+        if apply_error:
+            live_yaml_parts.append(f"\nApply error:\n{apply_error}")
+        if failing_live_yaml:
+            live_yaml_parts.append(
+                f"\n{failing_kind}/{failing_name} live state:\n{failing_live_yaml}"
             )
-            child_manifest_path: str | None = None
-            child_declared_yaml = ""
-            if spec_path and failing_live_yaml:
-                try:
-                    path_result = await call_tool(
-                        deps.git_mcp,
-                        "resolve_manifest_path",
-                        {
-                            "kustomize_path": spec_path,
-                            "kind": failing_kind,
-                            "name": failing_name,
-                            "namespace": namespace,
-                        },
-                    )
-                    child_manifest_path = (
-                        path_result.get("path")
-                        if isinstance(path_result, dict)
-                        else _extract_text(path_result)
-                    )
-                    declared_result = await call_tool(
-                        deps.git_mcp,
-                        "read_file",
-                        {"branch": source_branch, "path": child_manifest_path},
-                    )
-                    child_declared_yaml = _extract_text(declared_result)
-                except Exception as exc:
-                    log.debug(
-                        "child manifest resolution failed for %s/%s under %s: %s",
-                        failing_kind,
-                        failing_name,
-                        spec_path,
-                        exc,
-                    )
-                    child_manifest_path = None
-
-            live_yaml_parts = [kust_status_text]
-            if apply_error:
-                live_yaml_parts.append(f"\nApply error:\n{apply_error}")
-            if failing_live_yaml:
-                live_yaml_parts.append(
-                    f"\n{failing_kind}/{failing_name} live state:\n{failing_live_yaml}"
-                )
-            child_diff = (
-                _compute_diff(failing_live_yaml, child_declared_yaml)
-                if failing_live_yaml and child_declared_yaml
-                else ""
-            )
-            return DiagnosisContext(
-                source_branch=source_branch,
-                manifest_path=child_manifest_path,
-                live_yaml="\n".join(live_yaml_parts),
-                declared_yaml=child_declared_yaml,
-                diff=child_diff,
-            )
-
+        child_diff = (
+            _compute_diff(failing_live_yaml, child_declared_yaml)
+            if failing_live_yaml and child_declared_yaml
+            else ""
+        )
         return DiagnosisContext(
             source_branch=source_branch,
-            manifest_path=None,
-            live_yaml=kust_status_text,
-            declared_yaml="",
-            diff="",
+            manifest_path=child_manifest_path,
+            live_yaml="\n".join(live_yaml_parts),
+            declared_yaml=child_declared_yaml,
+            diff=child_diff,
         )
 
+    return DiagnosisContext(
+        source_branch=source_branch,
+        manifest_path=None,
+        live_yaml=kust_status_text,
+        declared_yaml="",
+        diff="",
+    )
+
+
+async def _build_workload_context(
+    deps: DiagnosisDeps,
+    fault: FaultEvent,
+    source_branch: str,
+    kind: str,
+    namespace: str,
+    name: str,
+) -> DiagnosisContext:
     resource_name_override: str | None = None
     resolved_kind = kind
     try:
@@ -963,4 +976,31 @@ async def build_diagnosis_context(
         diff=diff,
         live_pod_status=live_pod_status,
         live_admission_objects=live_admission_objects,
+    )
+
+
+async def build_diagnosis_context(
+    deps: DiagnosisDeps, fault: FaultEvent
+) -> DiagnosisContext:
+    source_branch = await _resolve_source_branch(deps)
+    await call_tool(
+        deps.git_mcp,
+        "clone_repo",
+        {"run_id": deps.run_id, "base_branch": source_branch},
+    )
+    target_host = _extract_target_host(fault)
+
+    if target_host:
+        return await _build_os_context(deps, fault, source_branch, target_host)
+
+    kind, namespace, name = _extract_k8s_kind_namespace_name(fault)
+
+    if kind == "Namespace":
+        return await _build_namespace_context(deps, fault, source_branch, namespace)
+
+    if kind == "Kustomization":
+        return await _build_kustomization_context(deps, source_branch, namespace, name)
+
+    return await _build_workload_context(
+        deps, fault, source_branch, kind, namespace, name
     )
