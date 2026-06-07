@@ -89,123 +89,148 @@ def _discover_failing_pod(
     return None
 
 
+def _check_pod_not_ready(verify: dict, ns: str, kubeconfig: str | None) -> bool:
+    deployment = verify["deployment"]
+    r = _kubectl(["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig)
+    if r.returncode != 0:
+        return False
+    obj = json.loads(r.stdout)
+    spec_replicas = obj.get("spec", {}).get("replicas", 1)
+    avail = obj.get("status", {}).get("availableReplicas", spec_replicas)
+    if avail < spec_replicas:
+        return True
+    for cond in obj.get("status", {}).get("conditions", []):
+        if cond.get("type") == "ReplicaFailure" and cond.get("status") == "True":
+            return True
+    r2 = _kubectl(
+        ["get", "pods", "-n", ns, "-l", f"app={deployment}", "-o", "json"],
+        kubeconfig,
+    )
+    if r2.returncode != 0:
+        return False
+    for pod in json.loads(r2.stdout).get("items", []):
+        phase = pod.get("status", {}).get("phase", "")
+        if phase in ("Pending", "Failed", "Unknown"):
+            return True
+        for cs in pod.get("status", {}).get("containerStatuses", []):
+            if not cs.get("ready", True):
+                return True
+    return False
+
+
+def _check_replica_failure(verify: dict, ns: str, kubeconfig: str | None) -> bool:
+    deployment = verify["deployment"]
+    r = _kubectl(["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig)
+    if r.returncode != 0:
+        return False
+    for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+        if cond.get("type") == "ReplicaFailure" and cond.get("status") == "True":
+            return True
+    return False
+
+
+def _check_deployment_unavailable(
+    verify: dict, ns: str, kubeconfig: str | None
+) -> bool:
+    deployment = verify["deployment"]
+    r = _kubectl(["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig)
+    if r.returncode != 0:
+        return False
+    obj = json.loads(r.stdout)
+    spec_replicas = obj.get("spec", {}).get("replicas", 0)
+    avail = obj.get("status", {}).get("availableReplicas", 0)
+    return spec_replicas > 0 and avail == 0
+
+
+def _check_kustomization_suspended(
+    verify: dict, ns: str, kubeconfig: str | None
+) -> bool:
+    name = verify["name"]
+    kust_ns = verify.get("kustomization_namespace", "flux-system")
+    r = _kubectl(
+        ["get", "kustomization", name, "-n", kust_ns, "-o", "json"], kubeconfig
+    )
+    if r.returncode != 0:
+        return False
+    return json.loads(r.stdout).get("spec", {}).get("suspend", False) is True
+
+
+def _check_kustomization_not_ready(
+    verify: dict, ns: str, kubeconfig: str | None
+) -> bool:
+    name = verify["name"]
+    kust_ns = verify.get("kustomization_namespace", "flux-system")
+    r = _kubectl(
+        ["get", "kustomization", name, "-n", kust_ns, "-o", "json"], kubeconfig
+    )
+    if r.returncode != 0:
+        return False
+    for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+        if cond.get("type") == "Ready" and cond.get("status") == "False":
+            return True
+    return False
+
+
+def _check_node_not_ready(verify: dict, ns: str, kubeconfig: str | None) -> bool:
+    node = verify["node"]
+    r = _kubectl(["get", "node", node, "-o", "json"], kubeconfig)
+    if r.returncode != 0:
+        return False
+    for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+        if cond.get("type") == "Ready" and cond.get("status") != "True":
+            return True
+    return False
+
+
+def _check_node_disk_pressure(verify: dict, ns: str, kubeconfig: str | None) -> bool:
+    node = verify["node"]
+    r = _kubectl(["get", "node", node, "-o", "json"], kubeconfig)
+    if r.returncode != 0:
+        return False
+    for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
+        if cond.get("type") == "DiskPressure" and cond.get("status") == "True":
+            return True
+    return False
+
+
+def _check_systemd_unit_inactive(verify: dict, ns: str, kubeconfig: str | None) -> bool:
+    host = verify["host"]
+    unit = verify["unit"]
+    r = _ssh(host, f"systemctl is-active {unit}")
+    return r.returncode != 0
+
+
+def _check_sysctl_modified(verify: dict, ns: str, kubeconfig: str | None) -> bool:
+    host = verify["host"]
+    key = verify["key"]
+    expected = str(verify["expected_value"])
+    r = _ssh(host, f"sysctl -n {key}")
+    return r.returncode == 0 and r.stdout.strip() == expected
+
+
+_SYMPTOM_CHECKS = {
+    "pod_not_ready": _check_pod_not_ready,
+    "replica_failure": _check_replica_failure,
+    "deployment_unavailable": _check_deployment_unavailable,
+    "kustomization_suspended": _check_kustomization_suspended,
+    "kustomization_not_ready": _check_kustomization_not_ready,
+    "node_not_ready": _check_node_not_ready,
+    "node_disk_pressure": _check_node_disk_pressure,
+    "systemd_unit_inactive": _check_systemd_unit_inactive,
+    "sysctl_modified": _check_sysctl_modified,
+}
+
+
 def _symptom_observed(verify: dict, kubeconfig: str | None = None) -> bool:
     """Return True when the fault symptom declared in verify_broken is present."""
     symptom = verify.get("symptom", "")
     ns = verify.get("namespace", "default")
 
-    if symptom == "pod_not_ready":
-        deployment = verify["deployment"]
-        r = _kubectl(
-            ["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig
-        )
-        if r.returncode != 0:
-            return False
-        obj = json.loads(r.stdout)
-        spec_replicas = obj.get("spec", {}).get("replicas", 1)
-        avail = obj.get("status", {}).get("availableReplicas", spec_replicas)
-        if avail < spec_replicas:
-            return True
-        for cond in obj.get("status", {}).get("conditions", []):
-            if cond.get("type") == "ReplicaFailure" and cond.get("status") == "True":
-                return True
-        r2 = _kubectl(
-            ["get", "pods", "-n", ns, "-l", f"app={deployment}", "-o", "json"],
-            kubeconfig,
-        )
-        if r2.returncode != 0:
-            return False
-        for pod in json.loads(r2.stdout).get("items", []):
-            phase = pod.get("status", {}).get("phase", "")
-            if phase in ("Pending", "Failed", "Unknown"):
-                return True
-            for cs in pod.get("status", {}).get("containerStatuses", []):
-                if not cs.get("ready", True):
-                    return True
-        return False
-
-    if symptom == "replica_failure":
-        deployment = verify["deployment"]
-        r = _kubectl(
-            ["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig
-        )
-        if r.returncode != 0:
-            return False
-        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
-            if cond.get("type") == "ReplicaFailure" and cond.get("status") == "True":
-                return True
-        return False
-
-    if symptom == "deployment_unavailable":
-        deployment = verify["deployment"]
-        r = _kubectl(
-            ["get", "deployment", deployment, "-n", ns, "-o", "json"], kubeconfig
-        )
-        if r.returncode != 0:
-            return False
-        obj = json.loads(r.stdout)
-        spec_replicas = obj.get("spec", {}).get("replicas", 0)
-        avail = obj.get("status", {}).get("availableReplicas", 0)
-        return spec_replicas > 0 and avail == 0
-
-    if symptom == "kustomization_suspended":
-        name = verify["name"]
-        kust_ns = verify.get("kustomization_namespace", "flux-system")
-        r = _kubectl(
-            ["get", "kustomization", name, "-n", kust_ns, "-o", "json"], kubeconfig
-        )
-        if r.returncode != 0:
-            return False
-        return json.loads(r.stdout).get("spec", {}).get("suspend", False) is True
-
-    if symptom == "kustomization_not_ready":
-        name = verify["name"]
-        kust_ns = verify.get("kustomization_namespace", "flux-system")
-        r = _kubectl(
-            ["get", "kustomization", name, "-n", kust_ns, "-o", "json"], kubeconfig
-        )
-        if r.returncode != 0:
-            return False
-        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
-            if cond.get("type") == "Ready" and cond.get("status") == "False":
-                return True
-        return False
-
-    if symptom == "node_not_ready":
-        node = verify["node"]
-        r = _kubectl(["get", "node", node, "-o", "json"], kubeconfig)
-        if r.returncode != 0:
-            return False
-        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
-            if cond.get("type") == "Ready" and cond.get("status") != "True":
-                return True
-        return False
-
-    if symptom == "node_disk_pressure":
-        node = verify["node"]
-        r = _kubectl(["get", "node", node, "-o", "json"], kubeconfig)
-        if r.returncode != 0:
-            return False
-        for cond in json.loads(r.stdout).get("status", {}).get("conditions", []):
-            if cond.get("type") == "DiskPressure" and cond.get("status") == "True":
-                return True
-        return False
-
-    if symptom == "systemd_unit_inactive":
-        host = verify["host"]
-        unit = verify["unit"]
-        r = _ssh(host, f"systemctl is-active {unit}")
-        return r.returncode != 0
-
-    if symptom == "sysctl_modified":
-        host = verify["host"]
-        key = verify["key"]
-        expected = str(verify["expected_value"])
-        r = _ssh(host, f"sysctl -n {key}")
-        return r.returncode == 0 and r.stdout.strip() == expected
-
-    log.warning("unknown symptom kind %r - skipping assertion", symptom)
-    return True
+    check = _SYMPTOM_CHECKS.get(symptom)
+    if check is None:
+        log.warning("unknown symptom kind %r - skipping assertion", symptom)
+        return True
+    return check(verify, ns, kubeconfig)
 
 
 def _wait_for_inject_symptom(
