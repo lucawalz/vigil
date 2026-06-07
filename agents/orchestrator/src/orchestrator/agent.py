@@ -466,6 +466,84 @@ def _os_watchdog_check(event: FaultEvent) -> tuple[str | None, str | None]:
     return None, None
 
 
+@dataclass(frozen=True)
+class _RemediationAbort:
+    """Signals that remediation exhausted retries, carrying its usage to account."""
+
+    reason: str
+    usage: RunUsage | None
+    messages: list[ModelMessage]
+
+
+@dataclass(frozen=True)
+class _DiagnosisAbort:
+    """Signals a diagnosis failure terminal to the run, with usage to account.
+
+    count_iteration marks the budget/retry exhaustions that record the attempt
+    in iteration_count; the plain timeout leaves iteration_count untouched.
+    """
+
+    reason: str
+    usage: RunUsage | None
+    messages: list[ModelMessage]
+    count_iteration: bool
+
+
+async def _run_diagnosis_attempt(
+    *,
+    diagnosis_deps: DiagnosisDeps,
+    event: FaultEvent,
+    diagnosis_context,
+    model,
+    blocked: frozenset[str],
+    retry_hint: str | None,
+    breaker: _CircuitBreaker,
+    run_id: str,
+) -> tuple[object, RunUsage, list[ModelMessage]] | _DiagnosisAbort:
+    """Run one diagnosis pass; return its result or a terminal abort signal."""
+    try:
+        async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
+            return await run_diagnosis(
+                diagnosis_deps,
+                event,
+                diagnosis_context,
+                model=model,
+                blocked_tools=blocked,
+                retry_hint=retry_hint,
+                breaker=breaker,
+            )
+    except asyncio.TimeoutError:
+        log.error(
+            "run %s aborted: diagnosis_timeout (%.0fs)", run_id, DIAGNOSIS_TIMEOUT_S
+        )
+        return _DiagnosisAbort(
+            reason="diagnosis_timeout",
+            usage=None,
+            messages=[],
+            count_iteration=False,
+        )
+    except DiagnosisOutputRetryExhausted as exc:
+        log.error("run %s aborted: retry_exhausted:diagnosis: %s", run_id, exc)
+        return _DiagnosisAbort(
+            reason=f"retry_exhausted:diagnosis: {exc}",
+            usage=exc.usage,
+            messages=exc.messages,
+            count_iteration=True,
+        )
+    except DiagnosisRequestBudgetExceeded as exc:
+        log.error(
+            "run %s aborted: diagnosis_request_limit_%d",
+            run_id,
+            DIAGNOSIS_REQUEST_LIMIT,
+        )
+        return _DiagnosisAbort(
+            reason=f"diagnosis_request_limit_{DIAGNOSIS_REQUEST_LIMIT}",
+            usage=exc.usage,
+            messages=exc.messages,
+            count_iteration=True,
+        )
+
+
 async def _dispatch_remediation_and_watchdog(
     report,
     remediation_deps: RemediationDeps,
@@ -548,6 +626,331 @@ async def _dispatch_remediation_and_watchdog(
     return remediation_result, rem_usage, rem_msgs, watchdog_result
 
 
+async def _dispatch_with_accounting(
+    report,
+    remediation_deps: RemediationDeps,
+    watchdog_deps: WatchdogDeps,
+    base_branch: str,
+    model,
+    run_id: str,
+    agent_branch: str,
+    blocked: frozenset[str],
+    breaker: _CircuitBreaker,
+    event: FaultEvent,
+    os_expected_value: str | None,
+):
+    """Dispatch remediation and watchdog; map failures onto a _RemediationAbort."""
+    try:
+        return await _dispatch_remediation_and_watchdog(
+            report,
+            remediation_deps,
+            watchdog_deps,
+            base_branch,
+            model,
+            run_id,
+            agent_branch,
+            blocked,
+            breaker,
+            event,
+            os_expected_value=os_expected_value,
+        )
+    except asyncio.TimeoutError:
+        log.error(
+            "run %s aborted: remediation_timeout (%.0fs)", run_id, REMEDIATION_TIMEOUT_S
+        )
+        return _RemediationAbort(reason="remediation_timeout", usage=None, messages=[])
+    except (RemediationOutputRetryExhausted, UnexpectedModelBehavior) as exc:
+        exhausted = isinstance(exc, RemediationOutputRetryExhausted)
+        log.error("run %s aborted: retry_exhausted:remediation: %s", run_id, exc)
+        return _RemediationAbort(
+            reason=f"retry_exhausted:remediation: {exc}",
+            usage=exc.usage if exhausted else None,
+            messages=exc.messages if exhausted else [],
+        )
+
+
+@dataclass(frozen=True)
+class _RunIdentity:
+    """Immutable identity and provenance fields shared by every RunRecord."""
+
+    run_id: str
+    scenario: str
+    seed_str: str
+    model_name: str
+    sha7: str
+    started_at: str
+
+
+def _terminal_record(
+    identity: _RunIdentity,
+    *,
+    outcome: str,
+    attempts_count: int,
+    mttr_s: float | None,
+    setup_error: str | None = None,
+) -> RunRecord:
+    """Build a minimal pre-remediation terminal record with zeroed accounting.
+
+    Used for exits that abandon the run before any mutation reaches the cluster,
+    so token, tool-call, and iteration counters are all zero and no remediation
+    or rollback fields apply.
+    """
+    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return RunRecord(
+        run_id=identity.run_id,
+        scenario=identity.scenario,
+        seed=identity.seed_str,
+        model=identity.model_name,
+        git_sha7=identity.sha7,
+        started_at=identity.started_at,
+        ended_at=ended_at,
+        outcome=outcome,
+        success_rate=False,
+        diagnosis_accuracy=None,
+        MTTR_s=mttr_s,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=0,
+        total_output_tokens=0,
+        total_tool_calls=0,
+        iteration_count=0,
+        autonomy_level="full",
+        actions_taken=[],
+        model_version=identity.model_name,
+        setup_error=setup_error,
+        attempts=attempts_count,
+    )
+
+
+async def _finalize_run(
+    *,
+    identity: _RunIdentity,
+    t0: float,
+    merged_attempt: _AttemptResult | None,
+    last_report,
+    last_remediation_result,
+    last_watchdog_result,
+    outcome: str,
+    rollback_triggered: bool,
+    rollback_success: bool | None,
+    mutation_attempted: bool,
+    total_usage: RunUsage,
+    total_tool_calls: int,
+    iteration_count: int,
+    actions_taken: list[str],
+    attempts_count: int,
+    git_mcp: MCPServerStdio,
+    flux_mcp: MCPServerStdio,
+    nixos_mcp: MCPServerStdio,
+) -> RunRecord:
+    final_report = merged_attempt.report if merged_attempt else last_report
+    final_remediation_result = (
+        merged_attempt.remediation_result if merged_attempt else last_remediation_result
+    )
+    final_watchdog_result = (
+        last_watchdog_result
+        if last_watchdog_result is not None
+        else (merged_attempt.watchdog_result if merged_attempt else None)
+    )
+
+    if merged_attempt is not None and outcome == "abort":
+        outcome = "success" if not final_watchdog_result.degraded else "flux_degraded"
+
+    if (
+        merged_attempt is not None
+        and final_watchdog_result is not None
+        and final_watchdog_result.degraded
+    ):
+        if _has_rollback_target(
+            final_report.recommended_action,
+            final_remediation_result.merge_commit_sha,
+        ):
+            rollback_triggered = True
+            rollback_success = await _issue_rollback(
+                final_report.recommended_action,
+                git_mcp,
+                flux_mcp,
+                nixos_mcp,
+                final_remediation_result.merge_commit_sha,
+                final_report.target_host,
+            )
+            outcome = "rollback_succeeded" if rollback_success else "rollback_failed"
+        else:
+            outcome = "flux_degraded"
+            rollback_triggered = False
+            rollback_success = None
+
+    mttr_s = asyncio.get_event_loop().time() - t0
+    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    forbidden_violations = _check_forbidden_actions(identity.scenario, actions_taken)
+    accuracy = _score_diagnosis_accuracy(identity.scenario, final_report)
+    final_degraded = final_watchdog_result.degraded
+    mutation_applied = (
+        final_remediation_result.merge_commit_sha is not None
+        if final_report.recommended_action in _DECLARATIVE_ACTIONS
+        else mutation_attempted
+    )
+    record = RunRecord(
+        run_id=identity.run_id,
+        scenario=identity.scenario,
+        seed=identity.seed_str,
+        model=identity.model_name,
+        git_sha7=identity.sha7,
+        started_at=identity.started_at,
+        ended_at=ended_at,
+        outcome=outcome,
+        success_rate=(
+            final_remediation_result.success
+            and not final_watchdog_result.degraded
+            and not forbidden_violations
+            and accuracy is not False
+            and outcome != _COMMIT_GENERATION_FAILED_OUTCOME
+        ),
+        diagnosis_accuracy=accuracy,
+        MTTR_s=mttr_s,
+        destructive_repair=_compute_destructive_repair(
+            forbidden_violations=forbidden_violations,
+            mutation_applied=mutation_applied,
+            final_degraded=final_degraded,
+            rollback_triggered=rollback_triggered,
+            rollback_success=rollback_success,
+        ),
+        rollback_triggered=rollback_triggered,
+        rollback_success=rollback_success,
+        total_input_tokens=total_usage.input_tokens or 0,
+        total_output_tokens=total_usage.output_tokens or 0,
+        total_tool_calls=total_tool_calls,
+        iteration_count=iteration_count,
+        autonomy_level="full",
+        actions_taken=actions_taken,
+        model_version=identity.model_name,
+        agent_branch=final_remediation_result.agent_branch,
+        agent_commits=final_remediation_result.agent_commits,
+        gate_status=final_remediation_result.gate_status,
+        merge_commit_sha=final_remediation_result.merge_commit_sha,
+        forbidden_action_violations=forbidden_violations,
+        attempts=attempts_count,
+    )
+    log.info("run %s finished outcome=%s MTTR=%.1fs", identity.run_id, outcome, mttr_s)
+    return record
+
+
+def _build_stage_deps(
+    event: FaultEvent,
+    kubectl_mcp: MCPServerStdio,
+    flux_mcp: MCPServerStdio,
+    nixos_mcp: MCPServerStdio,
+    git_mcp: MCPServerStdio,
+    run_id: str,
+) -> tuple[DiagnosisDeps, RemediationDeps, WatchdogDeps]:
+    diagnosis_deps = DiagnosisDeps(
+        kubectl_mcp=kubectl_mcp,
+        nixos_mcp=nixos_mcp,
+        git_mcp=git_mcp,
+        flux_mcp=flux_mcp,
+        run_id=run_id,
+    )
+    remediation_deps = RemediationDeps(
+        git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
+    )
+    watchdog_deps = WatchdogDeps(
+        kubectl_mcp=kubectl_mcp,
+        flux_mcp=flux_mcp,
+        namespace=extract_alert_namespace(event, WATCHDOG_NAMESPACE),
+        nixos_mcp=nixos_mcp,
+    )
+    return diagnosis_deps, remediation_deps, watchdog_deps
+
+
+async def _run_review_remediation(
+    *,
+    identity: _RunIdentity,
+    t0: float,
+    report,
+    remediation_deps: RemediationDeps,
+    base_branch: str,
+    model,
+    agent_branch: str,
+    blocked: frozenset[str],
+    breaker: _CircuitBreaker,
+    diag_msgs: list[ModelMessage],
+    total_usage: RunUsage,
+    iteration_count: int,
+    attempts_count: int,
+) -> RunRecord | _RemediationAbort:
+    """Dispatch a review-tier remediation that opens a PR for human merge.
+
+    Returns the terminal awaiting_human_review record, or a _RemediationAbort
+    when remediation exhausts its retries so the caller can account its usage.
+    """
+    try:
+        async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
+            remediation_result, rem_usage, rem_msgs = await run_remediation(
+                remediation_deps,
+                report,
+                source_branch=base_branch,
+                model=model,
+                run_id=identity.run_id,
+                agent_branch=agent_branch,
+                blocked_tools=blocked,
+                breaker=breaker,
+                require_human_review=True,
+            )
+    except (RemediationOutputRetryExhausted, UnexpectedModelBehavior) as exc:
+        exhausted = isinstance(exc, RemediationOutputRetryExhausted)
+        log.error(
+            "run %s aborted: retry_exhausted:remediation: %s", identity.run_id, exc
+        )
+        return _RemediationAbort(
+            reason=f"retry_exhausted:remediation: {exc}",
+            usage=exc.usage if exhausted else None,
+            messages=exc.messages if exhausted else [],
+        )
+
+    total_usage = total_usage + rem_usage
+    trace.log_messages(identity.run_id, "remediation", rem_msgs)
+    trace.write_trace(identity.run_id, "remediation", rem_msgs)
+    mttr_s = asyncio.get_event_loop().time() - t0
+    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    record = RunRecord(
+        run_id=identity.run_id,
+        scenario=identity.scenario,
+        seed=identity.seed_str,
+        model=identity.model_name,
+        git_sha7=identity.sha7,
+        started_at=identity.started_at,
+        ended_at=ended_at,
+        outcome="awaiting_human_review",
+        success_rate=False,
+        diagnosis_accuracy=_score_diagnosis_accuracy(identity.scenario, report),
+        MTTR_s=mttr_s,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=total_usage.input_tokens or 0,
+        total_output_tokens=total_usage.output_tokens or 0,
+        total_tool_calls=_count_tool_calls(diag_msgs) + _count_tool_calls(rem_msgs),
+        iteration_count=iteration_count,
+        autonomy_level="full",
+        actions_taken=_extract_tool_names(rem_msgs),
+        model_version=identity.model_name,
+        agent_branch=remediation_result.agent_branch,
+        agent_commits=remediation_result.agent_commits,
+        gate_status=remediation_result.gate_status,
+        merge_commit_sha=remediation_result.merge_commit_sha,
+        attempts=attempts_count,
+    )
+    log.info(
+        "run %s finished outcome=awaiting_human_review (confidence=%.2f action=%s)",
+        identity.run_id,
+        report.confidence,
+        report.recommended_action,
+    )
+    return record
+
+
 async def run_orchestration(
     event: FaultEvent,
     kubectl_mcp: MCPServerStdio,
@@ -597,21 +1000,16 @@ async def _run_orchestration(
     model = build_model(model_name)
     blocked = _blocked_tool_names(scenario)
 
-    diagnosis_deps = DiagnosisDeps(
-        kubectl_mcp=kubectl_mcp,
-        nixos_mcp=nixos_mcp,
-        git_mcp=git_mcp,
-        flux_mcp=flux_mcp,
+    diagnosis_deps, remediation_deps, watchdog_deps = _build_stage_deps(
+        event, kubectl_mcp, flux_mcp, nixos_mcp, git_mcp, run_id
+    )
+    identity = _RunIdentity(
         run_id=run_id,
-    )
-    remediation_deps = RemediationDeps(
-        git_mcp=git_mcp, flux_mcp=flux_mcp, nixos_mcp=nixos_mcp
-    )
-    watchdog_deps = WatchdogDeps(
-        kubectl_mcp=kubectl_mcp,
-        flux_mcp=flux_mcp,
-        namespace=extract_alert_namespace(event, WATCHDOG_NAMESPACE),
-        nixos_mcp=nixos_mcp,
+        scenario=scenario,
+        seed_str=seed_str,
+        model_name=model_name,
+        sha7=sha7,
+        started_at=started_at,
     )
 
     mutation_attempted = False
@@ -710,32 +1108,12 @@ async def _run_orchestration(
                     )
                 except (ManifestPathUnresolvable, ResourceKindUnresolvable) as exc:
                     log.warning("run %s: manifest path unresolvable: %s", run_id, exc)
-                    mttr_s = asyncio.get_event_loop().time() - t0
-                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    record = RunRecord(
-                        run_id=run_id,
-                        scenario=scenario,
-                        seed=seed_str,
-                        model=model_name,
-                        git_sha7=sha7,
-                        started_at=started_at,
-                        ended_at=ended_at,
+                    record = _terminal_record(
+                        identity,
                         outcome="escalated",
-                        success_rate=False,
-                        diagnosis_accuracy=None,
-                        MTTR_s=mttr_s,
-                        destructive_repair=False,
-                        rollback_triggered=False,
-                        rollback_success=None,
-                        total_input_tokens=0,
-                        total_output_tokens=0,
-                        total_tool_calls=0,
-                        iteration_count=0,
-                        autonomy_level="full",
-                        actions_taken=[],
-                        model_version=model_name,
+                        attempts_count=attempts_count,
+                        mttr_s=asyncio.get_event_loop().time() - t0,
                         setup_error=str(exc),
-                        attempts=attempts_count,
                     )
                     _write_run_record(record)
                     return record
@@ -747,50 +1125,25 @@ async def _run_orchestration(
                     _write_run_record(record)
                     return record
 
-                try:
-                    async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
-                        report, diag_usage, diag_msgs = await run_diagnosis(
-                            diagnosis_deps,
-                            event,
-                            diagnosis_context,
-                            model=model,
-                            blocked_tools=blocked,
-                            retry_hint=retry_hint,
-                            breaker=breaker,
-                        )
-                except asyncio.TimeoutError:
-                    log.error(
-                        "run %s aborted: diagnosis_timeout (%.0fs)",
-                        run_id,
-                        DIAGNOSIS_TIMEOUT_S,
-                    )
-                    record = _abort_record("diagnosis_timeout")
+                diagnosis_outcome = await _run_diagnosis_attempt(
+                    diagnosis_deps=diagnosis_deps,
+                    event=event,
+                    diagnosis_context=diagnosis_context,
+                    model=model,
+                    blocked=blocked,
+                    retry_hint=retry_hint,
+                    breaker=breaker,
+                    run_id=run_id,
+                )
+                if isinstance(diagnosis_outcome, _DiagnosisAbort):
+                    total_usage = total_usage + (diagnosis_outcome.usage or RunUsage())
+                    total_tool_calls += _count_tool_calls(diagnosis_outcome.messages)
+                    if diagnosis_outcome.count_iteration:
+                        iteration_count = attempts_count
+                    record = _abort_record(diagnosis_outcome.reason)
                     _write_run_record(record)
                     return record
-                except DiagnosisOutputRetryExhausted as exc:
-                    total_usage = total_usage + exc.usage
-                    total_tool_calls += _count_tool_calls(exc.messages)
-                    iteration_count = attempts_count
-                    log.error(
-                        "run %s aborted: retry_exhausted:diagnosis: %s", run_id, exc
-                    )
-                    record = _abort_record(f"retry_exhausted:diagnosis: {exc}")
-                    _write_run_record(record)
-                    return record
-                except DiagnosisRequestBudgetExceeded as exc:
-                    total_usage = total_usage + exc.usage
-                    total_tool_calls += _count_tool_calls(exc.messages)
-                    iteration_count = attempts_count
-                    log.error(
-                        "run %s aborted: diagnosis_request_limit_%d",
-                        run_id,
-                        DIAGNOSIS_REQUEST_LIMIT,
-                    )
-                    record = _abort_record(
-                        f"diagnosis_request_limit_{DIAGNOSIS_REQUEST_LIMIT}"
-                    )
-                    _write_run_record(record)
-                    return record
+                report, diag_usage, diag_msgs = diagnosis_outcome
 
                 total_usage = total_usage + diag_usage
 
@@ -803,30 +1156,11 @@ async def _run_orchestration(
                         run_id,
                         len(diag_msgs),
                     )
-                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    record = RunRecord(
-                        run_id=run_id,
-                        scenario=scenario,
-                        seed=seed_str,
-                        model=model_name,
-                        git_sha7=sha7,
-                        started_at=started_at,
-                        ended_at=ended_at,
+                    record = _terminal_record(
+                        identity,
                         outcome="quota_exhausted",
-                        success_rate=False,
-                        diagnosis_accuracy=None,
-                        MTTR_s=None,
-                        destructive_repair=False,
-                        rollback_triggered=False,
-                        rollback_success=None,
-                        total_input_tokens=0,
-                        total_output_tokens=0,
-                        total_tool_calls=0,
-                        iteration_count=0,
-                        autonomy_level="full",
-                        actions_taken=[],
-                        model_version=model_name,
-                        attempts=attempts_count,
+                        attempts_count=attempts_count,
+                        mttr_s=None,
                     )
                     _write_run_record(record)
                     return record
@@ -888,125 +1222,55 @@ async def _run_orchestration(
                     )
 
                 if tier == "review":
-                    try:
-                        async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
-                            (
-                                remediation_result,
-                                rem_usage,
-                                rem_msgs,
-                            ) = await run_remediation(
-                                remediation_deps,
-                                report,
-                                source_branch=base_branch,
-                                model=model,
-                                run_id=run_id,
-                                agent_branch=agent_branch,
-                                blocked_tools=blocked,
-                                breaker=breaker,
-                                require_human_review=True,
-                            )
-                    except (
-                        RemediationOutputRetryExhausted,
-                        UnexpectedModelBehavior,
-                    ) as exc:
-                        if isinstance(exc, RemediationOutputRetryExhausted):
-                            total_usage = total_usage + exc.usage
-                            total_tool_calls += _count_tool_calls(exc.messages)
-                        log.error(
-                            "run %s aborted: retry_exhausted:remediation: %s",
-                            run_id,
-                            exc,
-                        )
-                        record = _abort_record(f"retry_exhausted:remediation: {exc}")
-                        _write_run_record(record)
-                        return record
-                    total_usage = total_usage + rem_usage
-                    trace.log_messages(run_id, "remediation", rem_msgs)
-                    trace.write_trace(run_id, "remediation", rem_msgs)
-                    mttr_s = asyncio.get_event_loop().time() - t0
-                    ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    record = RunRecord(
-                        run_id=run_id,
-                        scenario=scenario,
-                        seed=seed_str,
-                        model=model_name,
-                        git_sha7=sha7,
-                        started_at=started_at,
-                        ended_at=ended_at,
-                        outcome="awaiting_human_review",
-                        success_rate=False,
-                        diagnosis_accuracy=_score_diagnosis_accuracy(scenario, report),
-                        MTTR_s=mttr_s,
-                        destructive_repair=False,
-                        rollback_triggered=False,
-                        rollback_success=None,
-                        total_input_tokens=total_usage.input_tokens or 0,
-                        total_output_tokens=total_usage.output_tokens or 0,
-                        total_tool_calls=_count_tool_calls(diag_msgs)
-                        + _count_tool_calls(rem_msgs),
+                    review_outcome = await _run_review_remediation(
+                        identity=identity,
+                        t0=t0,
+                        report=report,
+                        remediation_deps=remediation_deps,
+                        base_branch=base_branch,
+                        model=model,
+                        agent_branch=agent_branch,
+                        blocked=blocked,
+                        breaker=breaker,
+                        diag_msgs=diag_msgs,
+                        total_usage=total_usage,
                         iteration_count=iteration_count,
-                        autonomy_level="full",
-                        actions_taken=_extract_tool_names(rem_msgs),
-                        model_version=model_name,
-                        agent_branch=remediation_result.agent_branch,
-                        agent_commits=remediation_result.agent_commits,
-                        gate_status=remediation_result.gate_status,
-                        merge_commit_sha=remediation_result.merge_commit_sha,
-                        attempts=attempts_count,
+                        attempts_count=attempts_count,
                     )
-                    log.info(
-                        "run %s finished outcome=awaiting_human_review "
-                        "(confidence=%.2f action=%s)",
-                        run_id,
-                        report.confidence,
-                        report.recommended_action,
-                    )
+                    if isinstance(review_outcome, _RemediationAbort):
+                        total_usage = total_usage + (review_outcome.usage or RunUsage())
+                        total_tool_calls += _count_tool_calls(review_outcome.messages)
+                        record = _abort_record(review_outcome.reason)
+                    else:
+                        record = review_outcome
                     _write_run_record(record)
                     return record
 
-                try:
-                    (
-                        remediation_result,
-                        rem_usage,
-                        rem_msgs,
-                        watchdog_result,
-                    ) = await _dispatch_remediation_and_watchdog(
-                        report,
-                        remediation_deps,
-                        watchdog_deps,
-                        base_branch,
-                        model,
-                        run_id,
-                        agent_branch,
-                        blocked,
-                        breaker,
-                        event,
-                        os_expected_value=diagnosis_context.os_expected_value,
-                    )
-                except asyncio.TimeoutError:
-                    log.error(
-                        "run %s aborted: remediation_timeout (%.0fs)",
-                        run_id,
-                        REMEDIATION_TIMEOUT_S,
-                    )
-                    record = _abort_record("remediation_timeout")
+                dispatch_outcome = await _dispatch_with_accounting(
+                    report,
+                    remediation_deps,
+                    watchdog_deps,
+                    base_branch,
+                    model,
+                    run_id,
+                    agent_branch,
+                    blocked,
+                    breaker,
+                    event,
+                    os_expected_value=diagnosis_context.os_expected_value,
+                )
+                if isinstance(dispatch_outcome, _RemediationAbort):
+                    total_usage = total_usage + (dispatch_outcome.usage or RunUsage())
+                    total_tool_calls += _count_tool_calls(dispatch_outcome.messages)
+                    record = _abort_record(dispatch_outcome.reason)
                     _write_run_record(record)
                     return record
-                except (
-                    RemediationOutputRetryExhausted,
-                    UnexpectedModelBehavior,
-                ) as exc:
-                    if isinstance(exc, RemediationOutputRetryExhausted):
-                        total_usage = total_usage + exc.usage
-                        total_tool_calls += _count_tool_calls(exc.messages)
-                    log.error(
-                        "run %s aborted: retry_exhausted:remediation: %s",
-                        run_id,
-                        exc,
-                    )
-                    record = _abort_record(f"retry_exhausted:remediation: {exc}")
-                    _write_run_record(record)
-                    return record
+                (
+                    remediation_result,
+                    rem_usage,
+                    rem_msgs,
+                    watchdog_result,
+                ) = dispatch_outcome
 
                 total_usage = total_usage + rem_usage
                 trace.log_messages(run_id, "remediation", rem_msgs)
@@ -1096,102 +1360,26 @@ async def _run_orchestration(
                     rollback_success = None
                 break
 
-            final_report = merged_attempt.report if merged_attempt else last_report
-            final_remediation_result = (
-                merged_attempt.remediation_result
-                if merged_attempt
-                else last_remediation_result
-            )
-            final_watchdog_result = (
-                last_watchdog_result
-                if last_watchdog_result is not None
-                else (merged_attempt.watchdog_result if merged_attempt else None)
-            )
-
-            if merged_attempt is not None and outcome == "abort":
-                outcome = (
-                    "success" if not final_watchdog_result.degraded else "flux_degraded"
-                )
-
-            if (
-                merged_attempt is not None
-                and final_watchdog_result is not None
-                and final_watchdog_result.degraded
-            ):
-                if _has_rollback_target(
-                    final_report.recommended_action,
-                    final_remediation_result.merge_commit_sha,
-                ):
-                    rollback_triggered = True
-                    rollback_success = await _issue_rollback(
-                        final_report.recommended_action,
-                        git_mcp,
-                        flux_mcp,
-                        nixos_mcp,
-                        final_remediation_result.merge_commit_sha,
-                        final_report.target_host,
-                    )
-                    outcome = (
-                        "rollback_succeeded" if rollback_success else "rollback_failed"
-                    )
-                else:
-                    outcome = "flux_degraded"
-                    rollback_triggered = False
-                    rollback_success = None
-
-            mttr_s = asyncio.get_event_loop().time() - t0
-            ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-            forbidden_violations = _check_forbidden_actions(scenario, actions_taken)
-            accuracy = _score_diagnosis_accuracy(scenario, final_report)
-            final_degraded = final_watchdog_result.degraded
-            mutation_applied = (
-                final_remediation_result.merge_commit_sha is not None
-                if final_report.recommended_action in _DECLARATIVE_ACTIONS
-                else mutation_attempted
-            )
-            record = RunRecord(
-                run_id=run_id,
-                scenario=scenario,
-                seed=seed_str,
-                model=model_name,
-                git_sha7=sha7,
-                started_at=started_at,
-                ended_at=ended_at,
+            record = await _finalize_run(
+                identity=identity,
+                t0=t0,
+                merged_attempt=merged_attempt,
+                last_report=last_report,
+                last_remediation_result=last_remediation_result,
+                last_watchdog_result=last_watchdog_result,
                 outcome=outcome,
-                success_rate=(
-                    final_remediation_result.success
-                    and not final_watchdog_result.degraded
-                    and not forbidden_violations
-                    and accuracy is not False
-                    and outcome != _COMMIT_GENERATION_FAILED_OUTCOME
-                ),
-                diagnosis_accuracy=accuracy,
-                MTTR_s=mttr_s,
-                destructive_repair=_compute_destructive_repair(
-                    forbidden_violations=forbidden_violations,
-                    mutation_applied=mutation_applied,
-                    final_degraded=final_degraded,
-                    rollback_triggered=rollback_triggered,
-                    rollback_success=rollback_success,
-                ),
                 rollback_triggered=rollback_triggered,
                 rollback_success=rollback_success,
-                total_input_tokens=total_usage.input_tokens or 0,
-                total_output_tokens=total_usage.output_tokens or 0,
+                mutation_attempted=mutation_attempted,
+                total_usage=total_usage,
                 total_tool_calls=total_tool_calls,
                 iteration_count=iteration_count,
-                autonomy_level="full",
                 actions_taken=actions_taken,
-                model_version=model_name,
-                agent_branch=final_remediation_result.agent_branch,
-                agent_commits=final_remediation_result.agent_commits,
-                gate_status=final_remediation_result.gate_status,
-                merge_commit_sha=final_remediation_result.merge_commit_sha,
-                forbidden_action_violations=forbidden_violations,
-                attempts=attempts_count,
+                attempts_count=attempts_count,
+                git_mcp=git_mcp,
+                flux_mcp=flux_mcp,
+                nixos_mcp=nixos_mcp,
             )
-            log.info("run %s finished outcome=%s MTTR=%.1fs", run_id, outcome, mttr_s)
             _write_run_record(record)
             return record
 
