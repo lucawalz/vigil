@@ -1234,7 +1234,8 @@ def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
         "  ref:\n"
         "    branch: main\n"
     )
-    declared_nix = (
+    host_nix = "{ ... }:\n{\n  imports = [ ../../modules/k3s/agent.nix ];\n}\n"
+    module_nix = (
         "{ lib, ... }:\n"
         "{\n"
         '  boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;\n'
@@ -1246,15 +1247,24 @@ def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
 
     async def nixos_side_effect(tool, args):
         if tool == "get_nix_path":
-            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+            return {"content": "infra/nixos/hosts/hetzner-worker-1/default.nix"}
         if tool == "get_sysctl":
             return {"content": "net.ipv4.ip_forward = 0"}
         return {"content": "state"}
 
     mock_nixos = AsyncMock()
     mock_nixos.direct_call_tool = AsyncMock(side_effect=nixos_side_effect)
+
+    async def git_side_effect(tool, args):
+        if tool == "read_file":
+            path = args.get("path", "")
+            if path.endswith("agent.nix"):
+                return {"content": module_nix}
+            return {"content": host_nix}
+        return {"content": "ok"}
+
     mock_git = AsyncMock()
-    mock_git.direct_call_tool = AsyncMock(return_value={"content": declared_nix})
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
     mock_flux = AsyncMock()
 
     deps = DiagnosisDeps(
@@ -1268,6 +1278,95 @@ def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
     ctx = asyncio.run(build_diagnosis_context(deps, fault))
 
     assert ctx.os_expected_value == "1"
+    assert "net.ipv4.ip_forward" in ctx.declared_yaml
+
+
+def test_resolve_nix_imports_walks_transitive_modules() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import _resolve_nix_imports
+    from diagnosis.models import DiagnosisDeps
+
+    host_path = "infra/nixos/hosts/hetzner-worker-1/default.nix"
+    host_nix = "{ ... }:\n{\n  imports = [ ../../modules/k3s/agent.nix ];\n}\n"
+    agent_nix = (
+        "{ lib, ... }:\n"
+        "{\n"
+        "  imports = [ ./common.nix ];\n"
+        '  boot.kernel.sysctl."net.bridge.bridge-nf-call-iptables" = '
+        "lib.mkDefault 1;\n"
+        "}\n"
+    )
+    common_nix = "{ ... }:\n{\n  networking.firewall.enable = false;\n}\n"
+
+    bodies = {
+        "infra/nixos/modules/k3s/agent.nix": agent_nix,
+        "infra/nixos/modules/k3s/common.nix": common_nix,
+    }
+
+    async def git_side_effect(tool, args):
+        return {"content": bodies[args["path"]]}
+
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+
+    deps = DiagnosisDeps(
+        run_id="test-imports",
+        kubectl_mcp=AsyncMock(),
+        nixos_mcp=AsyncMock(),
+        git_mcp=mock_git,
+        flux_mcp=AsyncMock(),
+    )
+
+    result = asyncio.run(
+        _resolve_nix_imports(
+            deps, "main", host_path, host_nix, visited={host_path}, depth=0
+        )
+    )
+
+    assert "net.bridge.bridge-nf-call-iptables" in result
+    assert "networking.firewall.enable" in result
+
+
+def test_resolve_nix_imports_cycle_guard_and_failures() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import _resolve_nix_imports
+    from diagnosis.models import DiagnosisDeps
+
+    host_path = "infra/nixos/hosts/h/default.nix"
+    host_nix = "{ ... }:\n{\n  imports = [ ./self.nix ./missing.nix ];\n}\n"
+    self_nix = "{ ... }:\n{\n  imports = [ ./self.nix ];\n  value = 1;\n}\n"
+
+    call_count = {"n": 0}
+
+    async def git_side_effect(tool, args):
+        call_count["n"] += 1
+        if args["path"].endswith("self.nix"):
+            return {"content": self_nix}
+        raise RuntimeError("file not found")
+
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(side_effect=git_side_effect)
+
+    deps = DiagnosisDeps(
+        run_id="test-cycle",
+        kubectl_mcp=AsyncMock(),
+        nixos_mcp=AsyncMock(),
+        git_mcp=mock_git,
+        flux_mcp=AsyncMock(),
+    )
+
+    result = asyncio.run(
+        _resolve_nix_imports(
+            deps, "main", host_path, host_nix, visited={host_path}, depth=0
+        )
+    )
+
+    assert "value = 1" in result
+    assert call_count["n"] == 2
 
 
 def _make_fault(labels: dict):

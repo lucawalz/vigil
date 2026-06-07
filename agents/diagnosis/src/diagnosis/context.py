@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import posixpath
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -146,6 +147,75 @@ def _declared_sysctl_value(declared_nix: str, key: str) -> str | None:
     if not match:
         return None
     return match.group(1).split()[-1].strip('"')
+
+
+_MAX_NIX_IMPORT_DEPTH = 5
+_NIX_IMPORTS_BLOCK_RE = re.compile(r"imports\s*=\s*\[(.*?)\]", re.DOTALL)
+_NIX_COMMENT_RE = re.compile(r"#.*")
+
+
+def _parse_nix_import_entries(entry_text: str) -> list[str]:
+    """Return the raw paths listed in a Nix ``imports = [ … ];`` block."""
+    block = _NIX_IMPORTS_BLOCK_RE.search(entry_text)
+    if not block:
+        return []
+    stripped = _NIX_COMMENT_RE.sub("", block.group(1))
+    return stripped.split()
+
+
+def _resolve_nix_import_path(entry_path: str, entry: str) -> str:
+    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(entry_path), entry))
+    if not resolved.endswith(".nix"):
+        resolved = posixpath.join(resolved, "default.nix")
+    return resolved
+
+
+async def _resolve_nix_imports(
+    deps: DiagnosisDeps,
+    source_branch: str,
+    entry_path: str,
+    entry_text: str,
+    *,
+    visited: set[str],
+    depth: int,
+) -> str:
+    """Concatenate the bodies of every Nix module reachable via ``imports``.
+
+    A host entrypoint declares OS state by importing modules, so the declaration
+    that drifted often lives in a transitively imported file rather than the
+    host file itself; this walks the import graph to surface it.
+    """
+    if depth >= _MAX_NIX_IMPORT_DEPTH:
+        return ""
+    bodies: list[str] = []
+    for entry in _parse_nix_import_entries(entry_text):
+        resolved = _resolve_nix_import_path(entry_path, entry)
+        if resolved in visited:
+            continue
+        visited.add(resolved)
+        try:
+            result = await call_tool(
+                deps.git_mcp,
+                "read_file",
+                {"branch": source_branch, "path": resolved},
+            )
+            body = _extract_text(result)
+        except Exception as exc:
+            # An optional or absent import must never abort diagnosis.
+            log.debug("nix import %s unreadable, skipping: %s", resolved, exc)
+            continue
+        bodies.append(body)
+        nested = await _resolve_nix_imports(
+            deps,
+            source_branch,
+            resolved,
+            body,
+            visited=visited,
+            depth=depth + 1,
+        )
+        if nested:
+            bodies.append(nested)
+    return "\n".join(bodies)
 
 
 def extract_systemd_unit(fault: FaultEvent) -> str | None:
@@ -644,15 +714,25 @@ async def build_diagnosis_context(
         )
         declared_yaml = _extract_text(declared_result)
 
-        diff = _compute_diff(live_yaml, declared_yaml)
+        imported = await _resolve_nix_imports(
+            deps,
+            source_branch,
+            manifest_path,
+            declared_yaml,
+            visited={manifest_path},
+            depth=0,
+        )
+        declared_full = declared_yaml + ("\n" + imported if imported else "")
+
+        diff = _compute_diff(live_yaml, declared_full)
         os_expected_value = (
-            _declared_sysctl_value(declared_yaml, sysctl_key) if sysctl_key else None
+            _declared_sysctl_value(declared_full, sysctl_key) if sysctl_key else None
         )
         return DiagnosisContext(
             source_branch=source_branch,
             manifest_path=manifest_path,
             live_yaml=live_yaml,
-            declared_yaml=declared_yaml,
+            declared_yaml=declared_full,
             diff=diff,
             os_expected_value=os_expected_value,
         )
