@@ -22,7 +22,7 @@ resource "hcloud_server" "master" {
   name        = "${var.group_name}-${var.run_id}-master"
   server_type = "cpx22"
   image       = data.hcloud_image.master_snapshot.id
-  location    = "hel1"
+  location    = var.location
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -69,7 +69,7 @@ resource "hcloud_server" "worker_1" {
   name        = "${var.group_name}-${var.run_id}-worker-1"
   server_type = "cpx22"
   image       = data.hcloud_image.worker_1_snapshot.id
-  location    = "hel1"
+  location    = var.location
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -112,7 +112,7 @@ resource "hcloud_server" "worker_2" {
   name        = "${var.group_name}-${var.run_id}-worker-2"
   server_type = "cpx22"
   image       = data.hcloud_image.worker_2_snapshot.id
-  location    = "hel1"
+  location    = var.location
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -155,7 +155,7 @@ resource "hcloud_server" "agent" {
   name        = "${var.group_name}-${var.run_id}-agent"
   server_type = "cpx22"
   image       = data.hcloud_image.agent_snapshot.id
-  location    = "hel1"
+  location    = var.location
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 

@@ -21,6 +21,15 @@ on:
           - claude-sonnet-4-6
           - qwen3.5:cloud
           - deepseek-v3.2:cloud
+      location:
+        description: "Hetzner EU region for the eval cluster"
+        type: choice
+        required: false
+        default: "hel1"
+        options:
+          - hel1
+          - fsn1
+          - nbg1
       skip_k8s:
         description: "Skip the k8s scenario group"
         type: boolean
@@ -71,6 +80,7 @@ jobs:
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}
       TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
       TF_VAR_vigil_branch: chore/eval-cluster-baseline
+      TF_VAR_location: ${{ inputs.location }}
     steps:
       - uses: actions/checkout@v6
 

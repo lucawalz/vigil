@@ -68,3 +68,14 @@ variable "operator_ssh_pubkey" {
   default     = ""
   description = "Operator's personal public SSH key injected into all servers for debugging access"
 }
+
+variable "location" {
+  type        = string
+  default     = "hel1"
+  description = "Hetzner EU location for the eval cluster (nbg1, fsn1, hel1 — all share the eu-central network zone)."
+
+  validation {
+    condition     = contains(["nbg1", "fsn1", "hel1"], var.location)
+    error_message = "location must be one of: nbg1 (Nuremberg), fsn1 (Falkenstein), hel1 (Helsinki)."
+  }
+}
