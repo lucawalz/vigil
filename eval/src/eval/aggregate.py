@@ -201,6 +201,90 @@ def _correct_outcome_success(records: list[dict], scenarios_dir: Path) -> None:
             r["success_rate"] = True
 
 
+def _summarize_model(runs: list[dict]) -> dict:
+    successes = [r for r in runs if r.get("success_rate")]
+    non_aborts = [r for r in runs if r.get("outcome") != "abort"]
+    mttrs = [
+        r["MTTR_s"]
+        for r in runs
+        if isinstance(r.get("MTTR_s"), (int, float)) and r.get("success_rate")
+    ]
+    diag_acc = [r for r in runs if r.get("diagnosis_accuracy") is not None]
+    diag_correct = [r for r in diag_acc if r["diagnosis_accuracy"]]
+    dest = [r for r in runs if r.get("destructive_repair")]
+    rollbacks = [r for r in runs if r.get("rollback_triggered")]
+    rollback_successes = [r for r in rollbacks if r.get("rollback_success")]
+    mean_mttr, std_mttr = _mean_std(mttrs)
+    n_attempts = len(non_aborts)
+    return {
+        "n_runs": len(runs),
+        "n_attempts": n_attempts,
+        "success_rate": len(successes) / len(runs) if runs else 0.0,
+        "success_rate_given_attempt": (
+            len(successes) / n_attempts if n_attempts else None
+        ),
+        "mean_MTTR_s": mean_mttr,
+        "std_MTTR_s": std_mttr,
+        "diagnosis_accuracy": (len(diag_correct) / len(diag_acc) if diag_acc else None),
+        "diag_n": len(diag_acc),
+        "destructive_repair_rate": len(dest) / len(runs) if runs else 0.0,
+        "rollback_triggered_rate": len(rollbacks) / len(runs) if runs else 0.0,
+        "rollback_success_rate": (
+            len(rollback_successes) / len(rollbacks) if rollbacks else None
+        ),
+        "n_eligible": n_attempts,
+        "mean_input_tokens": _mean_std(
+            [r.get("total_input_tokens", 0) for r in non_aborts]
+        )[0],
+        "mean_output_tokens": _mean_std(
+            [r.get("total_output_tokens", 0) for r in non_aborts]
+        )[0],
+        "mean_tool_calls": _mean_std(
+            [r.get("total_tool_calls", 0) for r in non_aborts]
+        )[0],
+        "mean_iteration_count": _mean_std(
+            [r.get("iteration_count", 0) for r in non_aborts]
+        )[0],
+    }
+
+
+def _summarize_scenario(runs: list[dict]) -> dict:
+    successes = [r for r in runs if r.get("success_rate")]
+    mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
+    mean_mttr, std_mttr = _mean_std(mttrs)
+    first_run = min(runs, key=lambda r: str(r.get("seed", "")))
+    return {
+        "n_runs": len(runs),
+        "outcome": first_run["outcome"],
+        "setup_error": first_run.get("setup_error"),
+        "forbidden_action_violations": first_run.get("forbidden_action_violations"),
+        "success_rate": len(successes) / len(runs) if runs else 0.0,
+        "mean_MTTR_s": mean_mttr,
+        "std_MTTR_s": std_mttr,
+    }
+
+
+def _summarize_escalation(runs: list[dict], layer: str | None) -> dict:
+    if layer != "os":
+        return {"layer": layer, "accuracy": None}
+    scored = [r for r in runs if r.get("diagnosis_accuracy") is not None]
+    correct = [r for r in scored if r["diagnosis_accuracy"]]
+    per_model: dict[str, dict] = {}
+    for r in scored:
+        m = r["model"]
+        slot = per_model.setdefault(m, {"correct": 0, "total": 0})
+        slot["total"] += 1
+        if r["diagnosis_accuracy"]:
+            slot["correct"] += 1
+    return {
+        "layer": layer,
+        "correct": len(correct),
+        "total": len(scored),
+        "accuracy": (len(correct) / len(scored)) if scored else None,
+        "per_model": per_model,
+    }
+
+
 def aggregate_runs(
     runs_dir: Path, index_path: Path, scenarios_dir: Path
 ) -> dict[str, Any]:
@@ -228,91 +312,14 @@ def aggregate_runs(
         by_model.setdefault(r["model"], []).append(r)
         by_scenario.setdefault(r["scenario"], []).append(r)
 
-    model_summary: dict[str, dict] = {}
-    for model, runs in by_model.items():
-        successes = [r for r in runs if r.get("success_rate")]
-        non_aborts = [r for r in runs if r.get("outcome") != "abort"]
-        mttrs = [
-            r["MTTR_s"]
-            for r in runs
-            if isinstance(r.get("MTTR_s"), (int, float)) and r.get("success_rate")
-        ]
-        diag_acc = [r for r in runs if r.get("diagnosis_accuracy") is not None]
-        diag_correct = [r for r in diag_acc if r["diagnosis_accuracy"]]
-        dest = [r for r in runs if r.get("destructive_repair")]
-        rollbacks = [r for r in runs if r.get("rollback_triggered")]
-        rollback_successes = [r for r in rollbacks if r.get("rollback_success")]
-        mean_mttr, std_mttr = _mean_std(mttrs)
-        n_attempts = len(non_aborts)
-        model_summary[model] = {
-            "n_runs": len(runs),
-            "n_attempts": n_attempts,
-            "success_rate": len(successes) / len(runs) if runs else 0.0,
-            "success_rate_given_attempt": (
-                len(successes) / n_attempts if n_attempts else None
-            ),
-            "mean_MTTR_s": mean_mttr,
-            "std_MTTR_s": std_mttr,
-            "diagnosis_accuracy": (
-                len(diag_correct) / len(diag_acc) if diag_acc else None
-            ),
-            "diag_n": len(diag_acc),
-            "destructive_repair_rate": len(dest) / len(runs) if runs else 0.0,
-            "rollback_triggered_rate": len(rollbacks) / len(runs) if runs else 0.0,
-            "rollback_success_rate": (
-                len(rollback_successes) / len(rollbacks) if rollbacks else None
-            ),
-            "n_eligible": n_attempts,
-            "mean_input_tokens": _mean_std(
-                [r.get("total_input_tokens", 0) for r in non_aborts]
-            )[0],
-            "mean_output_tokens": _mean_std(
-                [r.get("total_output_tokens", 0) for r in non_aborts]
-            )[0],
-            "mean_tool_calls": _mean_std(
-                [r.get("total_tool_calls", 0) for r in non_aborts]
-            )[0],
-            "mean_iteration_count": _mean_std(
-                [r.get("iteration_count", 0) for r in non_aborts]
-            )[0],
-        }
+    model_summary = {model: _summarize_model(runs) for model, runs in by_model.items()}
 
     scenario_summary: dict[str, dict] = {}
     escalation: dict[str, dict] = {}
     for scenario, runs in by_scenario.items():
-        successes = [r for r in runs if r.get("success_rate")]
-        mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
-        mean_mttr, std_mttr = _mean_std(mttrs)
-        first_run = min(runs, key=lambda r: str(r.get("seed", "")))
-        scenario_summary[scenario] = {
-            "n_runs": len(runs),
-            "outcome": first_run["outcome"],
-            "setup_error": first_run.get("setup_error"),
-            "forbidden_action_violations": first_run.get("forbidden_action_violations"),
-            "success_rate": len(successes) / len(runs) if runs else 0.0,
-            "mean_MTTR_s": mean_mttr,
-            "std_MTTR_s": std_mttr,
-        }
+        scenario_summary[scenario] = _summarize_scenario(runs)
         layer = _layer_for_scenario(scenarios_dir, scenario)
-        if layer == "os":
-            scored = [r for r in runs if r.get("diagnosis_accuracy") is not None]
-            correct = [r for r in scored if r["diagnosis_accuracy"]]
-            per_model: dict[str, dict] = {}
-            for r in scored:
-                m = r["model"]
-                slot = per_model.setdefault(m, {"correct": 0, "total": 0})
-                slot["total"] += 1
-                if r["diagnosis_accuracy"]:
-                    slot["correct"] += 1
-            escalation[scenario] = {
-                "layer": layer,
-                "correct": len(correct),
-                "total": len(scored),
-                "accuracy": (len(correct) / len(scored)) if scored else None,
-                "per_model": per_model,
-            }
-        else:
-            escalation[scenario] = {"layer": layer, "accuracy": None}
+        escalation[scenario] = _summarize_escalation(runs, layer)
 
     return {
         "by_model": model_summary,
