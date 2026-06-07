@@ -7,6 +7,10 @@ data:
   default.conf.template: |
     server {
         listen 80;
+        location = /healthz {
+            return 200 "ok\n";
+            access_log off;
+        }
         location / {
             proxy_pass ${REQUIRED_API_BASE};
         }

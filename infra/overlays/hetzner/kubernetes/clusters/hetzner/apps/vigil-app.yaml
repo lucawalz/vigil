@@ -20,7 +20,14 @@ spec:
           image: nginx:stable
           env:
             - name: REQUIRED_API_BASE
-              value: "http://127.0.0.1"
+              value: "http://app-backend"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 3
           resources:
             requests:
               memory: "64Mi"
