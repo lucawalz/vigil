@@ -8,6 +8,6 @@ data:
     server {
         listen 80;
         location / {
-            proxy_pass ${REQUIRED_API_BASE};
+            proxy_pass http://api-backend:8080;
         }
     }
