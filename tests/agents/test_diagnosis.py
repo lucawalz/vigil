@@ -341,6 +341,7 @@ def test_diagnosis_context_required_fields() -> None:
         "diff",
         "live_pod_status",
         "live_admission_objects",
+        "live_services",
         "os_expected_value",
     }
     assert fields["source_branch"].type in (str, "str")
@@ -349,6 +350,7 @@ def test_diagnosis_context_required_fields() -> None:
     assert fields["declared_yaml"].type in (str, "str")
     assert fields["diff"].type in (str, "str")
     assert fields["live_pod_status"].type in (str, "str")
+    assert fields["live_services"].type in (str, "str")
 
 
 def test_compute_diff_unified_format() -> None:
@@ -2017,6 +2019,159 @@ def test_fetch_admission_objects_falls_back_to_events() -> None:
 
     assert [o.name for o in objects] == ["event-quota"]
     assert objects[0].declared_in_git is False
+
+
+def test_fetch_services_lists_namespace_services() -> None:
+    """Services in the namespace are surfaced verbatim for upstream discovery."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import _fetch_services
+    from diagnosis.models import DiagnosisDeps
+
+    service_list_yaml = (
+        "apiVersion: v1\nkind: List\nitems:\n"
+        "- apiVersion: v1\n  kind: Service\n"
+        "  metadata:\n    name: app-backend\n    namespace: default\n"
+        "  spec:\n    ports:\n    - port: 80\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        if tool == "get_resource_yaml" and args.get("kind") == "Service":
+            return {"content": service_list_yaml}
+        return {"content": ""}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+
+    deps = DiagnosisDeps(
+        run_id="test-services",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=AsyncMock(),
+        git_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+    )
+
+    services = asyncio.run(_fetch_services(deps, "default"))
+
+    assert "app-backend" in services
+
+
+def test_fetch_services_failure_is_non_fatal() -> None:
+    """A failing Service list returns a marker rather than raising."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import _fetch_services
+    from diagnosis.models import DiagnosisDeps
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(
+        side_effect=RuntimeError("service list unavailable")
+    )
+
+    deps = DiagnosisDeps(
+        run_id="test-services-fail",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=AsyncMock(),
+        git_mcp=AsyncMock(),
+        flux_mcp=AsyncMock(),
+    )
+
+    services = asyncio.run(_fetch_services(deps, "default"))
+
+    assert "unavailable" in services
+
+
+def test_build_diagnosis_context_workload_surfaces_services() -> None:
+    """A workload alert populates live_services with the namespace Services."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from diagnosis.models import DiagnosisDeps
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KubePodCrashLooping",
+                    "namespace": "default",
+                    "deployment": "vigil-app",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "KubePodCrashLooping"},
+        commonLabels={"namespace": "default"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="KubePodCrashLooping"}',
+    )
+
+    kust_yaml = (
+        "apiVersion: kustomize.toolkit.fluxcd.io/v1\n"
+        "kind: Kustomization\n"
+        "metadata:\n  name: cluster-apps\n  namespace: flux-system\n"
+        "spec:\n"
+        "  path: infra/overlays/hetzner/kubernetes/clusters/hetzner/apps\n"
+        "  sourceRef:\n    kind: GitRepository\n    name: flux-system\n"
+    )
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\nkind: GitRepository\n"
+        "metadata:\n  name: flux-system\n  namespace: flux-system\n"
+        "spec:\n  ref:\n    branch: main\n"
+    )
+    live_resource_yaml = (
+        "apiVersion: apps/v1\nkind: Deployment\n"
+        "metadata:\n  name: vigil-app\n  namespace: default\n"
+        "  annotations:\n"
+        "    kustomize.toolkit.fluxcd.io/name: cluster-apps\n"
+        "    kustomize.toolkit.fluxcd.io/namespace: flux-system\n"
+        "spec:\n  template:\n    spec:\n      containers:\n"
+        '      - env:\n        - name: REQUIRED_API_BASE\n          value: ""\n'
+    )
+    service_list_yaml = (
+        "apiVersion: v1\nkind: List\nitems:\n"
+        "- apiVersion: v1\n  kind: Service\n"
+        "  metadata:\n    name: app-backend\n    namespace: default\n"
+    )
+
+    async def kubectl_side_effect(tool, args):
+        kind = args.get("kind", "")
+        if kind == "Deployment":
+            return {"content": live_resource_yaml}
+        if kind == "Kustomization":
+            return {"content": kust_yaml}
+        if kind == "GitRepository":
+            return {"content": git_repo_yaml}
+        if kind == "Service":
+            return {"content": service_list_yaml}
+        return {"content": "apiVersion: v1\nkind: List\nitems: []\n"}
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(side_effect=kubectl_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(return_value={"content": live_resource_yaml})
+
+    deps = DiagnosisDeps(
+        run_id="test-workload-services",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=AsyncMock(),
+        git_mcp=mock_git,
+        flux_mcp=AsyncMock(),
+    )
+
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
+
+    assert "app-backend" in ctx.live_services
 
 
 def _canned_context_for_msg():

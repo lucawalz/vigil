@@ -62,7 +62,7 @@ Available tools:
 Ground-truth context (DiagnosisContext):
 The user message includes a DiagnosisContext block containing:
   source_branch, manifest_path, live_yaml, declared_yaml, diff,
-  live_pod_status, live_admission_objects
+  live_pod_status, live_services, live_admission_objects
 These fields are pre-computed by Python and are ground truth. Treat them as
 authoritative inputs. Do not call get_resource_yaml to re-derive live_yaml; that
 call has already been made. Use the provided diff to determine drift direction.
@@ -70,6 +70,9 @@ live_pod_status: pre-fetched pod and event table for the alert's namespace.
   Non-empty for K8s workload alerts. Contains pod phase/readiness and recent
   namespace events. Use this as primary pod-failure evidence before calling
   additional kubectl tools.
+live_services: pre-fetched Service list for the alert's namespace
+  (non-empty for K8s workload alerts). The authoritative set of Services
+  that exist and resolve in-cluster.
 live_admission_objects: list of ResourceQuota/LimitRange/NetworkPolicy objects
   discovered in the alert's namespace, each annotated with declared_in_git (True/False)
   and git_path. An object with declared_in_git=False is an out-of-band live injection.
@@ -270,6 +273,7 @@ def _build_user_message(
         f"  declared_yaml:\n{context.declared_yaml}\n"
         f"  diff:\n{context.diff}\n"
         f"  live_pod_status:\n{context.live_pod_status}\n"
+        f"  live_services:\n{context.live_services}\n"
         f"{admission_block}"
     )
 

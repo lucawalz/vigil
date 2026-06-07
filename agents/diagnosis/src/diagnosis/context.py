@@ -42,6 +42,7 @@ class DiagnosisContext:
     diff: str
     live_pod_status: str = field(default="")
     live_admission_objects: list[AdmissionObject] = field(default_factory=list)
+    live_services: str = field(default="")
     os_expected_value: str | None = None
 
 
@@ -666,6 +667,27 @@ async def _fetch_pod_status(deps: DiagnosisDeps, namespace: str) -> str:
     return "\n\n".join(parts)
 
 
+_SERVICES_UNAVAILABLE_MARKER = "(services unavailable)"
+
+
+async def _fetch_services(deps: DiagnosisDeps, namespace: str) -> str:
+    """List Services in the namespace so agents can resolve real upstream hosts.
+
+    A proxy whose backend URL was zeroed has no host to restore from git, so the
+    set of live Services is the only ground truth for a resolvable upstream.
+    """
+    try:
+        result = await call_tool(
+            deps.kubectl_mcp,
+            "get_resource_yaml",
+            {"kind": "Service", "namespace": namespace, "name": ""},
+        )
+        return _extract_text(result)
+    except Exception as exc:
+        log.debug("listing Services in %s failed: %s", namespace, exc)
+        return _SERVICES_UNAVAILABLE_MARKER
+
+
 async def _build_os_context(
     deps: DiagnosisDeps,
     fault: FaultEvent,
@@ -916,6 +938,7 @@ async def _build_workload_context(
                 declared_yaml="",
                 diff="",
                 live_pod_status=await _fetch_pod_status(deps, namespace),
+                live_services=await _fetch_services(deps, namespace),
             )
         live_yaml = _extract_text(dep_result)
         resource_name_override = workload
@@ -947,6 +970,7 @@ async def _build_workload_context(
                 declared_yaml="",
                 diff="",
                 live_pod_status=live_pod_status,
+                live_services=await _fetch_services(deps, namespace),
             )
         raise
 
@@ -964,6 +988,7 @@ async def _build_workload_context(
 
     diff = _compute_diff(live_yaml, declared_yaml)
     live_pod_status = await _fetch_pod_status(deps, namespace)
+    live_services = await _fetch_services(deps, namespace)
     kustomize_path = await _get_kustomize_spec_path(deps, live_yaml)
     live_admission_objects = await _fetch_admission_objects(
         deps, namespace, kustomize_path
@@ -976,6 +1001,7 @@ async def _build_workload_context(
         diff=diff,
         live_pod_status=live_pod_status,
         live_admission_objects=live_admission_objects,
+        live_services=live_services,
     )
 
 
