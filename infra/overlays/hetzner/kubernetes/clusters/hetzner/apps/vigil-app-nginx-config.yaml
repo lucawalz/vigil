@@ -8,6 +8,6 @@ data:
     server {
         listen 80;
         location / {
-            proxy_pass http://api-backend:8080;
+            return 200 'OK';
         }
     }
