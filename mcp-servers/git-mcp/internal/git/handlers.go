@@ -202,6 +202,61 @@ func validateNixSyntax(ctx context.Context, content string) error {
 	return nil
 }
 
+func resolveManifestTarget(manifestPath, cloneDir string) (cleaned, absPath string, errResult *mcp.CallToolResult) {
+	if strings.HasPrefix(manifestPath, "/") {
+		return "", "", mcp.NewToolResultError("manifest_path: absolute paths are not allowed")
+	}
+	cleaned = filepath.Clean(manifestPath)
+	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", "", mcp.NewToolResultError("manifest_path: path traversal rejected")
+	}
+	if cloneDir == "" {
+		return "", "", mcp.NewToolResultError("HandleWriteManifest: session not initialised; call create_branch first")
+	}
+	absPath = filepath.Join(cloneDir, cleaned)
+	if !strings.HasPrefix(absPath, cloneDir+string(filepath.Separator)) {
+		return "", "", mcp.NewToolResultError("manifest_path: path traversal rejected")
+	}
+	return cleaned, absPath, nil
+}
+
+func validateManifestWrite(ctx context.Context, absPath, cleaned, patchBody string) *mcp.CallToolResult {
+	existing, err := os.ReadFile(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return mcp.NewToolResultError("manifest_path: file does not exist on base branch; remediation cannot create new manifests")
+		}
+		return toolError("HandleWriteManifest", "read existing: "+err.Error(), hintWriteManifest)
+	}
+	if string(existing) == patchBody {
+		return mcp.NewToolResultError("patch_body: identical to current file; no-op patches are rejected")
+	}
+	return validatePatchBody(ctx, cleaned, patchBody)
+}
+
+func validatePatchBody(ctx context.Context, cleaned, patchBody string) *mcp.CallToolResult {
+	if strings.HasSuffix(cleaned, ".nix") {
+		if err := validateNixSyntax(ctx, patchBody); err != nil {
+			return mcp.NewToolResultError("patch_body: nix syntax error: " + err.Error())
+		}
+		return nil
+	}
+	if violation := findRuntimeOnlyField(patchBody); violation != "" {
+		return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML")
+	}
+	ext := strings.ToLower(filepath.Ext(cleaned))
+	if ext == ".yaml" || ext == ".yml" {
+		var doc any
+		if err := yaml.Unmarshal([]byte(patchBody), &doc); err != nil {
+			return mcp.NewToolResultError("patch_body: yaml parse error: " + err.Error())
+		}
+		if err := validateTypedManifest(patchBody); err != nil {
+			return toolError("HandleWriteManifest", "manifest schema error: "+err.Error(), hintInvalidManifest)
+		}
+	}
+	return nil
+}
+
 func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -214,50 +269,14 @@ func HandleWriteManifest(client GitClient, state SessionState, maxBytes int) ser
 			return mcp.NewToolResultError("patch_body: missing or wrong type"), nil
 		}
 
-		if strings.HasPrefix(manifestPath, "/") {
-			return mcp.NewToolResultError("manifest_path: absolute paths are not allowed"), nil
-		}
-		cleaned := filepath.Clean(manifestPath)
-		if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-			return mcp.NewToolResultError("manifest_path: path traversal rejected"), nil
-		}
 		cloneDir := state.CloneDir()
-		if cloneDir == "" {
-			return mcp.NewToolResultError("HandleWriteManifest: session not initialised; call create_branch first"), nil
-		}
-		absPath := filepath.Join(cloneDir, cleaned)
-		if !strings.HasPrefix(absPath, cloneDir+string(filepath.Separator)) {
-			return mcp.NewToolResultError("manifest_path: path traversal rejected"), nil
+		cleaned, absPath, errResult := resolveManifestTarget(manifestPath, cloneDir)
+		if errResult != nil {
+			return errResult, nil
 		}
 
-		existing, err := os.ReadFile(absPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return mcp.NewToolResultError("manifest_path: file does not exist on base branch; remediation cannot create new manifests"), nil
-			}
-			return toolError("HandleWriteManifest", "read existing: "+err.Error(), hintWriteManifest), nil
-		}
-		if string(existing) == patchBody {
-			return mcp.NewToolResultError("patch_body: identical to current file; no-op patches are rejected"), nil
-		}
-		if strings.HasSuffix(cleaned, ".nix") {
-			if err := validateNixSyntax(ctx, patchBody); err != nil {
-				return mcp.NewToolResultError("patch_body: nix syntax error: " + err.Error()), nil
-			}
-		} else {
-			if violation := findRuntimeOnlyField(patchBody); violation != "" {
-				return mcp.NewToolResultError("patch_body: contains runtime-only field '" + violation + "'; submit a declarative manifest, not live cluster YAML"), nil
-			}
-			ext := strings.ToLower(filepath.Ext(cleaned))
-			if ext == ".yaml" || ext == ".yml" {
-				var doc any
-				if err := yaml.Unmarshal([]byte(patchBody), &doc); err != nil {
-					return mcp.NewToolResultError("patch_body: yaml parse error: " + err.Error()), nil
-				}
-				if err := validateTypedManifest(patchBody); err != nil {
-					return toolError("HandleWriteManifest", "manifest schema error: "+err.Error(), hintInvalidManifest), nil
-				}
-			}
+		if errResult := validateManifestWrite(ctx, absPath, cleaned, patchBody); errResult != nil {
+			return errResult, nil
 		}
 
 		if err := client.WriteFile(ctx, cloneDir, cleaned, patchBody); err != nil {
@@ -306,33 +325,48 @@ func HandlePushBranch(client GitClient, state SessionState, protected ProtectedB
 	}
 }
 
+type createPRParams struct {
+	title     string
+	body      string
+	base      string
+	branch    string
+	autoMerge bool
+}
+
+func parseCreatePRParams(args map[string]any, state SessionState) (createPRParams, *mcp.CallToolResult) {
+	title, ok := args["title"].(string)
+	if !ok || title == "" {
+		return createPRParams{}, mcp.NewToolResultError("title: missing or wrong type")
+	}
+	body, ok := args["body"].(string)
+	if !ok || body == "" {
+		return createPRParams{}, mcp.NewToolResultError("body: missing or wrong type")
+	}
+	base := state.BaseBranch()
+	if base == "" {
+		return createPRParams{}, mcp.NewToolResultError("HandleCreatePR: base branch not set; call clone_repo first")
+	}
+	branch, _ := state.Branch()
+	if branch == "" {
+		return createPRParams{}, mcp.NewToolResultError("HandleCreatePR: session not initialised; call create_branch first")
+	}
+
+	autoMerge := true
+	if raw, present := args["auto_merge"]; present {
+		if b, ok := raw.(bool); ok {
+			autoMerge = b
+		}
+	}
+	return createPRParams{title: title, body: body, base: base, branch: branch, autoMerge: autoMerge}, nil
+}
+
 func HandleCreatePR(client GitClient, state SessionState) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
-		title, ok := args["title"].(string)
-		if !ok || title == "" {
-			return mcp.NewToolResultError("title: missing or wrong type"), nil
+		params, errResult := parseCreatePRParams(req.GetArguments(), state)
+		if errResult != nil {
+			return errResult, nil
 		}
-		body, ok := args["body"].(string)
-		if !ok || body == "" {
-			return mcp.NewToolResultError("body: missing or wrong type"), nil
-		}
-		base := state.BaseBranch()
-		if base == "" {
-			return mcp.NewToolResultError("HandleCreatePR: base branch not set; call clone_repo first"), nil
-		}
-
-		branch, _ := state.Branch()
-		if branch == "" {
-			return mcp.NewToolResultError("HandleCreatePR: session not initialised; call create_branch first"), nil
-		}
-
-		autoMerge := true
-		if raw, present := args["auto_merge"]; present {
-			if b, ok := raw.(bool); ok {
-				autoMerge = b
-			}
-		}
+		title, body, base, branch, autoMerge := params.title, params.body, params.base, params.branch, params.autoMerge
 
 		prNumber, err := client.CreatePR(ctx, title, branch, base, body)
 		if err != nil {
@@ -366,6 +400,42 @@ func HandleGetPRStatus(client GitClient, state SessionState) server.ToolHandlerF
 	}
 }
 
+func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeableProbes *int) (*mcp.CallToolResult, bool) {
+	prState, merged, mergeCommitSHA, err := client.GetPRStatus(ctx, prNumber)
+	if err != nil {
+		return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), true
+	}
+	if merged {
+		return mcp.NewToolResultStructured(
+			GatePassedResult{MergeCommitSHA: mergeCommitSHA},
+			fmt.Sprintf("gate passed: merged sha=%s", mergeCommitSHA),
+		), true
+	}
+	if prState == "closed" {
+		return toolError("HandleWaitForGate", "PR closed without merge", hintWaitForGate), true
+	}
+	gateFailed, conclusion, checkErr := client.GetCheckRunStatus(ctx, prNumber)
+	if checkErr == nil && gateFailed {
+		return toolError("HandleWaitForGate",
+			fmt.Sprintf("gate check failed (conclusion=%s)", conclusion),
+			hintWaitForGate), true
+	}
+
+	mergeableState, msErr := client.GetMergeableState(ctx, prNumber)
+	gateAbsent := checkErr == nil && conclusion == ""
+	if msErr == nil && mergeableState == mergeableStateDirty && gateAbsent {
+		*unmergeableProbes++
+		if *unmergeableProbes >= unmergeableGateGraceProbes {
+			return toolError("HandleWaitForGate",
+				"PR is unmergeable (mergeable_state=dirty) and no remediation-gate check dispatched; branch likely not based on current base",
+				hintWaitForGate), true
+		}
+	} else {
+		*unmergeableProbes = 0
+	}
+	return nil, false
+}
+
 func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.Duration) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -394,37 +464,8 @@ func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.D
 			case <-timer.C:
 				return toolError("HandleWaitForGate", fmt.Sprintf("timed out after %d seconds", timeoutSecs), hintWaitForGate), nil
 			case <-ticker.C:
-				prState, merged, mergeCommitSHA, err := client.GetPRStatus(ctx, prNumber)
-				if err != nil {
-					return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), nil
-				}
-				if merged {
-					return mcp.NewToolResultStructured(
-						GatePassedResult{MergeCommitSHA: mergeCommitSHA},
-						fmt.Sprintf("gate passed: merged sha=%s", mergeCommitSHA),
-					), nil
-				}
-				if prState == "closed" {
-					return toolError("HandleWaitForGate", "PR closed without merge", hintWaitForGate), nil
-				}
-				gateFailed, conclusion, checkErr := client.GetCheckRunStatus(ctx, prNumber)
-				if checkErr == nil && gateFailed {
-					return toolError("HandleWaitForGate",
-						fmt.Sprintf("gate check failed (conclusion=%s)", conclusion),
-						hintWaitForGate), nil
-				}
-
-				mergeableState, msErr := client.GetMergeableState(ctx, prNumber)
-				gateAbsent := checkErr == nil && conclusion == ""
-				if msErr == nil && mergeableState == mergeableStateDirty && gateAbsent {
-					unmergeableProbes++
-					if unmergeableProbes >= unmergeableGateGraceProbes {
-						return toolError("HandleWaitForGate",
-							"PR is unmergeable (mergeable_state=dirty) and no remediation-gate check dispatched; branch likely not based on current base",
-							hintWaitForGate), nil
-					}
-				} else {
-					unmergeableProbes = 0
+				if result, done := pollGateOnce(ctx, client, prNumber, &unmergeableProbes); done {
+					return result, nil
 				}
 			}
 		}
