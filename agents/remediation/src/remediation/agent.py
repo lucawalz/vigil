@@ -192,6 +192,65 @@ remediation_agent: Agent[RemediationDeps, RemediationResult] = Agent(
 )
 
 
+def _preflight_refusal(
+    report: DiagnosisReport,
+    source_branch: str,
+    blocked_tools: frozenset[str],
+) -> RemediationResult | None:
+    """Return a deterministic refusal when guardrails forbid running the agent."""
+    if source_branch in PROTECTED_BRANCHES:
+        return RemediationResult(
+            success=False,
+            actions_taken=["refused_protected_branch"],
+            tool_calls_count=0,
+            mutation_attempted=False,
+        )
+
+    essential_blocked = (
+        _ESSENTIAL_MUTATING_TOOLS.get(report.recommended_action, frozenset())
+        & blocked_tools
+    )
+    if essential_blocked:
+        return RemediationResult(
+            success=False,
+            actions_taken=["refused_blocked_tool"],
+            tool_calls_count=0,
+            mutation_attempted=False,
+        )
+    return None
+
+
+def _build_constraint_block(blocked_tools: frozenset[str]) -> str:
+    if not blocked_tools:
+        return ""
+    return (
+        f" These tools are blocked for this run and must not be called: "
+        f"{', '.join(sorted(blocked_tools))}."
+        f" If remediation requires a blocked tool,"
+        f" return success=False immediately."
+    )
+
+
+def _build_review_block(require_human_review: bool) -> str:
+    if not require_human_review:
+        return ""
+    return (
+        " HUMAN-REVIEW MODE OVERRIDE (applies only to git_commit_k8s and"
+        " git_commit_nix): open the PR for a human to merge, do not gate or"
+        " reconcile. After push_branch, call create_pr(..., auto_merge=false)."
+        " Then STOP: do NOT call wait_for_gate and do NOT call"
+        " reconcile_kustomization or trigger_reconcile. Record the provided"
+        " agent_branch and agent_commits, set gate_status='awaiting_review', set"
+        " merge_commit_sha=None, and return success=True because the PR was"
+        " opened successfully for human review."
+    )
+
+
+def _persist_partial_trace(run_id: str, partial_msgs: list[ModelMessage]) -> None:
+    if run_id and partial_msgs:
+        trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+
+
 async def run_remediation(
     deps: RemediationDeps,
     report: DiagnosisReport,
@@ -203,27 +262,9 @@ async def run_remediation(
     breaker: Breaker | None = None,
     require_human_review: bool = False,
 ) -> tuple[RemediationResult, RunUsage, list[ModelMessage]]:
-    if source_branch in PROTECTED_BRANCHES:
-        refused = RemediationResult(
-            success=False,
-            actions_taken=["refused_protected_branch"],
-            tool_calls_count=0,
-            mutation_attempted=False,
-        )
-        return refused, RunUsage(), []
-
-    essential_blocked = (
-        _ESSENTIAL_MUTATING_TOOLS.get(report.recommended_action, frozenset())
-        & blocked_tools
-    )
-    if essential_blocked:
-        refused = RemediationResult(
-            success=False,
-            actions_taken=["refused_blocked_tool"],
-            tool_calls_count=0,
-            mutation_attempted=False,
-        )
-        return refused, RunUsage(), []
+    refusal = _preflight_refusal(report, source_branch, blocked_tools)
+    if refusal is not None:
+        return refusal, RunUsage(), []
 
     def _allow(tool_name: str) -> bool:
         return tool_name not in blocked_tools
@@ -257,28 +298,8 @@ async def run_remediation(
             CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in toolsets
         ]
 
-    constraint_block = ""
-    if blocked_tools:
-        constraint_block = (
-            f" These tools are blocked for this run and must not be called: "
-            f"{', '.join(sorted(blocked_tools))}."
-            f" If remediation requires a blocked tool,"
-            f" return success=False immediately."
-        )
-
-    review_block = ""
-    if require_human_review:
-        review_block = (
-            " HUMAN-REVIEW MODE OVERRIDE (applies only to git_commit_k8s and"
-            " git_commit_nix): open the PR for a human to merge, do not gate or"
-            " reconcile. After push_branch, call create_pr(..., auto_merge=false)."
-            " Then STOP: do NOT call wait_for_gate and do NOT call"
-            " reconcile_kustomization or trigger_reconcile. Record the provided"
-            " agent_branch and agent_commits, set gate_status='awaiting_review', set"
-            " merge_commit_sha=None, and return success=True because the PR was"
-            " opened successfully for human review."
-        )
-
+    constraint_block = _build_constraint_block(blocked_tools)
+    review_block = _build_review_block(require_human_review)
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
         f"{report.model_dump_json()}. "
@@ -300,10 +321,7 @@ async def run_remediation(
             async for _ in agent_run:
                 pass
     except GitCommitBudgetExceeded:
-        if run_id:
-            partial_msgs = agent_run.all_messages()
-            if partial_msgs:
-                trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        _persist_partial_trace(run_id, agent_run.all_messages())
         budget_refused = RemediationResult(
             success=False,
             actions_taken=["commit_budget_exceeded"],
@@ -313,21 +331,14 @@ async def run_remediation(
         return budget_refused, agent_run.usage, agent_run.all_messages()
     except UnexpectedModelBehavior as exc:
         partial_msgs = agent_run.all_messages()
-        if run_id and partial_msgs:
-            trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        _persist_partial_trace(run_id, partial_msgs)
         raise RemediationOutputRetryExhausted(
             agent_run.usage, partial_msgs, exc
         ) from exc
     except UsageLimitExceeded:
-        if run_id:
-            partial_msgs = agent_run.all_messages()
-            if partial_msgs:
-                trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        _persist_partial_trace(run_id, agent_run.all_messages())
         raise
     except CircuitBreakerTripped:
-        if run_id:
-            partial_msgs = agent_run.all_messages()
-            if partial_msgs:
-                trace.write_trace(run_id, "remediation", partial_msgs, partial=True)
+        _persist_partial_trace(run_id, agent_run.all_messages())
         raise
     return agent_run.result.output, agent_run.usage, agent_run.all_messages()
