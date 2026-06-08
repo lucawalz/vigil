@@ -1,0 +1,255 @@
+{
+  "by_model": {
+    "deepseek-v3.2:cloud": {
+      "n_runs": 39,
+      "n_attempts": 31,
+      "success_rate": 0.5128205128205128,
+      "success_rate_given_attempt": 0.6451612903225806,
+      "mean_MTTR_s": 389.14070301289996,
+      "std_MTTR_s": 93.62808299481807,
+      "diagnosis_accuracy": 0.7407407407407407,
+      "diag_n": 27,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.0,
+      "rollback_success_rate": null,
+      "n_eligible": 31,
+      "mean_input_tokens": 140644.2258064516,
+      "mean_output_tokens": 2894.0967741935483,
+      "mean_tool_calls": 13.419354838709678,
+      "mean_iteration_count": 5.516129032258065
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 322.78349720066666,
+      "std_MTTR_s": 15.441477420249903
+    },
+    "k8s-2g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 440.03885695766667,
+      "std_MTTR_s": 33.05029615058603
+    },
+    "k8s-3g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 401.04043808433335,
+      "std_MTTR_s": 4.696751179892186
+    },
+    "k8s-4g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 413.6657011966667,
+      "std_MTTR_s": 19.40958077528141
+    },
+    "k8s-5g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 1.0,
+      "mean_MTTR_s": 483.06868769366673,
+      "std_MTTR_s": 185.05698567442522
+    },
+    "live-quota-injected": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 473.9153822265,
+      "std_MTTR_s": 264.5354967627607
+    },
+    "deceptive-2": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 501.8868273555004,
+      "std_MTTR_s": 16.15817169130733
+    },
+    "k8s-rollback-1": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 287.4856488100004,
+      "std_MTTR_s": null
+    },
+    "os-1": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 327.781679895,
+      "std_MTTR_s": 166.06210933935526
+    },
+    "os-1g": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.0,
+      "mean_MTTR_s": 411.81187136899996,
+      "std_MTTR_s": null
+    },
+    "os-drift-sysctl": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 265.557450498,
+      "std_MTTR_s": null
+    },
+    "os-stale-generation": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 321.18464910299986,
+      "std_MTTR_s": null
+    },
+    "disk-pressure": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 220.43325044099993,
+      "std_MTTR_s": 87.37195902057238
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 2,
+      "accuracy": 0.5,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 1,
+          "total": 2
+        }
+      }
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 0,
+          "total": 1
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 1,
+      "total": 2,
+      "accuracy": 0.5,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 1,
+          "total": 2
+        }
+      }
+    }
+  },
+  "totals": {
+    "n": 39,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
