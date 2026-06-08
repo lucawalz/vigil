@@ -3,10 +3,15 @@ name: Eval Campaign
 on:
   workflow_dispatch:
     inputs:
-      seeds:
-        description: "Seeds for scenario runs"
+      seed_count:
+        description: "Number of seeds"
+        type: choice
         required: false
-        default: "1 2 3"
+        default: "3"
+        options:
+          - "1"
+          - "2"
+          - "3"
       model:
         description: "LLM model identifier"
         type: choice
@@ -56,7 +61,7 @@ jobs:
           if [ '${{ inputs.skip_os }}' != 'true' ]; then
             base=$(echo "$base" | jq -c '. + [{"group":"os","scenarios":"os-1 os-1g os-drift-sysctl os-stale-generation disk-pressure"}]')
           fi
-          seeds=$(echo '${{ inputs.seeds }}' | jq -cR 'split(" ")|map(select(length>0)|tonumber)')
+          seeds=$(jq -cn --argjson n '${{ inputs.seed_count }}' '[range(1; $n + 1)]')
           include=$(jq -cn --argjson base "$base" --argjson seeds "$seeds" \
             '[ $seeds[] as $s | $base[] | . + {seed:$s} ]')
           echo "matrix=$(jq -cn --argjson inc "$include" '{include:$inc}')" >> "$GITHUB_OUTPUT"
