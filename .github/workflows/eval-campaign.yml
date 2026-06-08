@@ -3,15 +3,10 @@ name: Eval Campaign
 on:
   workflow_dispatch:
     inputs:
-      seed:
-        description: "Seed integer for scenario runs"
+      seeds:
+        description: "Seeds for scenario runs"
         required: false
-        default: "1"
-      concurrency:
-        description: "Max parallel matrix jobs"
-        type: number
-        required: false
-        default: 2
+        default: "1 2 3"
       model:
         description: "LLM model identifier"
         type: choice
@@ -54,14 +49,17 @@ jobs:
     steps:
       - id: build
         run: |
-          groups='[]'
+          base='[]'
           if [ '${{ inputs.skip_k8s }}' != 'true' ]; then
-            groups=$(echo "$groups" | jq -c '. + [{"group":"k8s","scenarios":"k8s-1g k8s-2g k8s-3g k8s-4g k8s-5g live-quota-injected deceptive-2 k8s-rollback-1"}]')
+            base=$(echo "$base" | jq -c '. + [{"group":"k8s","scenarios":"k8s-1g k8s-2g k8s-3g k8s-4g k8s-5g live-quota-injected deceptive-2 k8s-rollback-1"}]')
           fi
           if [ '${{ inputs.skip_os }}' != 'true' ]; then
-            groups=$(echo "$groups" | jq -c '. + [{"group":"os","scenarios":"os-1 os-1g os-drift-sysctl os-stale-generation disk-pressure"}]')
+            base=$(echo "$base" | jq -c '. + [{"group":"os","scenarios":"os-1 os-1g os-drift-sysctl os-stale-generation disk-pressure"}]')
           fi
-          echo "matrix=$(echo "$groups" | jq -c '{include:.}')" >> "$GITHUB_OUTPUT"
+          seeds=$(echo '${{ inputs.seeds }}' | jq -cR 'split(" ")|map(select(length>0)|tonumber)')
+          include=$(jq -cn --argjson base "$base" --argjson seeds "$seeds" \
+            '[ $seeds[] as $s | $base[] | . + {seed:$s} ]')
+          echo "matrix=$(jq -cn --argjson inc "$include" '{include:$inc}')" >> "$GITHUB_OUTPUT"
 
   run-scenarios:
     needs: setup
@@ -69,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJSON(inputs.concurrency || '4') }}
+      max-parallel: 1
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     env:
       TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
@@ -77,7 +75,7 @@ jobs:
       TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
       TF_VAR_group_name: ${{ matrix.group }}
-      TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}
+      TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}-s${{ matrix.seed }}
       TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
       TF_VAR_vigil_branch: chore/eval-cluster-baseline
       TF_VAR_location: ${{ inputs.location }}
@@ -218,7 +216,7 @@ jobs:
       - name: Run scenarios in group
         env:
           SCENARIOS: ${{ matrix.scenarios }}
-          SEED: ${{ github.event.inputs.seed }}
+          SEED: ${{ matrix.seed }}
           MODEL: ${{ inputs.model }}
           GROUP: ${{ matrix.group }}
           AGENT_IP: ${{ steps.agent.outputs.ip }}
@@ -273,20 +271,20 @@ jobs:
             echo '=== /etc/vigil ==='
             ls -la /etc/vigil/ 2>&1 || true
             test -f /etc/vigil/env && sed 's/=.*\$/=REDACTED/' /etc/vigil/env || echo '/etc/vigil/env MISSING'
-          " > eval/runs/_diagnostics-${{ matrix.group }}.log 2>&1 || true
+          " > eval/runs/_diagnostics-${{ matrix.group }}-s${{ matrix.seed }}.log 2>&1 || true
           rsync -avz -e "ssh $SSH_OPTS" \
             root@$AGENT_IP:/root/vigil/eval/runs/ ./eval/runs/ || true
           if ssh $SSH_OPTS root@$AGENT_IP "test -f /root/vigil/eval/runs_index.jsonl"; then
             rsync -avz -e "ssh $SSH_OPTS" \
               root@$AGENT_IP:/root/vigil/eval/runs_index.jsonl \
-              ./eval/runs/runs_index_${{ matrix.group }}.jsonl || true
+              ./eval/runs/runs_index_${{ matrix.group }}-s${{ matrix.seed }}.jsonl || true
           fi
 
       - name: Upload run artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: group-runs-${{ matrix.group }}
+          name: group-runs-${{ matrix.group }}-s${{ matrix.seed }}
           path: |
             eval/runs/
           if-no-files-found: warn
