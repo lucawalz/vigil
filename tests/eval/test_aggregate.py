@@ -498,26 +498,25 @@ def test_write_report_includes_per_row_outcome_literal_and_rollup(
 
     report = (output_dir / "REPORT.md").read_text()
 
-    assert "Outcome" in report
+    assert "pass" in report
 
-    assert "success" in report
-    assert "gate_failed" in report
-    assert "baseline_degraded" in report
-    assert "flux_degraded" in report
+    assert "OK" in report
+    assert "scenario" in report
 
-    assert "passed" in report
+    assert "runs passed" in report
     assert "agent-failed" in report
     assert "infra-error" in report
     assert "gate-uncertain" in report
 
     rollup_pattern = (
-        r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
-        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,"
-        r"\s*\d+/\d+ awaiting-review,\s*\d+/\d+ not-run"
+        r"\d+/\d+ runs passed,\s*\d+ agent-failed,\s*\d+ infra-error,"
+        r"\s*\d+ out-of-scope,\s*\d+ gate-uncertain,"
+        r"\s*\d+ awaiting-review,\s*\d+ not-run"
     )
     assert re.search(rollup_pattern, report), (
-        f"expected bucket rollup line in REPORT.md; got:\n{report}"
+        f"expected per-run bucket rollup line in REPORT.md; got:\n{report}"
     )
+    assert re.search(r"\d+/\d+ scenarios passed all seeds", report)
 
 
 def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
@@ -562,18 +561,18 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
 
     summary_text = (output_dir / "step_summary.md").read_text()
 
-    assert "success" in summary_text
-    assert "rollback_failed" in summary_text
-    assert "setup_error" in summary_text
+    assert "OK" in summary_text
+    assert "SE" in summary_text
 
     rollup_pattern = (
-        r"\d+/\d+ passed,\s*\d+/\d+ out-of-scope,\s*\d+/\d+ agent-failed,"
-        r"\s*\d+/\d+ infra-error,\s*\d+/\d+ gate-uncertain,"
-        r"\s*\d+/\d+ awaiting-review,\s*\d+/\d+ not-run"
+        r"\d+/\d+ runs passed,\s*\d+ agent-failed,\s*\d+ infra-error,"
+        r"\s*\d+ out-of-scope,\s*\d+ gate-uncertain,"
+        r"\s*\d+ awaiting-review,\s*\d+ not-run"
     )
     assert re.search(rollup_pattern, summary_text), (
-        f"expected bucket rollup line in step_summary.md; got:\n{summary_text}"
+        f"expected per-run bucket rollup line in step_summary.md; got:\n{summary_text}"
     )
+    assert re.search(r"\d+/\d+ scenarios passed all seeds", summary_text)
 
 
 def test_count_buckets_out_of_scope_for_success_with_false_success_rate(
@@ -920,3 +919,227 @@ def test_count_buckets_not_run_counts_unexecuted_planned_scenarios() -> None:
     counts = _count_buckets(records, n_planned=5)
     assert counts["passed"] == 2
     assert counts["not-run"] == 3
+
+
+def _write_seed_run(
+    runs_dir: Path,
+    index_path: Path,
+    *,
+    scenario: str,
+    seed: int,
+    outcome: str,
+    success_rate: bool = False,
+    setup_error: str | None = None,
+    diagnosis_accuracy: bool | None = None,
+    mttr: float | None = None,
+    iteration_count: int = 4,
+    total_tool_calls: int = 6,
+) -> None:
+    record = {
+        "run_id": f"{scenario}_{seed}_test-model_abc",
+        "scenario": scenario,
+        "seed": str(seed),
+        "model": "test-model",
+        "git_sha7": "abc1234",
+        "started_at": "2026-05-18T10:00:00Z",
+        "ended_at": "2026-05-18T10:01:00Z",
+        "outcome": outcome,
+        "setup_error": setup_error,
+        "success_rate": success_rate,
+        "diagnosis_accuracy": diagnosis_accuracy,
+        "MTTR_s": mttr,
+        "destructive_repair": False,
+        "rollback_triggered": False,
+        "rollback_success": None,
+        "total_input_tokens": 100,
+        "total_output_tokens": 50,
+        "total_tool_calls": total_tool_calls,
+        "iteration_count": iteration_count,
+        "autonomy_level": "full",
+        "actions_taken": [],
+        "model_version": "test-model",
+    }
+    (runs_dir / f"{record['run_id']}.json").write_text(json.dumps(record))
+    with index_path.open("a") as fh:
+        fh.write(json.dumps({"run_id": record["run_id"]}) + "\n")
+
+
+def test_multi_seed_bucket_denominators_count_runs_not_scenarios(
+    tmp_path: Path,
+) -> None:
+    from eval.aggregate import aggregate_runs, write_report
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    output_dir = tmp_path / "results"
+    _make_scenarios_dir(scenarios_dir, "k8s-1", "k8s")
+    _make_scenarios_dir(scenarios_dir, "k8s-2", "k8s")
+
+    for seed in (1, 2, 3):
+        _write_seed_run(
+            runs_dir,
+            index_path,
+            scenario="k8s-1",
+            seed=seed,
+            outcome="success",
+            success_rate=True,
+            mttr=10.0,
+        )
+    for seed in (1, 2, 3):
+        _write_seed_run(
+            runs_dir,
+            index_path,
+            scenario="k8s-2",
+            seed=seed,
+            outcome="flux_degraded",
+        )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    write_report(summary, output_dir)
+    report = (output_dir / "REPORT.md").read_text()
+
+    assert "3/6 runs passed" in report
+    assert "1/2 scenarios passed all seeds" in report
+
+
+def test_masking_regression_failing_seeds_not_hidden(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs, write_report
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    output_dir = tmp_path / "results"
+    _make_scenarios_dir(scenarios_dir, "k8s-mask", "k8s")
+
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-mask",
+        seed=1,
+        outcome="success",
+        success_rate=True,
+        mttr=10.0,
+    )
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-mask",
+        seed=2,
+        outcome="setup_error",
+        setup_error="baseline_unavailable",
+        iteration_count=0,
+    )
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-mask",
+        seed=3,
+        outcome="abort",
+        setup_error="diagnosis_request_limit_25",
+        iteration_count=0,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    row = summary["by_scenario"]["k8s-mask"]
+    assert row["passed"] == 1
+    assert row["n_seeds"] == 3
+    assert [s["outcome"] for s in row["per_seed"]] == [
+        "success",
+        "setup_error",
+        "abort",
+    ]
+
+    write_report(summary, output_dir)
+    report = (output_dir / "REPORT.md").read_text()
+
+    assert "OK SE TO" in report
+    assert "| k8s-mask | 1/3" in report
+    assert "1/3 runs passed, 1 agent-failed, 1 infra-error" in report
+    assert "0/1 scenarios passed all seeds" in report
+
+
+def test_aggregated_row_mttr_strip_and_diag_denominator(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs, write_report
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    output_dir = tmp_path / "results"
+    _make_scenarios_dir(scenarios_dir, "k8s-agg", "k8s")
+
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-agg",
+        seed=1,
+        outcome="success",
+        success_rate=True,
+        mttr=300.0,
+        diagnosis_accuracy=True,
+    )
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-agg",
+        seed=2,
+        outcome="success",
+        success_rate=True,
+        mttr=400.0,
+        diagnosis_accuracy=False,
+    )
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-agg",
+        seed=3,
+        outcome="abort",
+        setup_error="diagnosis_request_limit_25",
+        diagnosis_accuracy=None,
+        iteration_count=0,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    row = summary["by_scenario"]["k8s-agg"]
+    assert row["diag_correct"] == 1
+    assert row["diag_total"] == 2
+
+    write_report(summary, output_dir)
+    report = (output_dir / "REPORT.md").read_text()
+
+    assert "OK OK TO" in report
+    assert "350 ± 71" in report
+    assert "| k8s-agg | 2/3" in report
+    assert " 1/2 " in report
+
+
+def test_single_seed_backward_compat_renders_one_token(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs, write_report
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    output_dir = tmp_path / "results"
+    _make_scenarios_dir(scenarios_dir, "k8s-solo", "k8s")
+
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-solo",
+        seed=1,
+        outcome="success",
+        success_rate=True,
+        mttr=120.0,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    write_report(summary, output_dir)
+    report = (output_dir / "REPORT.md").read_text()
+
+    assert "| s1 |" in report
+    assert "| s1 s2 " not in report
+    assert "| k8s-solo | 1/1 | OK | 120 |" in report

@@ -39,6 +39,20 @@ _OUTCOME_BUCKET: dict[str, str] = {
 
 _UNKNOWN_OUTCOME_BUCKET = "infra-error"
 
+_OUTCOME_TOKEN: dict[str, str] = {
+    "success": "OK",
+    "rollback_succeeded": "RB",
+    "escalated": "ESC",
+    "abort": "TO",
+    "setup_error": "SE",
+}
+
+_UNKNOWN_OUTCOME_TOKEN = "??"
+
+_OUTCOME_TOKEN_LEGEND = (
+    "legend: OK success  RB rollback  ESC escalated  TO abort/timeout  SE setup_error"
+)
+
 _CLOSED_GATE = "closed"
 
 _AGENT_BUDGET_ABORT_PREFIXES = ("diagnosis_request_limit_",)
@@ -53,6 +67,14 @@ def _bucket_outcome(literal: str) -> str:
         )
         return _UNKNOWN_OUTCOME_BUCKET
     return bucket
+
+
+def _outcome_token(literal: str) -> str:
+    return _OUTCOME_TOKEN.get(literal, _UNKNOWN_OUTCOME_TOKEN)
+
+
+def _seed_sort_key(run: dict) -> str:
+    return str(run.get("seed", ""))
 
 
 def _bucket_gate_failed(record: dict) -> str:
@@ -249,18 +271,35 @@ def _summarize_model(runs: list[dict]) -> dict:
 
 
 def _summarize_scenario(runs: list[dict]) -> dict:
-    successes = [r for r in runs if r.get("success_rate")]
-    mttrs = [r["MTTR_s"] for r in runs if isinstance(r.get("MTTR_s"), (int, float))]
+    ordered = sorted(runs, key=_seed_sort_key)
+    successes = [r for r in ordered if r.get("success_rate")]
+    mttrs = [r["MTTR_s"] for r in ordered if isinstance(r.get("MTTR_s"), (int, float))]
     mean_mttr, std_mttr = _mean_std(mttrs)
-    first_run = min(runs, key=lambda r: str(r.get("seed", "")))
+    diag_scored = [r for r in ordered if r.get("diagnosis_accuracy") is not None]
+    diag_correct = [r for r in diag_scored if r["diagnosis_accuracy"] is True]
+    executed = [r for r in ordered if (r.get("iteration_count") or 0) > 0]
+    mean_iters = _mean_std([r["iteration_count"] for r in executed])[0]
+    mean_tools = _mean_std([r.get("total_tool_calls", 0) for r in executed])[0]
+    representative = ordered[0] if ordered else {}
     return {
-        "n_runs": len(runs),
-        "outcome": first_run["outcome"],
-        "setup_error": first_run.get("setup_error"),
-        "forbidden_action_violations": first_run.get("forbidden_action_violations"),
-        "success_rate": len(successes) / len(runs) if runs else 0.0,
+        "n_runs": len(ordered),
+        "outcome": representative.get("outcome"),
+        "setup_error": representative.get("setup_error"),
+        "forbidden_action_violations": representative.get(
+            "forbidden_action_violations"
+        ),
+        "per_seed": [
+            {"seed": r.get("seed"), "outcome": r.get("outcome", "")} for r in ordered
+        ],
+        "passed": len(successes),
+        "n_seeds": len(ordered),
+        "diag_correct": len(diag_correct),
+        "diag_total": len(diag_scored),
+        "success_rate": len(successes) / len(ordered) if ordered else 0.0,
         "mean_MTTR_s": mean_mttr,
         "std_MTTR_s": std_mttr,
+        "mean_iteration_count": mean_iters,
+        "mean_tool_calls": mean_tools,
     }
 
 
@@ -321,10 +360,26 @@ def aggregate_runs(
         layer = _layer_for_scenario(scenarios_dir, scenario)
         escalation[scenario] = _summarize_escalation(runs, layer)
 
+    n_planned_runs = (
+        len(planned_scenarios) * _seed_count(scenario_summary)
+        if planned_scenarios
+        else len(records)
+    )
+    run_buckets = _count_buckets(records, n_planned=n_planned_runs)
+    scenarios_passing_all = sum(
+        1
+        for row in scenario_summary.values()
+        if row.get("n_seeds", 0) > 0 and row["passed"] == row["n_seeds"]
+    )
+
     return {
         "by_model": model_summary,
         "by_scenario": scenario_summary,
         "escalation": escalation,
+        "run_buckets": run_buckets,
+        "n_runs": len(records),
+        "n_planned_runs": n_planned_runs,
+        "scenarios_passing_all_seeds": scenarios_passing_all,
         "totals": {
             "n": len(records),
             "n_models": len(by_model),
@@ -332,6 +387,106 @@ def aggregate_runs(
         },
         "planned_scenarios": planned_scenarios,
     }
+
+
+def _ordered_scenario_keys(by_scenario: dict, planned: list[str]) -> list[str]:
+    scenario_keys = planned if planned else sorted(by_scenario)
+    ordered: list[str] = []
+    for group in _GROUP_ORDER:
+        ordered.extend(s for s in scenario_keys if _scenario_group(s) == group)
+    for s in scenario_keys:
+        if s not in ordered:
+            ordered.append(s)
+    return ordered
+
+
+def _seed_count(by_scenario: dict) -> int:
+    counts = [row.get("n_seeds", row.get("n_runs", 0)) for row in by_scenario.values()]
+    return max(counts) if counts else 1
+
+
+def _mttr_cell(row: dict) -> str:
+    mean = row.get("mean_MTTR_s")
+    if mean is None:
+        return "—"
+    std = row.get("std_MTTR_s")
+    if std is None:
+        return f"{mean:.0f}"
+    return f"{mean:.0f} ± {std:.0f}"
+
+
+def _diag_cell(row: dict) -> str:
+    total = row.get("diag_total", 0)
+    if not total:
+        return "—"
+    return f"{row.get('diag_correct', 0)}/{total}"
+
+
+def _per_seed_strip(row: dict, n_seeds: int) -> str:
+    tokens = [_outcome_token(s.get("outcome", "")) for s in row.get("per_seed", [])]
+    tokens += ["—"] * (n_seeds - len(tokens))
+    return " ".join(tokens)
+
+
+def _scenario_table_lines(
+    by_scenario: dict, planned: list[str], n_seeds: int
+) -> list[str]:
+    seed_header = " ".join(f"s{i}" for i in range(1, n_seeds + 1))
+    lines = [
+        f"| scenario | pass | {seed_header} | MTTR mean±std | diag | iters | tools |",
+        "|---|---:|---|---:|---:|---:|---:|",
+    ]
+    ordered = _ordered_scenario_keys(by_scenario, planned)
+    empty_strip = " ".join("—" for _ in range(n_seeds))
+    for s in ordered:
+        row = by_scenario.get(s)
+        if row is None:
+            lines.append(f"| {s} | no data | {empty_strip} | — | — | — | — |")
+            continue
+        lines.append(
+            f"| {s} | {row.get('passed', 0)}/{row.get('n_seeds', 0)}"
+            f" | {_per_seed_strip(row, n_seeds)}"
+            f" | {_mttr_cell(row)} | {_diag_cell(row)}"
+            f" | {_fmt_mean(row.get('mean_iteration_count'))}"
+            f" | {_fmt_mean(row.get('mean_tool_calls'))} |"
+        )
+    return lines
+
+
+def _grouped_scenario_table_lines(by_scenario: dict, planned: list[str]) -> list[str]:
+    n_seeds = _seed_count(by_scenario)
+    ordered = _ordered_scenario_keys(by_scenario, planned)
+    lines: list[str] = []
+    for group in _GROUP_ORDER:
+        members = [s for s in ordered if _scenario_group(s) == group]
+        if not members:
+            continue
+        subset = {s: by_scenario.get(s) for s in members}
+        lines.append(f"#### {_GROUP_LABELS[group]}")
+        lines.append("")
+        lines += _scenario_table_lines(subset, members, n_seeds)
+        lines.append("")
+        lines.append(_OUTCOME_TOKEN_LEGEND)
+        lines.append("")
+    return lines
+
+
+def _bucket_rollup_lines(
+    counts: dict[str, int],
+    n_runs: int,
+    scenarios_passing_all: int,
+    n_scenarios: int,
+) -> list[str]:
+    return [
+        f"{counts['passed']}/{n_runs} runs passed, "
+        f"{counts['agent-failed']} agent-failed, "
+        f"{counts['infra-error']} infra-error, "
+        f"{counts['out-of-scope']} out-of-scope, "
+        f"{counts['gate-uncertain']} gate-uncertain, "
+        f"{counts['awaiting-review']} awaiting-review, "
+        f"{counts['not-run']} not-run",
+        f"{scenarios_passing_all}/{n_scenarios} scenarios passed all seeds",
+    ]
 
 
 def write_report(summary: dict[str, Any], output_dir: Path) -> None:
@@ -375,42 +530,15 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     lines.append("")
     by_scenario = summary["by_scenario"]
     planned: list[str] = summary.get("planned_scenarios") or []
-    n_total = len(planned) if planned else len(by_scenario)
-    bucket_counts = _count_buckets(by_scenario.values(), n_planned=n_total)
-    lines.append(
-        f"{bucket_counts['passed']}/{n_total} passed, "
-        f"{bucket_counts['out-of-scope']}/{n_total} out-of-scope, "
-        f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
-        f"{bucket_counts['infra-error']}/{n_total} infra-error, "
-        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain, "
-        f"{bucket_counts['awaiting-review']}/{n_total} awaiting-review, "
-        f"{bucket_counts['not-run']}/{n_total} not-run"
+    counts = summary.get("run_buckets") or _count_buckets(by_scenario.values())
+    lines += _bucket_rollup_lines(
+        counts,
+        summary.get("n_runs", len(by_scenario)),
+        summary.get("scenarios_passing_all_seeds", 0),
+        summary["totals"]["n_scenarios"],
     )
     lines.append("")
-    lines.append(
-        "| Scenario | N | Outcome | Success Rate | Mean MTTR (s) | Std MTTR (s) |"
-    )
-    lines.append("|---|---:|---|---:|---:|---:|")
-    scenario_keys = planned if planned else sorted(by_scenario)
-    ordered_scenarios: list[str] = []
-    for group in _GROUP_ORDER:
-        ordered_scenarios.extend(
-            s for s in scenario_keys if _scenario_group(s) == group
-        )
-    for s in scenario_keys:
-        if s not in ordered_scenarios:
-            ordered_scenarios.append(s)
-    for s in ordered_scenarios:
-        row = by_scenario.get(s)
-        if row is None:
-            lines.append(f"| {s} | no data | — | — | — | — |")
-        else:
-            lines.append(
-                f"| {s} | {row['n_runs']} | {row.get('outcome', '-')}"
-                f" | {row['success_rate']:.2f} | "
-                f"{_fmt(row['mean_MTTR_s'])} | {_fmt(row['std_MTTR_s'])} |"
-            )
-    lines.append("")
+    lines += _grouped_scenario_table_lines(by_scenario, planned)
 
     lines.append("## Cross-Layer Escalation Accuracy")
     lines.append("")
@@ -457,18 +585,26 @@ def write_step_summary(
         (output_dir / "step_summary.md").write_text("No run data available.\n")
         return
 
-    by_group: dict[str, dict[str, dict | None]] = {}
+    by_scenario_runs: dict[str, list[dict]] = {}
     for r in records:
-        g = _scenario_group(r["scenario"])
-        by_group.setdefault(g, {})[r["scenario"]] = r
+        by_scenario_runs.setdefault(r["scenario"], []).append(r)
+    by_scenario = {
+        sid: _summarize_scenario(runs) for sid, runs in by_scenario_runs.items()
+    }
 
+    planned: list[str] = []
     if scenarios_dir is not None:
-        for sid in (p.name for p in sorted(scenarios_dir.iterdir()) if p.is_dir()):
-            g = _scenario_group(sid)
-            by_group.setdefault(g, {}).setdefault(sid, None)
+        planned = [p.name for p in sorted(scenarios_dir.iterdir()) if p.is_dir()]
 
-    n_total = sum(len(scs) for scs in by_group.values())
-    bucket_counts = _count_buckets(records, n_planned=n_total)
+    n_planned_runs = (
+        len(planned) * _seed_count(by_scenario) if planned else len(records)
+    )
+    counts = _count_buckets(records, n_planned=n_planned_runs)
+    scenarios_passing_all = sum(
+        1
+        for row in by_scenario.values()
+        if row.get("n_seeds", 0) > 0 and row["passed"] == row["n_seeds"]
+    )
 
     model = records[0]["model"]
     git_sha = records[0].get("git_sha7", "")
@@ -480,53 +616,12 @@ def write_step_summary(
     if date:
         header_parts.append(f"({date})")
 
-    lines: list[str] = [
-        f"### {' '.join(header_parts)}",
-        "",
-        f"{bucket_counts['passed']}/{n_total} passed, "
-        f"{bucket_counts['out-of-scope']}/{n_total} out-of-scope, "
-        f"{bucket_counts['agent-failed']}/{n_total} agent-failed, "
-        f"{bucket_counts['infra-error']}/{n_total} infra-error, "
-        f"{bucket_counts['gate-uncertain']}/{n_total} gate-uncertain, "
-        f"{bucket_counts['awaiting-review']}/{n_total} awaiting-review, "
-        f"{bucket_counts['not-run']}/{n_total} not-run",
-        "",
-    ]
-
-    for group in _GROUP_ORDER:
-        if group not in by_group:
-            continue
-        scenarios = by_group[group]
-        lines += [
-            f"#### {_GROUP_LABELS[group]}",
-            "",
-            "| scenario | outcome | remediated | diagnosis"
-            " | MTTR (s) | iterations | tool calls |",
-            "|----------|---------|------------|-----------|----------:|----------:|----------:|",
-        ]
-        for sid in sorted(scenarios):
-            r = scenarios[sid]
-            if r is None:
-                lines.append(f"| {sid} | no data | — | — | — | — | — |")
-                continue
-            outcome_cell = r["outcome"]
-            remediated_cell = "yes" if r.get("success_rate") else "no"
-            diag = r.get("diagnosis_accuracy")
-            if diag is True:
-                diag_cell = "correct"
-            elif diag is False:
-                diag_cell = "incorrect"
-            else:
-                diag_cell = "—"
-            mttr = r.get("MTTR_s")
-            mttr_cell = f"{mttr:.0f}" if isinstance(mttr, (int, float)) else "—"
-            iters = r.get("iteration_count", "—")
-            tools = r.get("total_tool_calls", "—")
-            lines.append(
-                f"| {sid} | {outcome_cell} | {remediated_cell} | {diag_cell}"
-                f" | {mttr_cell} | {iters} | {tools} |"
-            )
-        lines.append("")
+    lines: list[str] = [f"### {' '.join(header_parts)}", ""]
+    lines += _bucket_rollup_lines(
+        counts, len(records), scenarios_passing_all, len(by_scenario)
+    )
+    lines.append("")
+    lines += _grouped_scenario_table_lines(by_scenario, planned)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "step_summary.md").write_text("\n".join(lines) + "\n")
@@ -538,6 +633,12 @@ def _fmt(v: Any) -> str:
     if isinstance(v, float):
         return f"{v:.2f}"
     return str(v)
+
+
+def _fmt_mean(v: float | None) -> str:
+    if v is None:
+        return "—"
+    return f"{v:.0f}"
 
 
 def _fmt_diag(ratio: float | None, n: int | None) -> str:
