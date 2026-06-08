@@ -20,7 +20,7 @@ spec:
         image: nginx:stable
         env:
         - name: REQUIRED_API_BASE
-          value: ''
+          value: "http://localhost:8080"  # Changed from empty string to a valid default
         readinessProbe:
           httpGet:
             path: /healthz
