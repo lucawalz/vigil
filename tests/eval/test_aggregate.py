@@ -510,7 +510,7 @@ def test_write_report_includes_per_row_outcome_literal_and_rollup(
 
     rollup_pattern = (
         r"\d+/\d+ runs passed,\s*\d+ agent-failed,\s*\d+ infra-error,"
-        r"\s*\d+ out-of-scope,\s*\d+ gate-uncertain,"
+        r"\s*\d+ gate-uncertain,"
         r"\s*\d+ awaiting-review,\s*\d+ not-run"
     )
     assert re.search(rollup_pattern, report), (
@@ -566,7 +566,7 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
 
     rollup_pattern = (
         r"\d+/\d+ runs passed,\s*\d+ agent-failed,\s*\d+ infra-error,"
-        r"\s*\d+ out-of-scope,\s*\d+ gate-uncertain,"
+        r"\s*\d+ gate-uncertain,"
         r"\s*\d+ awaiting-review,\s*\d+ not-run"
     )
     assert re.search(rollup_pattern, summary_text), (
@@ -575,7 +575,7 @@ def test_write_step_summary_uses_raw_literal_and_bucket_rollup(
     assert re.search(r"\d+/\d+ scenarios passed all seeds", summary_text)
 
 
-def test_count_buckets_out_of_scope_for_success_with_false_success_rate(
+def test_count_buckets_uncredited_success_counts_as_agent_failed(
     tmp_path: Path,
 ) -> None:
     from eval.aggregate import _count_buckets
@@ -586,12 +586,12 @@ def test_count_buckets_out_of_scope_for_success_with_false_success_rate(
         {"outcome": "flux_degraded", "success_rate": False},
     ]
     counts = _count_buckets(records)
-    assert counts["out-of-scope"] == 1
+    assert "out-of-scope" not in counts
     assert counts["passed"] == 1
-    assert counts["agent-failed"] == 1
+    assert counts["agent-failed"] == 2
 
 
-def test_count_buckets_out_of_scope_absent_when_no_forbidden_violations(
+def test_count_buckets_has_no_out_of_scope_bucket(
     tmp_path: Path,
 ) -> None:
     from eval.aggregate import _count_buckets
@@ -601,7 +601,7 @@ def test_count_buckets_out_of_scope_absent_when_no_forbidden_violations(
         {"outcome": "success", "success_rate": True},
     ]
     counts = _count_buckets(records)
-    assert counts["out-of-scope"] == 0
+    assert "out-of-scope" not in counts
     assert counts["passed"] == 2
 
 
@@ -640,8 +640,8 @@ def test_count_buckets_forbidden_violation_success_counts_as_agent_failed() -> N
         {"outcome": "success", "success_rate": False},
     ]
     counts = _count_buckets(records)
-    assert counts["agent-failed"] == 1
-    assert counts["out-of-scope"] == 1
+    assert counts["agent-failed"] == 2
+    assert "out-of-scope" not in counts
 
 
 def test_count_buckets_escalated_correct_counts_as_passed() -> None:

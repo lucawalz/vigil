@@ -95,7 +95,6 @@ def _is_agent_budget_abort(reason: str) -> bool:
 def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
     counts: dict[str, int] = {
         "passed": 0,
-        "out-of-scope": 0,
         "agent-failed": 0,
         "infra-error": 0,
         "gate-uncertain": 0,
@@ -110,10 +109,7 @@ def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
         outcome = r.get("outcome", "")
         success_rate = r.get("success_rate")
         if outcome == "success" and not success_rate:
-            if r.get("forbidden_action_violations"):
-                counts["agent-failed"] += 1
-            else:
-                counts["out-of-scope"] += 1
+            counts["agent-failed"] += 1
         elif outcome == "escalated":
             counts["passed" if success_rate else "agent-failed"] += 1
         elif outcome == "abort" and _is_agent_budget_abort(
@@ -481,7 +477,6 @@ def _bucket_rollup_lines(
         f"{counts['passed']}/{n_runs} runs passed, "
         f"{counts['agent-failed']} agent-failed, "
         f"{counts['infra-error']} infra-error, "
-        f"{counts['out-of-scope']} out-of-scope, "
         f"{counts['gate-uncertain']} gate-uncertain, "
         f"{counts['awaiting-review']} awaiting-review, "
         f"{counts['not-run']} not-run",
