@@ -1,0 +1,565 @@
+{
+  "by_model": {
+    "qwen3.5:cloud": {
+      "n_runs": 39,
+      "n_attempts": 39,
+      "success_rate": 0.7948717948717948,
+      "success_rate_given_attempt": 0.7948717948717948,
+      "mean_MTTR_s": 271.0020277030645,
+      "std_MTTR_s": 136.3554618170573,
+      "diagnosis_accuracy": 0.7948717948717948,
+      "diag_n": 39,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.05128205128205128,
+      "rollback_success_rate": 1.0,
+      "n_eligible": 39,
+      "mean_input_tokens": 130572.41025641025,
+      "mean_output_tokens": 5089.025641025641,
+      "mean_tool_calls": 11.820512820512821,
+      "mean_iteration_count": 6.282051282051282
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 262.53617093,
+      "std_MTTR_s": 34.25469995760852,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 12.333333333333334
+    },
+    "k8s-2g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 353.1179418556667,
+      "std_MTTR_s": 91.8379301989859,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 14
+    },
+    "k8s-3g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 350.8063118673333,
+      "std_MTTR_s": 73.16211310626429,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 15.333333333333334
+    },
+    "k8s-4g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 280.1793711813334,
+      "std_MTTR_s": 0.9985284252413225,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 14
+    },
+    "k8s-5g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 301.18801630433336,
+      "std_MTTR_s": 27.212011305604225,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 13.666666666666666
+    },
+    "live-quota-injected": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 89.24521006966658,
+      "std_MTTR_s": 21.056963197417016,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 4.666666666666667
+    },
+    "deceptive-2": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 3,
+      "diag_correct": 0,
+      "diag_total": 3,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 3
+    },
+    "k8s-rollback-1": {
+      "n_runs": 3,
+      "outcome": "rollback_succeeded",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "rollback_succeeded",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "rollback_succeeded",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 3,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 583.1701922165,
+      "std_MTTR_s": 8.801216351025529,
+      "mean_iteration_count": 7.666666666666667,
+      "mean_tool_calls": 13
+    },
+    "os-1": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 312.523924916,
+      "std_MTTR_s": 69.80063429181509,
+      "mean_iteration_count": 4,
+      "mean_tool_calls": 21.333333333333332
+    },
+    "os-1g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 285.257208217,
+      "std_MTTR_s": 100.039690350516,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 16.666666666666668
+    },
+    "os-drift-sysctl": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 68.30322545733338,
+      "std_MTTR_s": 40.960019311825754,
+      "mean_iteration_count": 4,
+      "mean_tool_calls": 6
+    },
+    "os-stale-generation": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 3,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 162.625165983,
+      "std_MTTR_s": 56.80301528518849,
+      "mean_iteration_count": 3,
+      "mean_tool_calls": 15
+    },
+    "disk-pressure": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 3,
+      "diag_correct": 0,
+      "diag_total": 3,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 4.666666666666667
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 3,
+      "total": 3,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 3,
+          "total": 3
+        }
+      }
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 3,
+      "total": 3,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 3,
+          "total": 3
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 3,
+      "total": 3,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 3,
+          "total": 3
+        }
+      }
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6666666666666666,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 2,
+          "total": 3
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 0,
+      "total": 3,
+      "accuracy": 0.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 0,
+          "total": 3
+        }
+      }
+    }
+  },
+  "run_buckets": {
+    "passed": 31,
+    "agent-failed": 8,
+    "infra-error": 0,
+    "gate-uncertain": 0,
+    "awaiting-review": 0,
+    "not-run": 0
+  },
+  "n_runs": 39,
+  "n_planned_runs": 39,
+  "scenarios_passing_all_seeds": 9,
+  "totals": {
+    "n": 39,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
