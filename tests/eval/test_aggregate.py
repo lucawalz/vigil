@@ -1116,6 +1116,39 @@ def test_aggregated_row_mttr_strip_and_diag_denominator(tmp_path: Path) -> None:
     assert " 1/2 " in report
 
 
+def test_scenario_mttr_averages_successful_runs_only(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-mttr", "k8s")
+
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-mttr",
+        seed=1,
+        outcome="success",
+        success_rate=True,
+        mttr=100.0,
+    )
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-mttr",
+        seed=2,
+        outcome="flux_degraded",
+        success_rate=False,
+        mttr=900.0,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    row = summary["by_scenario"]["k8s-mttr"]
+    assert row["mean_MTTR_s"] == 100.0
+
+
 def test_single_seed_backward_compat_renders_one_token(tmp_path: Path) -> None:
     from eval.aggregate import aggregate_runs, write_report
 

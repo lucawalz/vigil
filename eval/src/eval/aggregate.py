@@ -269,7 +269,11 @@ def _summarize_model(runs: list[dict]) -> dict:
 def _summarize_scenario(runs: list[dict]) -> dict:
     ordered = sorted(runs, key=_seed_sort_key)
     successes = [r for r in ordered if r.get("success_rate")]
-    mttrs = [r["MTTR_s"] for r in ordered if isinstance(r.get("MTTR_s"), (int, float))]
+    mttrs = [
+        r["MTTR_s"]
+        for r in ordered
+        if isinstance(r.get("MTTR_s"), (int, float)) and r.get("success_rate")
+    ]
     mean_mttr, std_mttr = _mean_std(mttrs)
     diag_scored = [r for r in ordered if r.get("diagnosis_accuracy") is not None]
     diag_correct = [r for r in diag_scored if r["diagnosis_accuracy"] is True]
