@@ -49,8 +49,12 @@ _OUTCOME_TOKEN: dict[str, str] = {
 
 _UNKNOWN_OUTCOME_TOKEN = "??"
 
+_UNCREDITED_TOKEN = "KO"
+_CREDIT_BEARING_OUTCOMES = frozenset({"success", "rollback_succeeded"})
+
 _OUTCOME_TOKEN_LEGEND = (
-    "legend: OK success  RB rollback  ESC escalated  TO abort/timeout  SE setup_error"
+    "legend: OK success  RB rollback  ESC escalated  TO abort/timeout  "
+    "SE setup_error  KO healthy but fix not credited"
 )
 
 _CLOSED_GATE = "closed"
@@ -71,6 +75,12 @@ def _bucket_outcome(literal: str) -> str:
 
 def _outcome_token(literal: str) -> str:
     return _OUTCOME_TOKEN.get(literal, _UNKNOWN_OUTCOME_TOKEN)
+
+
+def _seed_token(outcome: str, success_rate: Any) -> str:
+    if outcome in _CREDIT_BEARING_OUTCOMES and not success_rate:
+        return _UNCREDITED_TOKEN
+    return _outcome_token(outcome)
 
 
 def _seed_sort_key(run: dict) -> str:
@@ -289,7 +299,12 @@ def _summarize_scenario(runs: list[dict]) -> dict:
             "forbidden_action_violations"
         ),
         "per_seed": [
-            {"seed": r.get("seed"), "outcome": r.get("outcome", "")} for r in ordered
+            {
+                "seed": r.get("seed"),
+                "outcome": r.get("outcome", ""),
+                "success_rate": r.get("success_rate"),
+            }
+            for r in ordered
         ],
         "passed": len(successes),
         "n_seeds": len(ordered),
@@ -423,7 +438,10 @@ def _diag_cell(row: dict) -> str:
 
 
 def _per_seed_strip(row: dict, n_seeds: int) -> str:
-    tokens = [_outcome_token(s.get("outcome", "")) for s in row.get("per_seed", [])]
+    tokens = [
+        _seed_token(s.get("outcome", ""), s.get("success_rate"))
+        for s in row.get("per_seed", [])
+    ]
     tokens += ["—"] * (n_seeds - len(tokens))
     return " ".join(tokens)
 

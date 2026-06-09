@@ -1149,6 +1149,42 @@ def test_scenario_mttr_averages_successful_runs_only(tmp_path: Path) -> None:
     assert row["mean_MTTR_s"] == 100.0
 
 
+def test_per_seed_strip_flags_uncredited_success_as_ko(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs, write_report
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    output_dir = tmp_path / "results"
+    _make_scenarios_dir(scenarios_dir, "k8s-ko", "k8s")
+
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-ko",
+        seed=1,
+        outcome="success",
+        success_rate=True,
+        mttr=10.0,
+    )
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-ko",
+        seed=2,
+        outcome="success",
+        success_rate=False,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    write_report(summary, output_dir)
+    report = (output_dir / "REPORT.md").read_text()
+
+    assert "OK KO" in report
+    assert "KO healthy but fix not credited" in report
+
+
 def test_single_seed_backward_compat_renders_one_token(tmp_path: Path) -> None:
     from eval.aggregate import aggregate_runs, write_report
 
