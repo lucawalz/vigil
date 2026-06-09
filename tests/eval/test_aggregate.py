@@ -1212,3 +1212,63 @@ def test_single_seed_backward_compat_renders_one_token(tmp_path: Path) -> None:
     assert "| s1 |" in report
     assert "| s1 s2 " not in report
     assert "| k8s-solo | 1/1 | OK | 120 |" in report
+
+
+def test_per_seed_orders_numerically_not_lexically(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-order", "k8s")
+
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-order",
+        seed=10,
+        outcome="flux_degraded",
+        success_rate=False,
+    )
+    _write_seed_run(
+        runs_dir,
+        index_path,
+        scenario="k8s-order",
+        seed=2,
+        outcome="success",
+        success_rate=True,
+        mttr=10.0,
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    row = summary["by_scenario"]["k8s-order"]
+    assert [s["seed"] for s in row["per_seed"]] == ["2", "10"]
+
+
+def test_seed_count_sizes_planned_runs_and_surfaces_lost_seed(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-lost", "k8s")
+
+    for seed in (1, 2):
+        _write_seed_run(
+            runs_dir,
+            index_path,
+            scenario="k8s-lost",
+            seed=seed,
+            outcome="success",
+            success_rate=True,
+            mttr=10.0,
+        )
+
+    inferred = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    assert inferred["run_buckets"]["not-run"] == 0
+
+    requested = aggregate_runs(runs_dir, index_path, scenarios_dir, seed_count=3)
+    assert requested["n_planned_runs"] == 3
+    assert requested["run_buckets"]["not-run"] == 1

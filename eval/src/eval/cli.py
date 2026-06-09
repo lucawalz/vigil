@@ -432,11 +432,20 @@ def _prune_failures(failures_path: Path, succeeded: set[tuple[str, int, str]]) -
     default="eval/results",
     type=click.Path(file_okay=False, path_type=Path),
 )
+@click.option(
+    "--seed-count",
+    default=None,
+    type=int,
+    envvar="VIGIL_SEED_COUNT",
+    show_envvar=True,
+    help="Seeds requested per scenario; sizes the planned-runs denominator.",
+)
 def aggregate_cmd(
     runs_dir: Path | None,
     index: str | None,
     scenarios_dir: Path,
     output_dir: Path,
+    seed_count: int | None,
 ) -> None:
     """Read completed run JSONs and produce summary.json, REPORT.md,
     and step_summary.md."""
@@ -446,9 +455,9 @@ def aggregate_cmd(
     index_path = Path(index) if index else (runs_dir.parent / "runs_index.jsonl")
     output_dir = Path(output_dir)
 
-    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir, seed_count)
     write_report(summary, output_dir)
-    write_step_summary(runs_dir, index_path, output_dir, scenarios_dir)
+    write_step_summary(runs_dir, index_path, output_dir, scenarios_dir, seed_count)
     click.echo(
         f"Written: {output_dir}/summary.json,"
         f" {output_dir}/REPORT.md, {output_dir}/step_summary.md"

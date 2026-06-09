@@ -339,7 +339,7 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Aggregate
-        run: uv run vigil-eval aggregate
+        run: uv run vigil-eval aggregate --seed-count ${{ inputs.seed_count }}
 
       - name: Publish results to step summary
         run: cat eval/results/step_summary.md >> $GITHUB_STEP_SUMMARY

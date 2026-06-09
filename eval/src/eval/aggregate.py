@@ -87,6 +87,15 @@ def _seed_sort_key(run: dict) -> str:
     return str(run.get("seed", ""))
 
 
+def _sort_runs_by_seed(runs: list[dict]) -> list[dict]:
+    seeds = [r.get("seed", "") for r in runs]
+    try:
+        int_seeds = [int(s) for s in seeds]
+    except (TypeError, ValueError):
+        return sorted(runs, key=_seed_sort_key)
+    return [run for _, run in sorted(zip(int_seeds, runs), key=lambda pair: pair[0])]
+
+
 def _bucket_gate_failed(record: dict) -> str:
     if (
         record.get("gate_status") == _CLOSED_GATE
@@ -277,7 +286,7 @@ def _summarize_model(runs: list[dict]) -> dict:
 
 
 def _summarize_scenario(runs: list[dict]) -> dict:
-    ordered = sorted(runs, key=_seed_sort_key)
+    ordered = _sort_runs_by_seed(runs)
     successes = [r for r in ordered if r.get("success_rate")]
     mttrs = [
         r["MTTR_s"]
@@ -339,8 +348,23 @@ def _summarize_escalation(runs: list[dict], layer: str | None) -> dict:
     }
 
 
+def _planned_run_count(
+    planned_scenarios: list[str],
+    by_scenario: dict,
+    n_records: int,
+    seed_count: int | None,
+) -> int:
+    if not planned_scenarios:
+        return n_records
+    seeds_per_scenario = seed_count if seed_count else _seed_count(by_scenario)
+    return len(planned_scenarios) * seeds_per_scenario
+
+
 def aggregate_runs(
-    runs_dir: Path, index_path: Path, scenarios_dir: Path
+    runs_dir: Path,
+    index_path: Path,
+    scenarios_dir: Path,
+    seed_count: int | None = None,
 ) -> dict[str, Any]:
     """Compute per-model and per-scenario metric tables plus escalation accuracy."""
     records = _load_records(runs_dir, index_path)
@@ -375,10 +399,8 @@ def aggregate_runs(
         layer = _layer_for_scenario(scenarios_dir, scenario)
         escalation[scenario] = _summarize_escalation(runs, layer)
 
-    n_planned_runs = (
-        len(planned_scenarios) * _seed_count(scenario_summary)
-        if planned_scenarios
-        else len(records)
+    n_planned_runs = _planned_run_count(
+        planned_scenarios, scenario_summary, len(records), seed_count
     )
     run_buckets = _count_buckets(records, n_planned=n_planned_runs)
     scenarios_passing_all = sum(
@@ -592,6 +614,7 @@ def write_step_summary(
     index_path: Path,
     output_dir: Path,
     scenarios_dir: Path | None = None,
+    seed_count: int | None = None,
 ) -> None:
     records = _load_records(runs_dir, index_path)
     if scenarios_dir is not None:
@@ -613,9 +636,7 @@ def write_step_summary(
     if scenarios_dir is not None:
         planned = [p.name for p in sorted(scenarios_dir.iterdir()) if p.is_dir()]
 
-    n_planned_runs = (
-        len(planned) * _seed_count(by_scenario) if planned else len(records)
-    )
+    n_planned_runs = _planned_run_count(planned, by_scenario, len(records), seed_count)
     counts = _count_buckets(records, n_planned=n_planned_runs)
     scenarios_passing_all = sum(
         1
