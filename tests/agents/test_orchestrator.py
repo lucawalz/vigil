@@ -176,6 +176,7 @@ async def test_run_orchestration_happy_path(
     assert isinstance(record, RunRecord)
     assert record.outcome == "success"
     assert record.success_rate is True
+    assert record.remediation_success is True
     assert record.rollback_triggered is False
     assert record.destructive_repair is False
     assert record.total_input_tokens == 300
@@ -360,6 +361,7 @@ async def test_run_orchestration_record_has_all_eval_07_fields(
     assert record.total_output_tokens == 130
     required = {
         "success_rate",
+        "remediation_success",
         "diagnosis_accuracy",
         "MTTR_s",
         "destructive_repair",
@@ -1132,6 +1134,7 @@ async def test_degraded_without_merge_skips_rollback(
         git_mcp=mock_git_mcp,
     )
     assert record.outcome == "flux_degraded"
+    assert record.remediation_success is False
     assert record.rollback_triggered is False
     assert record.rollback_success is None
 

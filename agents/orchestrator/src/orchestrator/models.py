@@ -49,6 +49,7 @@ class RunRecord(BaseModel):
         "commit_generation_failed",
     ]
     success_rate: bool | None
+    remediation_success: bool | None = None
     diagnosis_accuracy: bool | None
     MTTR_s: float | None
     destructive_repair: bool

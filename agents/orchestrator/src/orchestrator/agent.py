@@ -808,6 +808,7 @@ async def _finalize_run(
             and accuracy is not False
             and outcome != _COMMIT_GENERATION_FAILED_OUTCOME
         ),
+        remediation_success=final_remediation_result.success,
         diagnosis_accuracy=accuracy,
         MTTR_s=mttr_s,
         destructive_repair=_compute_destructive_repair(
