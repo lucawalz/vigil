@@ -1,0 +1,525 @@
+{
+  "by_model": {
+    "qwen3.5:cloud": {
+      "n_runs": 31,
+      "n_attempts": 31,
+      "success_rate": 0.6451612903225806,
+      "success_rate_given_attempt": 0.6451612903225806,
+      "mean_MTTR_s": 209.0478294431,
+      "std_MTTR_s": 94.77492723590274,
+      "diagnosis_accuracy": 0.6666666666666666,
+      "diag_n": 30,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.0,
+      "rollback_success_rate": null,
+      "n_eligible": 31,
+      "mean_input_tokens": 113587.6129032258,
+      "mean_output_tokens": 4603.935483870968,
+      "mean_tool_calls": 10.483870967741936,
+      "mean_iteration_count": 5.129032258064516
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 2,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 2,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 213.214918124,
+      "std_MTTR_s": 12.947003457720747,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 11.5
+    },
+    "k8s-2g": {
+      "n_runs": 2,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 2,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 251.26379861150002,
+      "std_MTTR_s": 39.46297339232883,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 13
+    },
+    "k8s-3g": {
+      "n_runs": 2,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 2,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 251.99323503749997,
+      "std_MTTR_s": 43.77844341211762,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 14.5
+    },
+    "k8s-4g": {
+      "n_runs": 2,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 2,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 204.08510404100002,
+      "std_MTTR_s": 23.363430411851045,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 13
+    },
+    "k8s-5g": {
+      "n_runs": 2,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 2,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 202.07242570100016,
+      "std_MTTR_s": 16.086320020736974,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 15.5
+    },
+    "live-quota-injected": {
+      "n_runs": 2,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 2,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 133.87273065449995,
+      "std_MTTR_s": 58.41597511649757,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 6
+    },
+    "deceptive-2": {
+      "n_runs": 2,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 2,
+      "diag_correct": 0,
+      "diag_total": 2,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 3.5
+    },
+    "k8s-rollback-1": {
+      "n_runs": 2,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 2,
+      "diag_correct": 1,
+      "diag_total": 2,
+      "success_rate": 0.5,
+      "mean_MTTR_s": 342.4058862259999,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 5.5,
+      "mean_tool_calls": 10
+    },
+    "os-1": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": 2,
+          "outcome": "setup_error",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 2,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 257.03547612500006,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 2.5,
+      "mean_tool_calls": 16.5
+    },
+    "os-1g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 3,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 319.09283582800003,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 6,
+      "mean_tool_calls": 12.333333333333334
+    },
+    "os-drift-sysctl": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 78.93539949399997,
+      "std_MTTR_s": 31.593236454458587,
+      "mean_iteration_count": 4,
+      "mean_tool_calls": 6.333333333333333
+    },
+    "os-stale-generation": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 3,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 421.56368876600004,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 2,
+      "mean_tool_calls": 15
+    },
+    "disk-pressure": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 3,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 91.04807909600004,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 5.666666666666667
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 1,
+      "total": 2,
+      "accuracy": 0.5,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 2
+        }
+      }
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 1,
+      "total": 3,
+      "accuracy": 0.3333333333333333,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 3
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 3,
+      "total": 3,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 3,
+          "total": 3
+        }
+      }
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 1,
+      "total": 3,
+      "accuracy": 0.3333333333333333,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 3
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 1,
+      "total": 3,
+      "accuracy": 0.3333333333333333,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 3
+        }
+      }
+    }
+  },
+  "run_buckets": {
+    "passed": 20,
+    "agent-failed": 10,
+    "infra-error": 1,
+    "gate-uncertain": 0,
+    "awaiting-review": 0,
+    "not-run": 8
+  },
+  "n_runs": 31,
+  "n_planned_runs": 39,
+  "scenarios_passing_all_seeds": 7,
+  "totals": {
+    "n": 31,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
