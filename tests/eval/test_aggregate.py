@@ -678,7 +678,9 @@ def test_count_buckets_retry_exhausted_abort_counts_as_agent_failed() -> None:
     records = [
         {
             "outcome": "abort",
-            "setup_error": "retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+            "setup_error": (
+                "retry_exhausted:diagnosis: Exceeded maximum output retries (2)"
+            ),
         },
         {"outcome": "abort", "setup_error": "retry_exhausted:remediation: boom"},
         {"outcome": "abort", "setup_error": "baseline_unavailable"},
