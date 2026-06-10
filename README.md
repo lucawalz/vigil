@@ -32,44 +32,53 @@ This positioning lets the orchestrator treat remediation as reversible by constr
 ## Architecture
 
 ```mermaid
-flowchart TB
-  subgraph src[Alert sources]
-    AM[Alertmanager]
-    PR[Prometheus]
+%%{init: {'flowchart': {'curve': 'linear', 'rankSpacing': 70, 'nodeSpacing': 45}}}%%
+flowchart LR
+  AM["Alertmanager"] --> OR["Orchestrator"]
+  PR["Prometheus"] --> OR
+
+  subgraph ag["Agents"]
+    direction TB
+    DG["Diagnosis"]
+    RM["Remediation"]
+    WD["Watchdog"]
   end
-  subgraph ag[Python agents - Pydantic AI]
-    OR[Orchestrator - FastAPI, no LLM]
-    DG[Diagnosis - read only]
-    RM[Remediation]
-    WD[Watchdog - deterministic, no LLM]
+
+  OR --> DG
+  DG --> RM
+  OR --> WD
+
+  DG -. read .-> MX["MCP tool surface"]
+  WD -. read .-> MX
+  RM -->|mutate| MX
+
+  subgraph mc["Go MCP servers"]
+    direction TB
+    KM["kubectl-mcp"]
+    FM["flux-mcp"]
+    GM["git-mcp"]
+    NM["nixos-mcp"]
   end
-  subgraph mc[Go MCP servers]
-    KM[kubectl-mcp]
-    FM[flux-mcp]
-    GM[git-mcp]
-    NM[nixos-mcp]
+
+  MX --> KM
+  MX --> FM
+  MX --> GM
+  MX --> NM
+
+  subgraph cl["Cluster and infra"]
+    direction TB
+    K8["K3s API"]
+    GT["Git + Flux GitOps"]
+    NX["NixOS hosts"]
   end
-  subgraph cl[Cluster and infra]
-    K8[K3s API]
-    GT[Git repo - Flux GitOps]
-    NX[NixOS generations]
-  end
-  AM -->|webhook| OR
-  PR -->|poll| OR
-  OR --> DG & RM & WD
-  DG -. read .-> mc
-  RM -->|mutate| GM & FM & NM
-  WD -. read .-> KM & FM & NM
+
   KM --> K8
   FM --> GT
   GM --> GT
   NM --> NX
   GT -->|reconcile| K8
+
   OR -. rollback .-> RM
-  subgraph ev[Eval harness]
-    HZ[Scenario inject] -->|webhook| OR
-    OR --> RC[RunRecord JSON]
-  end
 ```
 
 The orchestrator receives an alert, runs diagnosis against the four read-only MCP servers, then dispatches remediation and the watchdog. The watchdog only observes; the orchestrator owns the rollback decision and issues it when the watchdog reports degraded health.
