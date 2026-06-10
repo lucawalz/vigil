@@ -49,3 +49,19 @@ updates:
         update-types:
           - patch
           - minor
+
+  - package-ecosystem: terraform
+    directory: /infra/terraform
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    open-pull-requests-limit: 10
+    rebase-strategy: auto
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
