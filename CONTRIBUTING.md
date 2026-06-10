@@ -83,7 +83,7 @@ chore(eval): bump ollama cloud model version to latest release
 - **Meaningful names**: names reveal intent without needing a comment
 - **No magic numbers**: replace bare literals with named constants
 - **Fail fast**: validate inputs at the earliest possible point
-- **Comments**: add only for non-obvious WHY, never to explain WHAT
+- **Comments**: add only where the intent is not obvious from the code itself, one line max
 
 ## Architectural decisions
 
