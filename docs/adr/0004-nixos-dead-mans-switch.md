@@ -41,7 +41,7 @@ Chosen option: "NixOS dead-man's switch", because it makes OS repair attempts in
 
 - Good: Any OS repair attempt is inherently reversible; the worst case is an unplanned reboot, not a permanently broken node
 - Good: Boot safety is guaranteed by NixOS's atomic generation model, not by application-level error handling
-- Bad: The rollback-gate window introduces mandatory latency before an OS repair can be committed (empirical timings in `docs/eval/rollback-gate-timings.md`)
+- Bad: The rollback-gate window introduces mandatory latency before an OS repair can be committed
 - Bad: This mechanism is specific to NixOS; nodes running other distributions would require a different rollback strategy
 - Bad: The Watchdog agent must complete its health assessment within the rollback-gate window
 
@@ -91,4 +91,4 @@ The decision holds as long as:
 
 ## More Information
 
-- NixOS generation model, dead-man's switch timer, and OS remediation sequence: [docs/architecture/gitops-nixos.md](../architecture/gitops-nixos.md)
+- Empirically-calibrated rollback-gate deadline: [`0012-empirically-calibrated-rollback-deadline.md`](0012-empirically-calibrated-rollback-deadline.md)

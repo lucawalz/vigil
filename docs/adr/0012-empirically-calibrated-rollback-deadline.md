@@ -23,7 +23,7 @@ The deadline must outlast the entire stage-confirm-commit budget, not raw activa
 
 - The deadline must cover the full stage-confirm-commit budget, not activation time alone. An earlier `ceil(16 × 1.5) = 24 s` derivation counted only activation and would fire mid-confirmation.
 - The Watchdog confirm window (`WATCHDOG_WINDOW_S=120 s`) is the dominant, environment-independent term in the budget
-- Stage activation (`switch-to-configuration test` on an already-built generation): ≤16 s steady-state (`docs/eval/rollback-gate-timings.md`)
+- Stage activation (`switch-to-configuration test` on an already-built generation): ≤16 s steady-state, measured across three warm-store activation runs per node on the Hetzner cluster
 - Commit (`switch-to-configuration boot`) plus Orchestrator dispatch overhead: ≤25 s
 - A single value should serve all environments: the 120 s window dominates, so the small Hetzner-vs-local activation variance (16 s vs 22 s) is absorbed by the headroom rather than requiring per-environment calibration
 - Cold-start (first activation on a fresh VM) is excluded: warm-store runs 2–3 are the steady-state scenario the gate must handle; cold starts are an infra-provisioning concern, not a per-repair concern
@@ -43,17 +43,17 @@ Chosen option: "Full-budget deadline (180 s)", because the gate must outlast the
 
 - Good: The 180 s deadline covers the full stage-confirm-commit budget; it cannot fire mid-confirmation the way the activation-only 24 s value could
 - Good: One value applies to every environment; the dominant 120 s Watchdog window makes the per-environment activation variance negligible within the headroom
-- Good: The derivation is documented in `docs/eval/rollback-gate-timings.md`; the activation-time component is re-measured when the hardware profile changes, but the deadline only moves if the Watchdog window changes
+- Good: The activation-time component is re-measured when the hardware profile changes, but the deadline only moves if the Watchdog window changes
 - Bad: A node running a broken configuration remains active for up to 180 s before the dead-man's switch reverts it; this is the cost of guaranteeing the confirm window can complete
 - Documented dependency: if `WATCHDOG_WINDOW_S` changes, `OnActiveSec` must be recomputed as ≥ window + ~60 s (activation + commit + dispatch headroom)
 
-**Validation Status:** Implemented. `OnActiveSec=180s` is derived from the 120 s Watchdog window plus the ≤16 s activation and ≤25 s commit/dispatch components documented in `docs/eval/rollback-gate-timings.md`. A single value applies to both Hetzner and local environments. End-to-end revalidation of the full stage-confirm-commit timing is pending.
+**Validation Status:** Implemented. `OnActiveSec=180s` is derived from the 120 s Watchdog window plus the ≤16 s activation and ≤25 s commit/dispatch components measured on the Hetzner cluster. A single value applies to both Hetzner and local environments. End-to-end revalidation of the full stage-confirm-commit timing is pending.
 
 ### Confirmation
 
 The decision holds as long as:
 - The Watchdog confirm window remains `WATCHDOG_WINDOW_S=120 s`; a change requires recomputing `OnActiveSec` as ≥ window + ~60 s
-- The steady-state activation time measured in `docs/eval/rollback-gate-timings.md` stays within the ≤16 s activation component the budget assumes
+- The steady-state activation time stays within the ≤16 s activation component the budget assumes
 - `rollback-gate.timer` has `OnActiveSec=180s` in the NixOS module on all cluster nodes
 
 ### Pros and Cons of the Options
@@ -82,6 +82,5 @@ The decision holds as long as:
 
 ## More Information
 
-- Timing measurements and derivation: `docs/eval/rollback-gate-timings.md`
 - NixOS dead-man's switch mechanism: `docs/adr/0004-nixos-dead-mans-switch.md`
 - Watchdog health assessment: `docs/adr/0011-deterministic-watchdog.md`

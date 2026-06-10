@@ -77,5 +77,4 @@ The decision holds as long as:
 
 ## More Information
 
-- MCP server design and tool inventory: [`../architecture/mcp-servers.md`](../architecture/mcp-servers.md)
 - MCP-only tool surface decision: [`0002-mcp-exclusive-tool-surface.md`](0002-mcp-exclusive-tool-surface.md)

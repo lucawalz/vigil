@@ -8,11 +8,11 @@ informed: []
 
 # ADR-0008: Evaluation model selection
 
-> Updated 2026-05-08: scenario set expanded from v1.0 baseline (12) to v2.0 panel (18) by adding boundary-2..4.
+> Updated 2026-06-10: scenario set consolidated to the 13-scenario panel; run-count arithmetic restated accordingly.
 
 ## Context and Problem Statement
 
-The evaluation campaign needs multiple LLMs to assess agent capability across the same 18 fault scenarios and compare open-weight models against a frontier reference. Three constraints drive model selection:
+The evaluation campaign needs multiple LLMs to assess agent capability across the same 13 fault scenarios and compare open-weight models against a frontier reference. Three constraints drive model selection:
 
 1. Models must expose an OpenAI-compatible API (per [ADR-0006](0006-openai-compatible-provider-interface.md))
 2. Models must handle multi-step tool-use reasoning over Kubernetes and NixOS diagnostics with a context window of at least 32K tokens
@@ -36,7 +36,7 @@ Groq was evaluated as a fourth option but its rate limits make it impractical fo
 
 ## Decision Outcome
 
-Chosen option: "Three-model panel: Qwen3 Coder Next + DeepSeek V3.2 + Claude Sonnet 4.6", because three models cover the open-weight tier (Qwen3, DeepSeek) plus a frontier reference (Sonnet 4.6), the inter-provider variance signal is sufficient for the thesis claim, and campaign duration remains within budget at 3 models × 18 scenarios × 3 seeds = 162 runs.
+Chosen option: "Three-model panel: Qwen3 Coder Next + DeepSeek V3.2 + Claude Sonnet 4.6", because three models cover the open-weight tier (Qwen3, DeepSeek) plus a frontier reference (Sonnet 4.6), the inter-provider variance signal is sufficient for the thesis claim, and campaign duration remains within budget at 3 models × 13 scenarios × 3 seeds = 117 runs.
 
 | Model | Provider | Tag | Context | Rationale |
 |-------|----------|-----|---------|-----------|
@@ -46,31 +46,31 @@ Chosen option: "Three-model panel: Qwen3 Coder Next + DeepSeek V3.2 + Claude Son
 
 ### Consequences
 
-- Good: 3 models × 18 scenarios × 3 seeds = 162 evaluation runs total
+- Good: 3 models × 13 scenarios × 3 seeds = 117 evaluation runs total
 - Good: All three providers expose an OpenAI-compatible endpoint; no agent code changes between runs
 - Good: Open-weight tier (Qwen3, DeepSeek) plus frontier reference (Sonnet 4.6) spans the capability range needed for the thesis claim
 - Bad: Groq is excluded from the eval campaign but documented for dev use; its rate limits preclude campaign-scale runs
 - Bad: DeepSeek V3.2's 128K context window is the binding constraint; all scenarios must fit within it
 - Bad: Claude Sonnet 4.6 run deferred to v2.0 pending Anthropic API key provisioning
 
-**Validation Status:** Pending — automated GitHub Actions campaign supersedes the v1.0 Hetzner eval baseline; final per-model run counts will be locked once the new harness produces a stable artifact.
+**Validation Status:** Partial. The open-weight tier has been evaluated across the 13-scenario campaign; the Claude Sonnet 4.6 frontier reference remains deferred pending Anthropic API key provisioning.
 
 ### Confirmation
 
-Eval campaign results in `eval/results/summary.json` record runs for `qwen3-coder-next:cloud` and `deepseek-v3.2:cloud` from the v1.0 Hetzner eval campaign. All runs use identical `run_orchestration()` code with only env-var provider changes.
+The eval campaign results published to the `docs/eval-results` branch record open-weight runs for `qwen3-coder-next:cloud` across the 13 scenarios. All runs use identical `run_orchestration()` code with only env-var provider changes.
 
 ### Pros and Cons of the Options
 
 #### Three-model panel: Qwen3 Coder Next + DeepSeek V3.2 + Claude Sonnet 4.6
 
 - Good: Covers open-weight and frontier tiers with three models; sufficient to support the thesis claim about open-weight viability
-- Good: Campaign duration is bounded: two models complete in the v1.0 campaign; the third is deferred without blocking thesis results
+- Good: Campaign duration is bounded: the two open-weight models complete on the automated harness; the frontier reference is deferred without blocking thesis results
 - Bad: Panel depth is limited; a fourth model (e.g. Llama 3.3) would add signal but multiplies campaign duration and cost
 
 #### Groq-only
 
 - Good: High token throughput; useful for rapid development iteration without rate-limit delays
-- Bad: Groq's free-tier rate limits (per-minute token caps) would fragment a 108-run campaign into hundreds of resume cycles, breaking the campaign's wall-clock determinism and complicating run-id traceability. Useful for dev iteration; impractical as the campaign's sole provider.
+- Bad: Groq's free-tier rate limits (per-minute token caps) would fragment a 117-run campaign into hundreds of resume cycles, breaking the campaign's wall-clock determinism and complicating run-id traceability. Useful for dev iteration; impractical as the campaign's sole provider.
 
 #### Single-provider Anthropic-only
 
@@ -85,5 +85,4 @@ Eval campaign results in `eval/results/summary.json` record runs for `qwen3-code
 ## More Information
 
 - Provider interface decision: [ADR-0006](0006-openai-compatible-provider-interface.md)
-- Eval guide and campaign results: `docs/eval/guide.md` (forthcoming)
-- Current results: `eval/results/summary.json`, `eval/results/REPORT.md`
+- Campaign results: published to the `docs/eval-results` branch

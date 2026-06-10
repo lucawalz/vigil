@@ -74,6 +74,5 @@ The decision holds as long as:
 
 ## More Information
 
-- Agent design rationale: [`../architecture/agent-design.md`](../architecture/agent-design.md)
 - MCP-only tool surface decision: [`0002-mcp-exclusive-tool-surface.md`](0002-mcp-exclusive-tool-surface.md)
 - OpenAI-compatible provider interface decision: [`0006-openai-compatible-provider-interface.md`](0006-openai-compatible-provider-interface.md)

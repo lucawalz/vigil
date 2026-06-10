@@ -47,7 +47,7 @@ Chosen option: "OpenAI-compatible REST interface via Pydantic AI `OpenAIChatMode
 
 ### Confirmation
 
-The `OpenAIChatModel` configuration is verified in `agents/common/src/common/provider.py`. The env vars `OLLAMA_BASE_URL`, `LLM_MODEL_NAME`, and `OLLAMA_API_KEY` are the complete configuration surface for the OpenAI-compat path. Eval campaign results show runs from two providers in `eval/results/summary.json` with identical `run_orchestration()` code paths.
+The `OpenAIChatModel` configuration is verified in `agents/common/src/common/provider.py`. The env vars `OLLAMA_BASE_URL`, `LLM_MODEL_NAME`, and `OLLAMA_API_KEY` are the complete configuration surface for the OpenAI-compat path. The eval campaign results published to the `docs/eval-results` branch show runs from two providers with identical `run_orchestration()` code paths.
 
 ### Pros and Cons of the Options
 
@@ -71,4 +71,3 @@ The `OpenAIChatModel` configuration is verified in `agents/common/src/common/pro
 
 - Provider configuration implementation: `agents/common/src/common/provider.py`
 - Model selection rationale: [ADR-0008](0008-evaluation-model-selection.md)
-- Agent design and request limits: `docs/architecture/agent-design.md`

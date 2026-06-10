@@ -74,5 +74,4 @@ The decision holds as long as:
 
 ## More Information
 
-- MCP server implementation design: [`../architecture/mcp-servers.md`](../architecture/mcp-servers.md)
 - Go implementation choice: [`0003-go-mcp-servers.md`](0003-go-mcp-servers.md)

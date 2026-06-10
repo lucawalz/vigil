@@ -43,7 +43,7 @@ Chosen option: "Hetzner Cloud + Terraform + Flux v2 bootstrap", because each cam
 
 ### Confirmation
 
-Running `kubectl get nodes` after `terraform apply` shows three Ready nodes. Running `flux get kustomizations` shows `flux-system` reconciled. `eval/results/summary.json` contains runs produced against this cluster.
+Running `kubectl get nodes` after `terraform apply` shows three Ready nodes. Running `flux get kustomizations` shows `flux-system` reconciled. The eval campaign results published to the `docs/eval-results` branch contain runs produced against this cluster.
 
 ### Pros and Cons of the Options
 

@@ -40,20 +40,21 @@ The Diagnosis agent inspects both live cluster state and `chore/eval-cluster-bas
 - Good: Live-drift faults never produce a commit; in-repo drift faults never issue a bare reconcile; the structural mismatch that caused PR #77 is eliminated
 - Good: Action vocabulary is a closed enum; adding a new fault type requires categorising it into an existing quadrant, not inventing a new action class
 - Bad: Diagnosis agent must fetch both live object YAML and `chore/eval-cluster-baseline` HEAD for every fault; adds two remote reads per diagnosis, increasing latency
-- Bad: Eight g-variant scenarios increase eval campaign cost roughly proportionally to the existing scenario count
+- Bad: The g-variant scenarios increase eval campaign cost roughly proportionally to the existing scenario count
+- Bad: The K8s live-drift (`flux_reconcile`) quadrant is implemented in the action enum but has no eval scenario coverage; the campaign cannot yet score that cell empirically
 
-**Validation Status:** Pending — g-variant smoke campaign (k8s-1g..5g, os-1g..3g)
+**Validation Status:** Partial. The in-repo-drift quadrants are covered by g-variant scenarios (k8s-1g..5g for `git_commit_k8s`, os-1g for `git_commit_nix`) and exercised in the full 13-scenario campaign; the K8s live-drift (`flux_reconcile`) quadrant has no scenario coverage yet.
 
 ### Confirmation
 
 The decision holds as long as:
 
-- `eval/scenarios/k8s-{1..5}/scenario.yaml` each carry `expected_action: flux_reconcile`
+- The `DiagnosisReport.recommended_action` enum in `agents/diagnosis/src/diagnosis/models.py` carries all four actions (`flux_reconcile`, `git_commit_k8s`, `nixos_rebuild`, `git_commit_nix`)
 - `eval/scenarios/k8s-{1..5}g/scenario.yaml` each carry `expected_action: git_commit_k8s`
-- `eval/scenarios/os-{1..3}/scenario.yaml` each carry `expected_action: nixos_rebuild`
-- `eval/scenarios/os-{1..3}g/scenario.yaml` each carry `expected_action: git_commit_nix`
+- `eval/scenarios/os-1g/scenario.yaml` carries `expected_action: git_commit_nix`
+- `eval/scenarios/{os-1,os-drift-sysctl,os-stale-generation}/scenario.yaml` each carry `expected_action: nixos_rebuild`
 - No g-variant run opens a PR against `main`; `RunRecord.agent_branch` targets `chore/eval-cluster-baseline` exclusively
-- All eight smoke-run scenarios return `outcome == "success"`
+- Each g-variant scenario returns `outcome == "success"` in the campaign
 
 ### Pros and Cons of the Options
 

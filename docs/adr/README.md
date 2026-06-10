@@ -22,8 +22,6 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0014](0014-multi-adapter-model-factory.md) | Multi-adapter model factory via Pydantic AI | Accepted |
 | [0015](0015-drift-direction-classification.md) | Drift-direction classification across K8s and NixOS layers | Accepted |
 
-Architecture-level rationale that spans multiple ADRs lives in [`docs/architecture/`](../architecture/).
-
 ## Adding an ADR
 
 Create a new file `NNNN-title-in-kebab-case.md` using this template:
@@ -63,11 +61,11 @@ Chosen option: "chosen option", because [concise rationale].
 - Good: ...
 - Bad: ...
 
-**Validation Status:** Verified — Phase N VERIFICATION.md (or "Pending — Phase N", or a production validation citation)
+**Validation Status:** Verified, citing the verifying evidence (or "Pending", or a production validation citation)
 
 ### Confirmation
 
-[testable criteria — how to verify the decision still holds]
+[testable criteria: how to verify the decision still holds]
 
 ### Pros and Cons of the Options
 

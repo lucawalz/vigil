@@ -71,6 +71,4 @@ The `asyncio.TaskGroup` pattern is confirmed in `agents/orchestrator/src/orchest
 
 ## More Information
 
-- Agent responsibilities and tool scopes: `docs/architecture/agent-design.md`
 - Orchestrator implementation: `agents/orchestrator/src/orchestrator/agent.py`
-- Multi-agent coordination and the asyncio.TaskGroup pattern: see `docs/architecture/agent-design.md` §Parallel Remediation and Watchdog
