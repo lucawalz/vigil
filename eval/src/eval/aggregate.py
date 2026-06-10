@@ -59,8 +59,11 @@ _OUTCOME_TOKEN_LEGEND = (
 
 _CLOSED_GATE = "closed"
 
-_AGENT_BUDGET_ABORT_PREFIXES = ("diagnosis_request_limit_",)
-_AGENT_BUDGET_ABORT_REASONS = frozenset({"iteration_limit"})
+_AGENT_ATTRIBUTABLE_ABORT_PREFIXES = (
+    "diagnosis_request_limit_",
+    "retry_exhausted:",
+)
+_AGENT_ATTRIBUTABLE_ABORT_REASONS = frozenset({"iteration_limit"})
 
 
 def _bucket_outcome(literal: str) -> str:
@@ -105,9 +108,9 @@ def _bucket_gate_failed(record: dict) -> str:
     return "gate-uncertain"
 
 
-def _is_agent_budget_abort(reason: str) -> bool:
-    return reason in _AGENT_BUDGET_ABORT_REASONS or reason.startswith(
-        _AGENT_BUDGET_ABORT_PREFIXES
+def _is_agent_attributable_abort(reason: str) -> bool:
+    return reason in _AGENT_ATTRIBUTABLE_ABORT_REASONS or reason.startswith(
+        _AGENT_ATTRIBUTABLE_ABORT_PREFIXES
     )
 
 
@@ -131,7 +134,7 @@ def _count_buckets(records: Any, n_planned: int = 0) -> dict[str, int]:
             counts["agent-failed"] += 1
         elif outcome == "escalated":
             counts["passed" if success_rate else "agent-failed"] += 1
-        elif outcome == "abort" and _is_agent_budget_abort(
+        elif outcome == "abort" and _is_agent_attributable_abort(
             str(r.get("setup_error") or "")
         ):
             counts["agent-failed"] += 1
@@ -238,8 +241,15 @@ def _correct_outcome_success(records: list[dict], scenarios_dir: Path) -> None:
             r["success_rate"] = True
 
 
+def _is_genuine_infra_abort(run: dict) -> bool:
+    return run.get("outcome") == "abort" and not _is_agent_attributable_abort(
+        str(run.get("setup_error") or "")
+    )
+
+
 def _summarize_model(runs: list[dict]) -> dict:
     successes = [r for r in runs if r.get("success_rate")]
+    attempts = [r for r in runs if not _is_genuine_infra_abort(r)]
     non_aborts = [r for r in runs if r.get("outcome") != "abort"]
     mttrs = [
         r["MTTR_s"]
@@ -252,7 +262,7 @@ def _summarize_model(runs: list[dict]) -> dict:
     rollbacks = [r for r in runs if r.get("rollback_triggered")]
     rollback_successes = [r for r in rollbacks if r.get("rollback_success")]
     mean_mttr, std_mttr = _mean_std(mttrs)
-    n_attempts = len(non_aborts)
+    n_attempts = len(attempts)
     return {
         "n_runs": len(runs),
         "n_attempts": n_attempts,

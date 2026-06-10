@@ -672,6 +672,78 @@ def test_count_buckets_budget_abort_counts_as_agent_failed() -> None:
     assert counts["infra-error"] == 2
 
 
+def test_count_buckets_retry_exhausted_abort_counts_as_agent_failed() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {
+            "outcome": "abort",
+            "setup_error": "retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+        },
+        {"outcome": "abort", "setup_error": "retry_exhausted:remediation: boom"},
+        {"outcome": "abort", "setup_error": "baseline_unavailable"},
+    ]
+    counts = _count_buckets(records)
+    assert counts["agent-failed"] == 2
+    assert counts["infra-error"] == 1
+
+
+def test_summarize_model_retains_agent_attributable_aborts_in_attempts(
+    tmp_path: Path,
+) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-retry", "k8s")
+
+    _write_run(
+        runs_dir,
+        index_path,
+        run_id="k8s-retry_1_qwen_abc",
+        scenario="k8s-retry",
+        seed=1,
+        model="qwen",
+        success=True,
+    )
+    _write_run(
+        runs_dir,
+        index_path,
+        run_id="k8s-retry_2_qwen_abc",
+        scenario="k8s-retry",
+        seed=2,
+        model="qwen",
+        success=False,
+        outcome="abort",
+        setup_error="retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+    )
+    _write_run(
+        runs_dir,
+        index_path,
+        run_id="k8s-retry_3_qwen_abc",
+        scenario="k8s-retry",
+        seed=3,
+        model="qwen",
+        success=False,
+        outcome="abort",
+        setup_error="baseline_unavailable",
+    )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+    row = summary["by_model"]["qwen"]
+
+    assert row["n_attempts"] == 2
+    assert row["n_eligible"] == 2
+    assert row["success_rate_given_attempt"] == 0.5
+    assert row["success_rate"] == 1 / 3
+
+    counts = summary["run_buckets"]
+    assert counts["agent-failed"] == 1
+    assert counts["infra-error"] == 1
+
+
 def test_aggregate_carries_setup_error_so_budget_abort_buckets_as_agent_failed(
     tmp_path: Path,
 ) -> None:
