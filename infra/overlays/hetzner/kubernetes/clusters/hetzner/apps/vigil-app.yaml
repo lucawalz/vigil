@@ -18,9 +18,6 @@ spec:
       containers:
       - name: vigil-app
         image: nginx:stable
-        env:
-        - name: REQUIRED_API_BASE
-          value: ''
         readinessProbe:
           httpGet:
             path: /healthz
