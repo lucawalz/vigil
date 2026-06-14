@@ -1,0 +1,565 @@
+{
+  "by_model": {
+    "qwen3.5:cloud": {
+      "n_runs": 39,
+      "n_attempts": 39,
+      "success_rate": 0.717948717948718,
+      "success_rate_given_attempt": 0.717948717948718,
+      "mean_MTTR_s": 174.8182127835357,
+      "std_MTTR_s": 109.88457923433862,
+      "diagnosis_accuracy": 0.7368421052631579,
+      "diag_n": 38,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.02564102564102564,
+      "rollback_success_rate": 1.0,
+      "n_eligible": 39,
+      "mean_input_tokens": 121719.38461538461,
+      "mean_output_tokens": 4781.923076923077,
+      "mean_tool_calls": 11.076923076923077,
+      "mean_iteration_count": 5.615384615384615
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 222.59190099233334,
+      "std_MTTR_s": 2.9100961670621817,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 11.333333333333334
+    },
+    "k8s-2g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 217.00363091200006,
+      "std_MTTR_s": 8.38097728209726,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 14
+    },
+    "k8s-3g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 235.22307816066657,
+      "std_MTTR_s": 41.27988750053529,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 15.333333333333334
+    },
+    "k8s-4g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 234.79885523033326,
+      "std_MTTR_s": 48.62150660242905,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 13.666666666666666
+    },
+    "k8s-5g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 228.12553381733332,
+      "std_MTTR_s": 2.593204972711187,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 12
+    },
+    "live-quota-injected": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 36.26303802033332,
+      "std_MTTR_s": 17.313160631295037,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 5
+    },
+    "deceptive-2": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 3,
+      "diag_correct": 0,
+      "diag_total": 3,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 6
+    },
+    "k8s-rollback-1": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "rollback_succeeded",
+          "success_rate": true
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 3,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 545.8468263660002,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 4.333333333333333,
+      "mean_tool_calls": 8.333333333333334
+    },
+    "os-1": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 3,
+      "diag_correct": 0,
+      "diag_total": 3,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 15.333333333333334
+    },
+    "os-1g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "inject_did_not_break",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 94.55196073950003,
+      "std_MTTR_s": 0.6388828554888943,
+      "mean_iteration_count": 10,
+      "mean_tool_calls": 13.5
+    },
+    "os-drift-sysctl": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 53.571871374666635,
+      "std_MTTR_s": 5.096280893507031,
+      "mean_iteration_count": 4,
+      "mean_tool_calls": 6.666666666666667
+    },
+    "os-stale-generation": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 3,
+      "n_seeds": 3,
+      "diag_correct": 3,
+      "diag_total": 3,
+      "success_rate": 1.0,
+      "mean_MTTR_s": 139.0912875586666,
+      "std_MTTR_s": 51.6721108031542,
+      "mean_iteration_count": 4,
+      "mean_tool_calls": 19.666666666666668
+    },
+    "disk-pressure": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 3,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 59.95162189499979,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 7.666666666666667
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 0,
+      "total": 3,
+      "accuracy": 0.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 0,
+          "total": 3
+        }
+      }
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 2,
+      "total": 2,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 2,
+          "total": 2
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 3,
+      "total": 3,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 3,
+          "total": 3
+        }
+      }
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 3,
+      "total": 3,
+      "accuracy": 1.0,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 3,
+          "total": 3
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 1,
+      "total": 3,
+      "accuracy": 0.3333333333333333,
+      "per_model": {
+        "qwen3.5:cloud": {
+          "correct": 1,
+          "total": 3
+        }
+      }
+    }
+  },
+  "run_buckets": {
+    "passed": 28,
+    "agent-failed": 10,
+    "infra-error": 1,
+    "gate-uncertain": 0,
+    "awaiting-review": 0,
+    "not-run": 0
+  },
+  "n_runs": 39,
+  "n_planned_runs": 39,
+  "scenarios_passing_all_seeds": 8,
+  "totals": {
+    "n": 39,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
