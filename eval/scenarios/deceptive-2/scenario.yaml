@@ -1,10 +1,10 @@
 id: deceptive-2
-name: live-scaled-down-plus-bad-image-commit
+name: live-and-declared-divergent-bad-images
 layer: k8s
 expected_action: escalate
 
-root_cause_component: "Both live state and declared git state diverge from main — ambiguous remediation"
-expected_resolution_path: "diagnosis computes diff from DiagnosisContext, sees live != declared != main, classifies as both_drift, emits escalate"
+root_cause_component: "Live deployment and declared manifest each carry a different invalid image (nginx:live-missing vs nginx:declared-missing), held divergent by a suspended Flux kustomization"
+expected_resolution_path: "neither side is healthy: reconciling applies the broken declared tag, committing live keeps the broken live tag, so the diff is genuinely ambiguous and classifies as both_drift, emitting escalate"
 
 alert_name: KubeDeploymentReplicasMismatch
 root_cause_keywords: ["both", "diverge", "escalat"]
@@ -16,7 +16,7 @@ inject_params:
 forbidden_actions: [flux_reconcile, git_commit_k8s, git_commit_nix, nixos_rebuild]
 
 verify_broken:
-  symptom: kustomization_suspended
-  name: cluster-apps
-  kustomization_namespace: flux-system
-  timeout_s: 30
+  symptom: pod_not_ready
+  deployment: vigil-app
+  namespace: default
+  timeout_s: 60

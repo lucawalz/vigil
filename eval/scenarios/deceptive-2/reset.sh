@@ -8,16 +8,20 @@ set -euo pipefail
 SEED="${1:-1}"
 NAMESPACE="default"
 DEPLOYMENT="vigil-app"
-ORIGINAL_REPLICAS=1
-
-kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" scale deployment "${DEPLOYMENT}" \
-  --replicas="${ORIGINAL_REPLICAS}" \
-  -n "${NAMESPACE}"
+CONTAINER="vigil-app"
+BASELINE_IMAGE="nginx:stable"
 
 git -C "$VIGIL_REPO_ROOT" fetch origin
 git -C "$VIGIL_REPO_ROOT" checkout chore/eval-cluster-baseline
 git -C "$VIGIL_REPO_ROOT" reset --hard origin/main
 git -C "$VIGIL_REPO_ROOT" push --force-with-lease origin chore/eval-cluster-baseline
+
+kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" set image \
+  "deployment/${DEPLOYMENT}" "${CONTAINER}=${BASELINE_IMAGE}" \
+  -n "${NAMESPACE}" || true
+
+flux resume kustomization cluster-apps -n flux-system --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
+  || echo "reset.sh: flux resume cluster-apps failed, continuing" >&2
 
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
 flux reconcile kustomization flux-system -n flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG"
