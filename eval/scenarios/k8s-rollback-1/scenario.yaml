@@ -4,7 +4,7 @@ layer: k8s
 expected_action: git_commit_k8s
 
 root_cause_component: "vigil-app.yaml committed the mem-load sidecar resources.limits.memory: \"32Mi\" on chore/eval-cluster-baseline, below its ~50Mi working set, causing OOM kills, while a live-only ResourceQuota tight-quota caps limits.memory at 64Mi in the default namespace"
-expected_resolution_path: "diagnosis identifies the committed 4Mi memory limit and commits the 128Mi restore (git_commit_k8s, not escalate) -> CI gate passes the manifest fix -> merge + reconcile -> watchdog still degraded because the live-only tight-quota ResourceQuota (limits.memory 64Mi, absent from the repo so Flux does not prune it) now rejects the 128Mi pod -> degradation persists across the settle window -> diagnosis retries exhaust -> _issue_rollback reverts the merge commit and reconciles -> outcome rollback_succeeded. ASSUMPTION (live-run only): the 4Mi pod is admitted under the 64Mi quota and OOM-kills at runtime (pre-fix pod_not_ready symptom), whereas the restored 128Mi pod exceeds the 64Mi quota and is forbidden at admission, guaranteeing post-merge degradation; verify_broken only asserts the pre-fix symptom because the post-merge state is reachable only on a live cluster."
+expected_resolution_path: "diagnosis identifies the committed 32Mi memory limit and commits the 96Mi restore (git_commit_k8s, not escalate) -> CI gate passes the manifest fix -> merge + reconcile -> watchdog still degraded because the live-only tight-quota ResourceQuota (limits.memory 64Mi, absent from the repo so Flux does not prune it) now rejects the 96Mi pod -> degradation persists across the settle window -> diagnosis retries exhaust -> _issue_rollback reverts the merge commit and reconciles -> outcome rollback_succeeded. ASSUMPTION (live-run only): the 32Mi pod is admitted under the 64Mi quota and OOM-kills at runtime (pre-fix pod_not_ready symptom), whereas the restored 96Mi pod exceeds the 64Mi quota and is forbidden at admission, guaranteeing post-merge degradation; verify_broken only asserts the pre-fix symptom because the post-merge state is reachable only on a live cluster."
 expected_outcome: rollback_succeeded
 
 inject_params:
@@ -16,7 +16,7 @@ inject_params:
   quota_limit_memory: "64Mi"
 
 alert_name: KubeContainerOOMKilled
-root_cause_keywords: ["memory", "limit", "4Mi", "OOM"]
+root_cause_keywords: ["memory", "limit", "32Mi", "OOM"]
 
 verify_broken:
   symptom: pod_not_ready
