@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: vigil-app
-          image: nginx:bad-tag-v9
+          image: nginx:stable  # FIXED: Changed from non-existent tag 'bad-tag-v9' to valid tag
           env:
             - name: REQUIRED_API_BASE
               value: "http://app-backend"
