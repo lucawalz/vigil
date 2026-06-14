@@ -8,7 +8,7 @@ informed: []
 
 # ADR-0015: Drift-direction classification across K8s and NixOS layers
 
-> Updated 2026-06-14: clarified that classification is two-way (live versus the baseline branch, never `main`) and documented the `both_drift` escalation class.
+> Updated 2026-06-14: clarified that classification is two-way (live versus the baseline branch, never `main`) and documented the `both_drift` escalation class, including structured `expected_drift_classification` grading on the model's `drift_classification` field.
 
 ## Context and Problem Statement
 
@@ -47,7 +47,7 @@ Within that two-way model, each affected resource falls into one of four drift c
 - `both_drift` — live and declared each independently invalid, such that neither reconciling to declared nor committing live restores a healthy system; the agent escalates rather than emitting a corrective action
 - `no_drift` — live and declared agree and both are healthy; no action
 
-`both_drift` is therefore an explicit escalation outcome, not a remediation primitive. Because classification is two-way, an injected fault that mutates both the live state and the baseline manifest into mutually incompatible invalid states leaves the agent with no single reversal direction that recovers the system, and the correct behaviour is to escalate.
+`both_drift` is therefore an explicit escalation outcome, not a remediation primitive. Because classification is two-way, an injected fault that mutates both the live state and the baseline manifest into mutually incompatible invalid states leaves the agent with no single reversal direction that recovers the system, and the correct behaviour is to escalate. Scenarios whose ground truth *is* the drift direction assert it via `expected_drift_classification` and are scored on the model's structured, validated `drift_classification` field rather than free-text keyword matching, so a correct classification is never rejected on prose vocabulary.
 
 ### Consequences
 
