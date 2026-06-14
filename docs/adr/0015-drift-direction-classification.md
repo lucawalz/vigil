@@ -8,6 +8,8 @@ informed: []
 
 # ADR-0015: Drift-direction classification across K8s and NixOS layers
 
+> Updated 2026-06-14: clarified that classification is two-way (live versus the baseline branch, never `main`) and documented the `both_drift` escalation class.
+
 ## Context and Problem Statement
 
 PR #77 exposed a structural gap: the agent emitted a corrective `git_commit` for a K8s fault whose in-repo manifest was already correct. The resulting PR carried 0 additions and 7 deletions; the cluster healed only because Flux's natural reconcile poll reapplied the unchanged manifest. The agent did not drive the recovery.
@@ -34,6 +36,19 @@ Chosen option: "2×2 action surface keyed by layer × drift origin", because it 
 
 The Diagnosis agent inspects both live cluster state and `chore/eval-cluster-baseline` HEAD for each affected resource, computes drift direction, and emits one of the four actions. The Remediation agent executes the emitted action without further diagnosis.
 
+### Two-way comparison and the both_drift escalation class
+
+Classification operates entirely within a two-way model: live cluster state versus the Flux-tracked baseline branch (`chore/eval-cluster-baseline`). The comparison never consults the repo `main` branch; there is no three-way comparison.
+
+Within that two-way model, each affected resource falls into one of four drift classes:
+
+- `live_only_drift` — live state mutated against a correct baseline manifest; reconciling from the baseline restores health (`flux_reconcile` / `nixos_rebuild`)
+- `declared_drift` — the baseline carries a committed bad value the cluster is faithfully applying; committing a correction restores health (`git_commit_k8s` / `git_commit_nix`)
+- `both_drift` — live and declared each independently invalid, such that neither reconciling to declared nor committing live restores a healthy system; the agent escalates rather than emitting a corrective action
+- `no_drift` — live and declared agree and both are healthy; no action
+
+`both_drift` is therefore an explicit escalation outcome, not a remediation primitive. Because classification is two-way, an injected fault that mutates both the live state and the baseline manifest into mutually incompatible invalid states leaves the agent with no single reversal direction that recovers the system, and the correct behaviour is to escalate.
+
 ### Consequences
 
 - Good: Each of the four quadrants maps to an unambiguous action; the eval campaign can score layer-classification and direction-classification independently
@@ -53,6 +68,7 @@ The decision holds as long as:
 - `eval/scenarios/k8s-{1..5}g/scenario.yaml` each carry `expected_action: git_commit_k8s`
 - `eval/scenarios/os-1g/scenario.yaml` carries `expected_action: git_commit_nix`
 - `eval/scenarios/{os-1,os-drift-sysctl,os-stale-generation}/scenario.yaml` each carry `expected_action: nixos_rebuild`
+- `eval/scenarios/deceptive-2/scenario.yaml` covers the `both_drift` class, carrying live and declared state in different invalid forms; the expected outcome is escalation rather than any corrective action
 - No g-variant run opens a PR against `main`; `RunRecord.agent_branch` targets `chore/eval-cluster-baseline` exclusively
 - Each g-variant scenario returns `outcome == "success"` in the campaign
 

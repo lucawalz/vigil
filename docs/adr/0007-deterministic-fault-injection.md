@@ -8,6 +8,7 @@ informed: []
 
 # ADR-0007: Shell-script-based deterministic fault injection
 
+> Updated 2026-06-14: documented the `verify_broken` symptom-confirmation contract and the injection-determinism requirement.
 > Updated 2026-06-10: scenario set consolidated to the 13-scenario panel (K8s×6, OS×4, Cross/Boundary×3).
 
 ## Context and Problem Statement
@@ -49,6 +50,14 @@ Chosen option: "Shell-script-based idempotent fault injection", because it produ
 ### Confirmation
 
 The 13 scenario directories under `eval/scenarios/` each contain `inject.sh` and `reset.sh`. The eval harness calls `reset.sh` before `inject.sh` for every run, confirmed in the campaign runner. Eval campaign results show consistent per-scenario pass rates across 3 seeds, confirming identical initial state.
+
+### Symptom confirmation and injection determinism
+
+Idempotent inject/reset guarantees a clean starting state, but two further conditions must hold for the injected fault to yield a valid run: the fault symptom must actually be observable before the agent is triggered, and the symptom must persist through diagnosis rather than being silently auto-healed.
+
+**`verify_broken` symptom-confirmation contract.** Each scenario may declare a `verify_broken` block naming the expected fault symptom. After `inject.sh` runs, the harness polls until that symptom is observed before triggering the agent; if the symptom never appears within the scenario timeout, the harness records an infra error and skips the agent run rather than scoring against a fault that never materialised. The symptom checkers live in the eval harness (`eval/src/eval/harness.py`, `_SYMPTOM_CHECKS`); representative symptoms include `pod_not_ready`, `systemd_unit_inactive`, `kustomization_suspended`, `sysctl_modified`, and `node_disk_pressure`. A scenario whose declared symptom is absent from the registry skips the assertion with a warning rather than failing.
+
+**Injection-determinism requirement.** An injected fault must persist for the full diagnosis window; a fault that the platform auto-heals before the agent acts produces a non-deterministic, unscoreable run. Scenarios whose fault would otherwise self-heal therefore disable the relevant healer for the duration of the run and restore it on reset. Local NixOS-generation faults stop the `vigil-auto-reconcile.timer` so the git baseline cannot reapply the correct configuration mid-run; divergence faults suspend the Flux kustomization so reconcile cannot overwrite the injected state. Each scenario's `reset.sh` restores the disabled healer unconditionally.
 
 ### Pros and Cons of the Options
 
