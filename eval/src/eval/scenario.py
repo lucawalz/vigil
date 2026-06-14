@@ -17,6 +17,9 @@ class ScenarioDefinition(BaseModel):
     expected_action: str
     expected_resolution_path: str
     expected_outcome: str | None = None
+    expected_drift_classification: (
+        Literal["live_only_drift", "declared_drift", "both_drift", "no_drift"] | None
+    ) = None
     alert_name: str
     inject_params: dict[str, Any] = Field(default_factory=dict)
     forbidden_actions: list[str] = Field(default_factory=list)

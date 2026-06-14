@@ -251,6 +251,9 @@ def _score_diagnosis_accuracy(scenario: str, report) -> bool | None:
         return None
     if report.recommended_action != expected:
         return False
+    expected_drift = data.get("expected_drift_classification")
+    if expected_drift is not None and report.drift_classification != expected_drift:
+        return False
     keywords = data.get("root_cause_keywords")
     if keywords:
         text = (report.root_cause or "").lower()
