@@ -7,6 +7,9 @@ SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 CONFIG_DIR="/opt/nixos-config/hosts/hetzner-worker-1"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
+  "systemctl stop vigil-auto-reconcile.timer"
+
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "printf '{ lib, ... }:\n{\n  services.k3s.enable = lib.mkForce false;\n}\n' > ${CONFIG_DIR}/bad-module.nix"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
