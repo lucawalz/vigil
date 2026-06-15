@@ -6,10 +6,10 @@ metadata:
   labels:
     app: vigil-app
 spec:
-  replicas: 1
+  replicas: 22
   selector:
     matchLabels:
-      app: vigil-app-typo
+      app: vigil-app
   template:
     metadata:
       labels:
