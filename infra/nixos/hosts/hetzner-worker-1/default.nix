@@ -40,5 +40,5 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
-  services.k3s.enable = lib.mkForce false;
+  # services.k3s.enable = lib.mkForce false;  # REMOVED: This line was causing k3s service corruption on worker node
 }
