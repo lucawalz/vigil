@@ -1,0 +1,540 @@
+{
+  "by_model": {
+    "deepseek-v3.2:cloud": {
+      "n_runs": 34,
+      "n_attempts": 33,
+      "success_rate": 0.4411764705882353,
+      "success_rate_given_attempt": 0.45454545454545453,
+      "mean_MTTR_s": 530.2828636501333,
+      "std_MTTR_s": 431.28369728818484,
+      "diagnosis_accuracy": 0.75,
+      "diag_n": 20,
+      "destructive_repair_rate": 0.0,
+      "rollback_triggered_rate": 0.029411764705882353,
+      "rollback_success_rate": 1.0,
+      "n_eligible": 33,
+      "mean_input_tokens": 233605.45,
+      "mean_output_tokens": 4021.95,
+      "mean_tool_calls": 19.8,
+      "mean_iteration_count": 6.4
+    }
+  },
+  "by_scenario": {
+    "k8s-1g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 392.67681543900005,
+      "std_MTTR_s": 75.40829409318421,
+      "mean_iteration_count": 7,
+      "mean_tool_calls": 10.333333333333334
+    },
+    "k8s-2g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 549.411077428,
+      "std_MTTR_s": 217.48035941749734,
+      "mean_iteration_count": 7,
+      "mean_tool_calls": 12.666666666666666
+    },
+    "k8s-3g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "abort",
+          "success_rate": false
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 1,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 461.25505748800015,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 5.5,
+      "mean_tool_calls": 11
+    },
+    "k8s-4g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 422.3869436299999,
+      "std_MTTR_s": 58.791990064415174,
+      "mean_iteration_count": 7,
+      "mean_tool_calls": 14
+    },
+    "k8s-5g": {
+      "n_runs": 3,
+      "outcome": "success",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "success",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 551.3202409805001,
+      "std_MTTR_s": 211.25551928640138,
+      "mean_iteration_count": 7,
+      "mean_tool_calls": 11.666666666666666
+    },
+    "live-quota-injected": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": true
+        }
+      ],
+      "passed": 2,
+      "n_seeds": 3,
+      "diag_correct": 2,
+      "diag_total": 2,
+      "success_rate": 0.6666666666666666,
+      "mean_MTTR_s": 297.86233090300016,
+      "std_MTTR_s": 79.25859656013445,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 9.333333333333334
+    },
+    "deceptive-2": {
+      "n_runs": 3,
+      "outcome": "escalated",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "escalated",
+          "success_rate": false
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": true
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 2,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 216.92024987100012,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 7.333333333333333
+    },
+    "k8s-rollback-1": {
+      "n_runs": 3,
+      "outcome": "rollback_succeeded",
+      "setup_error": null,
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "rollback_succeeded",
+          "success_rate": true
+        },
+        {
+          "seed": "2",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 3,
+      "diag_correct": 1,
+      "diag_total": 2,
+      "success_rate": 0.3333333333333333,
+      "mean_MTTR_s": 2008.2012739659995,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 6,
+      "mean_tool_calls": 23.333333333333332
+    },
+    "os-1": {
+      "n_runs": 2,
+      "outcome": "abort",
+      "setup_error": "retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 2,
+      "diag_correct": 0,
+      "diag_total": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 10
+    },
+    "os-1g": {
+      "n_runs": 2,
+      "outcome": "abort",
+      "setup_error": "retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 2,
+      "diag_correct": 1,
+      "diag_total": 1,
+      "success_rate": 0.5,
+      "mean_MTTR_s": 505.4550120040001,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 5.5,
+      "mean_tool_calls": 14.5
+    },
+    "os-drift-sysctl": {
+      "n_runs": 2,
+      "outcome": "abort",
+      "setup_error": "retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 2,
+      "diag_correct": 0,
+      "diag_total": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 9
+    },
+    "os-stale-generation": {
+      "n_runs": 2,
+      "outcome": "abort",
+      "setup_error": "retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "success",
+          "success_rate": true
+        }
+      ],
+      "passed": 1,
+      "n_seeds": 2,
+      "diag_correct": 1,
+      "diag_total": 1,
+      "success_rate": 0.5,
+      "mean_MTTR_s": 335.09654466200004,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 2.5,
+      "mean_tool_calls": 10.5
+    },
+    "disk-pressure": {
+      "n_runs": 2,
+      "outcome": "abort",
+      "setup_error": "retry_exhausted:diagnosis: Exceeded maximum output retries (2)",
+      "forbidden_action_violations": [],
+      "per_seed": [
+        {
+          "seed": "1",
+          "outcome": "abort",
+          "success_rate": false
+        },
+        {
+          "seed": "3",
+          "outcome": "escalated",
+          "success_rate": false
+        }
+      ],
+      "passed": 0,
+      "n_seeds": 2,
+      "diag_correct": 0,
+      "diag_total": 1,
+      "success_rate": 0.0,
+      "mean_MTTR_s": null,
+      "std_MTTR_s": null,
+      "mean_iteration_count": 1,
+      "mean_tool_calls": 10
+    }
+  },
+  "escalation": {
+    "k8s-1g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-2g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-3g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-4g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-5g": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "live-quota-injected": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "deceptive-2": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "k8s-rollback-1": {
+      "layer": "k8s",
+      "accuracy": null
+    },
+    "os-1": {
+      "layer": "os",
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 0,
+          "total": 1
+        }
+      }
+    },
+    "os-1g": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "os-drift-sysctl": {
+      "layer": "os",
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 0,
+          "total": 1
+        }
+      }
+    },
+    "os-stale-generation": {
+      "layer": "os",
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 1,
+          "total": 1
+        }
+      }
+    },
+    "disk-pressure": {
+      "layer": "os",
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0,
+      "per_model": {
+        "deepseek-v3.2:cloud": {
+          "correct": 0,
+          "total": 1
+        }
+      }
+    }
+  },
+  "run_buckets": {
+    "passed": 15,
+    "agent-failed": 18,
+    "infra-error": 1,
+    "gate-uncertain": 0,
+    "awaiting-review": 0,
+    "not-run": 5
+  },
+  "n_runs": 34,
+  "n_planned_runs": 39,
+  "scenarios_passing_all_seeds": 0,
+  "totals": {
+    "n": 34,
+    "n_models": 1,
+    "n_scenarios": 13
+  },
+  "planned_scenarios": [
+    "deceptive-2",
+    "disk-pressure",
+    "k8s-1g",
+    "k8s-2g",
+    "k8s-3g",
+    "k8s-4g",
+    "k8s-5g",
+    "k8s-rollback-1",
+    "live-quota-injected",
+    "os-1",
+    "os-1g",
+    "os-drift-sysctl",
+    "os-stale-generation"
+  ]
+}
