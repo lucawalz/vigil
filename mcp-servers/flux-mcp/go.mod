@@ -3,9 +3,9 @@ module github.com/lucawalz/vigil/mcp-servers/flux-mcp
 go 1.26.0
 
 require (
-	github.com/mark3labs/mcp-go v0.54.1
-	k8s.io/apimachinery v0.36.1
-	k8s.io/client-go v0.36.1
+	github.com/mark3labs/mcp-go v0.55.0
+	k8s.io/apimachinery v0.36.2
+	k8s.io/client-go v0.36.2
 )
 
 require (
