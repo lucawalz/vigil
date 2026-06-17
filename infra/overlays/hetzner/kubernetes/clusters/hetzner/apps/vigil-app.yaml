@@ -6,7 +6,7 @@ metadata:
   labels:
     app: vigil-app
 spec:
-  replicas: 1
+  replicas: -1
   selector:
     matchLabels:
       app: vigil-app
@@ -39,12 +39,12 @@ spec:
               readOnly: true
         - name: mem-load
           image: polinux/stress
-          command: ["stress", "--vm", "1", "--vm-bytes", "50M", "--vm-keep"]
+          command: ["stress", "--vm", "1", "--vm-bytes", "32M", "--vm-keep"]
           resources:
             requests:
               memory: "8Mi"
             limits:
-              memory: "32Mi"
+              memory: "64Mi"
       volumes:
         - name: nginx-config-template
           configMap:
