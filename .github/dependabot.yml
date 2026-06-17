@@ -1,3 +1,6 @@
+# Dependency updates are paused to freeze the evaluation baseline.
+# open-pull-requests-limit is set to 0 on every ecosystem, which disables version-update
+# PRs while keeping a valid configuration. Restore updates by setting the limits back to 10.
 version: 2
 
 updates:
@@ -7,7 +10,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     rebase-strategy: auto
     labels:
       - dependencies
@@ -24,7 +27,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     rebase-strategy: auto
     labels:
       - dependencies
@@ -40,7 +43,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     rebase-strategy: auto
     labels:
       - dependencies
@@ -56,7 +59,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     rebase-strategy: auto
     labels:
       - dependencies
