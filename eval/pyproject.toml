@@ -1,6 +1,6 @@
 [project]
 name = "vigil-eval"
-version = "0.1.0"
+version = "1.0.0"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.0",
