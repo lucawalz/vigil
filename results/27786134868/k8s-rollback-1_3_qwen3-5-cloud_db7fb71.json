@@ -1,0 +1,43 @@
+{
+  "run_id": "k8s-rollback-1_3_qwen3-5-cloud_db7fb71",
+  "scenario": "k8s-rollback-1",
+  "seed": "3",
+  "model": "qwen3.5:cloud",
+  "git_sha7": "db7fb71",
+  "started_at": "2026-06-18T23:25:08Z",
+  "ended_at": "2026-06-18T23:34:44Z",
+  "outcome": "rollback_succeeded",
+  "success_rate": false,
+  "remediation_success": true,
+  "diagnosis_accuracy": true,
+  "MTTR_s": 575.7885340299999,
+  "destructive_repair": false,
+  "rollback_triggered": true,
+  "rollback_success": true,
+  "total_input_tokens": 253420,
+  "total_output_tokens": 13426,
+  "total_tool_calls": 16,
+  "iteration_count": 11,
+  "autonomy_level": "full",
+  "actions_taken": [
+    "clone_repo",
+    "read_file",
+    "write_manifest",
+    "commit_files",
+    "push_branch",
+    "create_pr",
+    "wait_for_gate",
+    "reconcile_kustomization",
+    "final_result"
+  ],
+  "attempts": 2,
+  "model_version": "qwen3.5:cloud",
+  "setup_error": null,
+  "agent_branch": "remediation/run-k8s-rollback-1_3_qwen3-5-cloud_db7fb71-attempt-1",
+  "agent_commits": [
+    "f228974d7f8feb58794dbd60428dcb16c2c51e4e"
+  ],
+  "gate_status": "merged",
+  "merge_commit_sha": "825ca42a5b50ab8c7d9b48590c7bb9b5e79d538f",
+  "forbidden_action_violations": []
+}
