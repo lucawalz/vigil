@@ -10,7 +10,7 @@ informed: []
 
 ## Context and Problem Statement
 
-The thesis must cite the exact version of Vigil that was evaluated, and an examiner must be able to check out that version and reproduce the evaluation campaigns. A moving `main` defeats this: Dependabot opened patch and minor version-update PRs that `dependabot-auto-merge.yml` merged automatically, advancing `main` mid-campaign. Each merge changed dependency versions underneath in-flight evaluation runs, repeatedly disrupting campaigns and leaving "the evaluated commit" ambiguous — a run started against one tree finished against another.
+The thesis must cite the exact version of Vigil that was evaluated, and an examiner must be able to check out that version and reproduce the evaluation campaigns. A moving `main` defeats this: Dependabot opened patch and minor version-update PRs that `dependabot-auto-merge.yml` merged automatically, advancing `main` mid-campaign. Each merge changed dependency versions underneath in-flight evaluation runs, repeatedly disrupting campaigns and leaving "the evaluated commit" ambiguous. A run started against one tree finished against another.
 
 The project needs a stable, citable reference that pins the evaluated tree, plus human-readable release notes that explain what each version contains without hand-authoring a changelog.
 
@@ -31,7 +31,7 @@ The project needs a stable, citable reference that pins the evaluated tree, plus
 
 Chosen option: "tag-based SemVer releases with git-cliff", because it produces a permanent, examiner-checkoutable reference for the evaluated version, derives human-readable notes directly from the Conventional Commits the repository already enforces, and adds no version-management machinery to a polyglot monorepo with no single package manifest.
 
-Releases are SemVer tags of the form `v*.*.*`. Pushing such a tag triggers a `release.yml` workflow that runs git-cliff against the commit history, using the `cliff.toml` configuration to group Conventional Commits into a categorised changelog, and publishes the result as the GitHub Release notes. The workspace version is bumped to 1.0.0, and **`v1.0.0` is the frozen version evaluated in the thesis** — every model evaluation campaign runs against that tag.
+Releases are SemVer tags of the form `v*.*.*`. Pushing such a tag triggers a `release.yml` workflow that runs git-cliff against the commit history, using the `cliff.toml` configuration to group Conventional Commits into a categorised changelog, and publishes the result as the GitHub Release notes. The workspace version is bumped to 1.0.0, and **`v1.0.0` is the frozen version evaluated in the thesis**. Every model evaluation campaign runs against that tag.
 
 To keep the evaluated tree stable, Dependabot version updates are paused for the duration of the evaluation freeze: the `updates` entries in `.github/dependabot.yml` are commented out so Dependabot opens no PRs, and they are restored once the evaluation concludes.
 
@@ -61,7 +61,7 @@ The decision holds as long as:
 
 - Good: A SemVer tag is a permanent, checkoutable reference; `v1.0.0` pins the evaluated tree for the examiner regardless of later commits
 - Good: git-cliff is purpose-built for Conventional Commits, which the repository already enforces, so the changelog falls out of existing commit discipline
-- Good: Language-agnostic — it reads git history, not package manifests, which suits a monorepo spanning Python, Go, NixOS, and Terraform
+- Good: Language-agnostic: it reads git history, not package manifests, which suits a monorepo spanning Python, Go, NixOS, and Terraform
 - Good: Minimal configuration in a single `cliff.toml`; no version-management machinery or bot PRs to maintain
 - Bad: Releases are cut manually by pushing a tag, so a forgotten tag means no release; the cadence depends on a deliberate human step
 

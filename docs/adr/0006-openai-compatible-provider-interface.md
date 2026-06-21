@@ -8,7 +8,7 @@ informed: []
 
 # ADR-0006: OpenAI-compatible provider interface for LLM hot-swap
 
-> Superseded by [ADR-0014](0014-multi-adapter-model-factory.md) on 2026-05-17 — Claude was added to the eval panel via Pydantic AI's native Anthropic adapter rather than the OpenAI-compatible endpoint this ADR proposed.
+> Superseded by [ADR-0014](0014-multi-adapter-model-factory.md) on 2026-05-17. Claude was added to the eval panel via Pydantic AI's native Anthropic adapter rather than the OpenAI-compatible endpoint this ADR proposed.
 
 ## Context and Problem Statement
 
@@ -43,7 +43,7 @@ Chosen option: "OpenAI-compatible REST interface via Pydantic AI `OpenAIChatMode
 - Bad: Provider-specific features (Anthropic's extended thinking mode, Ollama-specific sampling parameters) are inaccessible through the compatibility layer
 - Bad: Token accounting and latency metrics are normalized at the OpenAI response schema level, which may differ slightly from provider-native SDKs
 
-**Validation Status:** Verified — `OpenAIChatModel` interface holds across two providers; v1.0 Hetzner eval campaign (qwen3-coder-next and deepseek-v3.2) ran with zero code changes between providers.
+**Validation Status:** Verified. `OpenAIChatModel` interface holds across two providers; v1.0 Hetzner eval campaign (qwen3-coder-next and deepseek-v3.2) ran with zero code changes between providers.
 
 ### Confirmation
 

@@ -22,7 +22,7 @@ An approach where agents invoke `kubectl`, `ssh`, and `nixos-rebuild` directly v
 
 - Command injection must be structurally impossible, not a matter of careful quoting
 - Every tool call must carry a typed argument record for audit trail purposes
-- MCP servers must be unit-testable without a live cluster (via `io.Pipe()` fakes in Go)
+- MCP servers must be unit-testable without a live cluster (via the `mcptest` in-process server in Go)
 - The tool surface must be extensible: new capabilities should require a new typed tool definition, not a new subprocess invocation
 - The stdio transport boundary isolates Python agent code from direct cluster API access
 
@@ -34,31 +34,31 @@ An approach where agents invoke `kubectl`, `ssh`, and `nixos-rebuild` directly v
 
 ## Decision Outcome
 
-Chosen option: "MCP-only tool surface", because it makes command injection structurally impossible at the typed-argument boundary, makes every tool call auditable, and enables isolation testing of each server with `io.Pipe()` fakes without a live cluster.
+Chosen option: "MCP-only tool surface", because it makes command injection structurally impossible at the typed-argument boundary, makes every tool call auditable, and enables isolation testing of each server with the `mcptest` in-process server without a live cluster.
 
 ### Consequences
 
 - Good: Typed tool inputs enforce argument validation before any cluster mutation reaches the wire
 - Good: Every tool call is logged with its arguments, enabling a complete audit trail
-- Good: MCP servers can be unit-tested with fake stdio pipes without a live cluster
+- Good: MCP servers can be unit-tested with the `mcptest` in-process server without a live cluster
 - Bad: The stdio transport adds modest per-call latency compared to a direct in-process API call
 - Bad: Adding a new capability requires a new typed tool definition in Go, not just a new subprocess invocation
 
-**Validation Status:** Verified — 4/4 MCP servers tested with `io.Pipe()` fakes; no regressions across the v1.0 Hetzner eval campaign.
+**Validation Status:** Verified. 4/4 MCP servers tested with the `mcptest` in-process server; no regressions across the v1.0 Hetzner eval campaign.
 
 ### Confirmation
 
 The decision holds as long as:
-- No agent module contains a direct call to `subprocess`, `os.system`, or any shell invocation
+- No agent module uses `subprocess`, `os.system`, or a shell invocation to reach the cluster or nodes; the sole `subprocess` call is a local `git rev-parse` for run-id construction
 - All cluster mutations are routed through one of the four typed MCP servers (`kubectl-mcp`, `flux-mcp`, `git-mcp`, `nixos-mcp`); the original `ssh-mcp` server was removed once OS remediation moved to the GitOps and NixOS-generation path, leaving no separate command-execution surface
-- Each MCP server maintains a passing test suite using `io.Pipe()` fake transport without requiring a live cluster
+- Each MCP server maintains a passing test suite using the `mcptest` in-process transport without requiring a live cluster
 
 ### Pros and Cons of the Options
 
 #### MCP-only tool surface
 
 - Good: JSON-RPC typed arguments cross the wire as structured data; shell metacharacters are irrelevant at the Python layer
-- Good: `io.Pipe()` fake transport enables full server testing without a live Kubernetes cluster
+- Good: The `mcptest` in-process server enables full server testing without a live Kubernetes cluster
 - Good: Every tool invocation appears in the trace log with its full typed argument record
 - Bad: Stdio transport adds latency; each tool call crosses a process boundary rather than executing in-process
 

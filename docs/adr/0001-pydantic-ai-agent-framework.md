@@ -38,11 +38,11 @@ Chosen option: "Pydantic AI", because it is the only evaluated framework that na
 - Good: Structured agent outputs (`DiagnosisReport`, `RemediationResult`) are validated at the framework boundary, preventing malformed results from propagating downstream
 - Good: Native MCP client support eliminates the need for a custom subprocess-stdio wrapper
 - Good: Sub-agent delegation is expressed as typed function calls with Pydantic model inputs and outputs
-- Good: `FilteredToolset` from `pydantic_ai.toolsets` provides the read-only Diagnosis tool scope without a custom wrapper; write tools (`apply_patch`, `rollout_undo`, `switch_generation`, `etcd_snapshot_save`) are filtered at the framework boundary
+- Good: `FilteredToolset` from `pydantic_ai.toolsets` provides the read-only Diagnosis tool scope without a custom wrapper; write tools (`delete_resource`, `stage_generation`, `commit_generation`, `etcd_snapshot_save`) are filtered at the framework boundary
 - Bad: Pydantic AI is a relatively young library; community resources are limited compared to LangChain
 - Bad: Async-first design requires careful asyncio lifecycle management, especially during agent teardown
 
-**Validation Status:** Verified — `MCPServerStdio` boot-once-in-lifespan pattern confirmed in production; structured outputs validated across the v1.0 Hetzner eval campaign.
+**Validation Status:** Verified. `MCPServerStdio` boot-once-in-lifespan pattern confirmed in production; structured outputs validated across the v1.0 Hetzner eval campaign.
 
 ### Confirmation
 
@@ -70,7 +70,7 @@ The decision holds as long as:
 #### LangChain
 
 - Good: Mature framework with large community and extensive integrations
-- Bad: LangChain has no native MCP client; integrating it would require a custom subprocess-stdio wrapper duplicating what Pydantic AI's `MCPServerStdio` already provides, introducing a second asyncio lifecycle to manage and breaking the `io.Pipe()` test strategy that depends on running `mcp-go` as a real Go subprocess.
+- Bad: LangChain has no native MCP client; integrating it would require a custom subprocess-stdio wrapper duplicating what Pydantic AI's `MCPServerStdio` already provides, introducing a second asyncio lifecycle to manage and breaking the `mcptest` in-process test strategy that exercises `mcp-go` directly.
 
 ## More Information
 

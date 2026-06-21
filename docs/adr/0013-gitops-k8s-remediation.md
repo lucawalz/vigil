@@ -37,7 +37,7 @@ Chosen option: "K8s-layer remediation via GitOps", because every K8s mutation is
 
 The agent issues `git-mcp.commit_and_push` to create the repair commit, waits for CI to pass, then calls `flux-mcp.reconcile_kustomization` to apply the commit immediately. Flux's 1-minute GitRepository poll is the fallback if the explicit reconcile call is not issued; it is not the primary delivery mechanism.
 
-K8s rollback is now structurally symmetric to NixOS rollback — both revert to a known-good state declared in version control (Git for K8s, NixOS generations for OS), neither uses imperative restart.
+K8s rollback is now structurally symmetric to NixOS rollback. Both revert to a known-good state declared in version control (Git for K8s, NixOS generations for OS), neither uses imperative restart.
 
 ### Consequences
 
@@ -48,7 +48,7 @@ K8s rollback is now structurally symmetric to NixOS rollback — both revert to 
 - Bad: CI validation adds latency to the repair path; a failing CI pipeline blocks the repair until fixed or the run is aborted as gate_failed
 - Bad: The GitOps path requires a live Git remote and CI runner; a network partition isolating the agent host from GitHub blocks both the commit push and the CI gate
 
-**Validation Status:** Pending — gitops validation campaign verification
+**Validation Status:** Pending: gitops validation campaign verification
 
 ### Confirmation
 
@@ -63,18 +63,18 @@ The decision holds as long as:
 #### K8s-layer remediation via GitOps
 
 - Good: Git commit history is the complete record of every K8s repair; no out-of-band mutations exist that are invisible to version control
-- Good: Rollback is `git-mcp.revert_commit` followed by `flux-mcp.reconcile_kustomization` — structurally identical to the repair path, deterministic and auditable
+- Good: Rollback is `git-mcp.revert_commit` followed by `flux-mcp.reconcile_kustomization`, structurally identical to the repair path, deterministic and auditable
 - Bad: Requires network access to GitHub for every repair; an isolated eval environment without external connectivity cannot use this path
 
 #### Direct `kubectl patch`
 
 - Good: Immediate effect; no CI gate latency and no Flux reconcile delay
-- Bad: An imperative `kubectl patch` leaves no record in Git, making it impossible to reconstruct which exact mutation was applied during a given eval run. When a campaign run fails to reproduce, there is no commit to inspect, diff, or replay — blocking the forensic analysis that reproducibility of eval campaign runs requires.
+- Bad: An imperative `kubectl patch` leaves no record in Git, making it impossible to reconstruct which exact mutation was applied during a given eval run. When a campaign run fails to reproduce, there is no commit to inspect, diff, or replay, blocking the forensic analysis that reproducibility of eval campaign runs requires.
 
 #### Suspend-before-mutate
 
 - Good: Allows `kubectl` edits without Flux immediately reconciling them away; no Git remote dependency
-- Bad: Suspending Flux while applying a patch creates a window during which the cluster state does not correspond to any Git commit. If the agent crashes after patching but before resuming Flux, the cluster runs configuration that diverges from all declared states indefinitely — neither the pre-patch baseline nor the intended repair — making incident recovery ambiguous.
+- Bad: Suspending Flux while applying a patch creates a window during which the cluster state does not correspond to any Git commit. If the agent crashes after patching but before resuming Flux, the cluster runs configuration that diverges from all declared states indefinitely, neither the pre-patch baseline nor the intended repair, making incident recovery ambiguous.
 
 ## More Information
 

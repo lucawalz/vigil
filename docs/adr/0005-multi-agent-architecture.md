@@ -14,7 +14,7 @@ Fault diagnosis and remediation in a Kubernetes + NixOS system involve distinct 
 
 1. **Diagnosis** requires a ReAct-style iterative loop over Kubernetes and OS state (fetching logs, inspecting node conditions, escalating to NixOS diagnostics) to identify root causes. The intermediate reasoning steps (e.g., CrashLoopBackOff → log fetch → OOM signal → node memory pressure check) must remain coherent across many tool calls.
 2. **Remediation** requires selecting and executing the correct repair action against a typed `DiagnosisReport` (suspending Flux, patching resources, or invoking `nixos-mcp` for OS-layer repairs) without re-running the diagnostic reasoning chain.
-3. **Monitoring** requires a deterministic parallel health baseline capture and rollback trigger. No LLM is involved; the Watchdog agent polls `get_pods` on a fixed interval and compares `HealthSnapshot` deltas.
+3. **Monitoring** requires a deterministic parallel health baseline capture and rollback trigger. No LLM is involved; the Watchdog agent polls `get_pods` on a fixed interval and evaluates each `HealthSnapshot` against an absolute health predicate.
 
 A monolithic agent would carry diagnosis context, remediation state, and watchdog history simultaneously, increasing token costs and forcing the LLM to keep all four reasoning concerns active in a single context window.
 
@@ -40,11 +40,11 @@ Chosen option: "Multi-agent decomposition with dedicated roles", because focused
 - Good: Each agent operates with a focused context window; diagnosis reasoning does not bleed into remediation state
 - Good: Watchdog runs concurrently with Remediation via `asyncio.TaskGroup` (Python 3.11+ structured concurrency); when either task raises, the sibling is cancelled and the orchestrator handles the `ExceptionGroup` via `except*`
 - Good: Agent handoffs use typed Pydantic models, preventing implicit state passing between agents
-- Good: Watchdog observes health only; the Orchestrator owns the rollback decision and issues `git-mcp revert_commit` plus `flux-mcp reconcile_kustomization` when `WatchdogResult.degraded=True`. For OS faults, the rollback is `nixos-mcp switch_generation`.
+- Good: Watchdog observes health only; the Orchestrator owns the rollback decision and issues `git-mcp revert_commit` plus `flux-mcp reconcile_kustomization` when `WatchdogResult.degraded=True`. For OS faults declared in Git, the rollback is `git-mcp revert_commit` plus `nixos-mcp trigger_reconcile`; an unconfirmed staged generation reverts via the NixOS dead-man's-switch reboot.
 - Bad: Four distinct agent lifecycles require careful asyncio management, particularly around MCP client teardown
 - Bad: The Orchestrator coordinates workflow without reasoning about fault semantics directly; it delegates all LLM work to sub-agents
 
-**Validation Status:** Verified — `asyncio.TaskGroup` pattern confirmed in production; circuit breaker essential; v1.0 Hetzner eval campaign confirms parallel pattern reduces MTTR vs sequential remediation and monitoring. Updated 2026-05-15 for the GitOps pivot: K8s rollback verb is `revert_commit` (GitOps path); Watchdog sequencing is sequential for K8s, concurrent for OS.
+**Validation Status:** Verified. `asyncio.TaskGroup` pattern confirmed in production; circuit breaker essential; v1.0 Hetzner eval campaign confirms parallel pattern reduces MTTR vs sequential remediation and monitoring. Updated 2026-05-15 for the GitOps pivot: K8s rollback verb is `revert_commit` (GitOps path); Watchdog sequencing is sequential for K8s, concurrent for OS.
 
 ### Confirmation
 
@@ -67,7 +67,7 @@ The `asyncio.TaskGroup` pattern is confirmed in `agents/orchestrator/src/orchest
 #### Pipeline-of-functions (no ReAct loop)
 
 - Good: Purely deterministic: no LLM token cost during execution
-- Bad: A non-agent function pipeline would lose the ReAct iterative-reasoning property that Diagnosis requires for multi-step root-cause analysis (e.g. seeing CrashLoopBackOff → fetching logs → spotting OOM → checking node memory pressure). Hardcoding that decision tree per scenario does not scale to 18 fault types.
+- Bad: A non-agent function pipeline would lose the ReAct iterative-reasoning property that Diagnosis requires for multi-step root-cause analysis (e.g. seeing CrashLoopBackOff → fetching logs → spotting OOM → checking node memory pressure). Hardcoding that decision tree per scenario does not scale to 13 fault types.
 
 ## More Information
 

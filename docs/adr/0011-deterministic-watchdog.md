@@ -17,7 +17,7 @@ Two properties of LLM-backed health assessment make it unsuitable for this path:
 1. **Hallucination surface**: An LLM interpreting `get_pods` output could reason itself into "the pods look mostly fine" despite a CrashLoopBackOff, particularly when tool output is incomplete. A deterministic predicate has no such failure mode.
 2. **Token cost and latency**: The Watchdog polls every few seconds throughout the entire remediation window. Calling an LLM per poll tick adds hundreds of milliseconds per call and accumulates significant token cost over the confirm window with no accuracy gain over a structured status check.
 
-The original implementation classified health *relative to a baseline snapshot captured after the fault was already live*: it only flagged states strictly worse than that broken baseline. This model proved unsound. In a k8s-2g run, Flux applied the correct fix, but the rollout's transient pod dip read as degradation while the recovered state — being merely "not worse than broken" — never registered as recovery, so the run aborted a valid repair. The baseline-relative model also misread a no-op remediation (cluster equally broken) as success, counted a `Running 0/1` crashlooping pod as healthy because pod classification matched the phase string and ignored the `READY x/y` fraction, and never confirmed that the fix's revision was the one Flux applied. Production deployments have no clean pre-fault baseline at all.
+The original implementation classified health *relative to a baseline snapshot captured after the fault was already live*: it only flagged states strictly worse than that broken baseline. This model proved unsound. In a k8s-2g run, Flux applied the correct fix, but the rollout's transient pod dip read as degradation while the recovered state, being merely "not worse than broken", never registered as recovery, so the run aborted a valid repair. The baseline-relative model also misread a no-op remediation (cluster equally broken) as success, counted a `Running 0/1` crashlooping pod as healthy because pod classification matched the phase string and ignored the `READY x/y` fraction, and never confirmed that the fix's revision was the one Flux applied. Production deployments have no clean pre-fault baseline at all.
 
 The Watchdog must instead answer one absolute question: *did the target workload actually recover?* That is decidable from Kubernetes-native rollout criteria plus the Flux applied revision, with no baseline required.
 
@@ -25,7 +25,7 @@ The Watchdog must instead answer one absolute question: *did the target workload
 
 - Zero hallucination surface in the rollback decision
 - No token cost in the Watchdog poll loop
-- No added latency: deterministic snapshot diff is sub-millisecond vs. 100–500 ms per LLM call
+- No added latency: deterministic snapshot diff is sub-millisecond vs. 100-500 ms per LLM call
 - Clean separation of concerns: Watchdog observes and classifies; Orchestrator decides and acts
 
 ## Considered Options
@@ -40,7 +40,7 @@ Chosen option: "Deterministic Watchdog", because it eliminates hallucination sur
 
 ### Consequences
 
-- Good: The rollback trigger path contains no LLM call; recovery classification is a deterministic predicate over a structured `HealthSnapshot`. For a Deployment or StatefulSet target it mirrors the Kubernetes rollout-complete criteria — `observedGeneration` has caught up to `generation`, every replica is updated, ready, and available, the `Available` condition is not `False`, and `Progressing` is not `False` — with a `ProgressDeadlineExceeded` fast-fail. It additionally gates on the Flux Kustomization being Ready and, when an expected revision is known, on the Flux applied revision matching the fix's SHA. A non-workload target falls back to namespace liveness.
+- Good: The rollback trigger path contains no LLM call; recovery classification is a deterministic predicate over a structured `HealthSnapshot`. For a Deployment or StatefulSet target it mirrors the Kubernetes rollout-complete criteria (`observedGeneration` has caught up to `generation`, every replica is updated, ready, and available, the `Available` condition is not `False`, and `Progressing` is not `False`) with a `ProgressDeadlineExceeded` fast-fail. It additionally gates on the Flux Kustomization being Ready and, when an expected revision is known, on the Flux applied revision matching the fix's SHA. A non-workload target falls back to namespace liveness.
 - Good: For an OS sysctl recovery the Watchdog confirms the live kernel parameter against an expected value derived from declarative git truth, not from an alert label. The Orchestrator reads the expected value from the declared NixOS config keyed by the drifted parameter the Diagnosis agent reported (`discovered_sysctl_key`), then wires the key and expected value to the Watchdog, which polls `get_sysctl` and treats the node as recovered once the live value matches. Absent an agent-reported key the Watchdog falls back to the systemd-unit check.
 - Good: The predicate is debounced over `WATCHDOG_HEALTHY_STREAK_K` consecutive healthy polls and bounded by `WATCHDOG_WINDOW_S`, so a transient mid-rollout dip no longer aborts a valid repair and a brief healthy flap no longer declares premature success.
 - Good: Because the predicate is absolute, it works for normal production deployments with no clean pre-fault baseline, and a no-op remediation that leaves the cluster broken is correctly classified as not recovered.
@@ -50,7 +50,7 @@ Chosen option: "Deterministic Watchdog", because it eliminates hallucination sur
 - Bad: Health classification logic must be maintained in Python; adding a new signal (e.g., HPA scale-down event) requires a code change, not a prompt update.
 - Bad: Recovery scenarios that the baseline-relative model aborted (k8s-2g class) now classify as successful, which shifts recorded outcome and MTTR metrics; an eval re-run is required to refresh the baseline figures.
 
-**Validation Status:** Verified — Watchdog implementation in `agents/watchdog/` contains no LLM calls; health assessment is a pure-Python predicate over `HealthSnapshot`. ADR-0005 confirms Watchdog runs concurrently with Remediation via `asyncio.TaskGroup` for the parallel path. Updated 2026-05-15 for the GitOps pivot: the rollback verb is `revert_commit` followed by `reconcile_kustomization` (GitOps path). Updated 2026-06-05: classification changed from a baseline-relative degradation diff to an absolute workload-health predicate, motivated by the k8s-2g incident above; the deterministic-Watchdog rationale is unchanged — the Watchdog still observes, the Orchestrator still decides.
+**Validation Status:** Verified. Watchdog implementation in `agents/watchdog/` contains no LLM calls; health assessment is a pure-Python predicate over `HealthSnapshot`. ADR-0005 confirms Watchdog runs concurrently with Remediation via `asyncio.TaskGroup` for the parallel path. Updated 2026-05-15 for the GitOps pivot: the rollback verb is `revert_commit` followed by `reconcile_kustomization` (GitOps path). Updated 2026-06-05: classification changed from a baseline-relative degradation diff to an absolute workload-health predicate, motivated by the k8s-2g incident above; the deterministic-Watchdog rationale is unchanged. The Watchdog still observes, the Orchestrator still decides.
 
 ### Confirmation
 
@@ -64,7 +64,7 @@ The decision holds as long as:
 #### Deterministic Watchdog
 
 - Good: The absolute-health predicate is a pure function; given identical cluster state it always produces the same `WatchdogResult`
-- Good: Poll loop can run at 1–5 s intervals with no cost; LLM-backed polling at the same cadence would accumulate hundreds of LLM calls per eval scenario
+- Good: Poll loop can run at 1-5 s intervals with no cost; LLM-backed polling at the same cadence would accumulate hundreds of LLM calls per eval scenario
 - Bad: Cannot infer health signals outside the MCP tool surface (e.g., application-level error rates in Prometheus)
 
 #### LLM-backed Watchdog

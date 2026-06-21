@@ -21,6 +21,8 @@ Architecture Decision Records (ADRs) document significant design choices, the co
 | [0013](0013-gitops-k8s-remediation.md) | K8s-layer remediation via GitOps | Accepted |
 | [0014](0014-multi-adapter-model-factory.md) | Multi-adapter model factory via Pydantic AI | Accepted |
 | [0015](0015-drift-direction-classification.md) | Drift-direction classification across K8s and NixOS layers | Accepted |
+| [0016](0016-release-tagging-and-changelog-automation.md) | Release tagging and changelog automation | Accepted |
+| [0017](0017-evaluation-oracle-leak-remediation.md) | Evaluation oracle-leak remediation and rollback scoring resolution | Accepted |
 
 ## Adding an ADR
 

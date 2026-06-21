@@ -25,9 +25,9 @@ The agent host environment runs Python via `uv` with a pinned virtualenv. Any MC
 - Single static binary deploys without a runtime; `go build ./...` is the complete build step
 - `client-go` provides typed, authenticated Kubernetes API access without shelling out to `kubectl`
 - `crypto/ssh` provides SSH transport without requiring an OpenSSH installation on the agent host
-- `io.Pipe()` enables unit testing of the full MCP server without a live cluster
+- The `mcptest` in-process server enables unit testing of the full MCP server without a live cluster
 - Decoupling from the Python runtime prevents MCP server breakage from Python dependency churn
-- The `mcp-go` SDK (mark3labs/mcp-go v0.48.0) implements the MCP JSON-RPC protocol in Go
+- The `mcp-go` SDK (mark3labs/mcp-go v0.55.0) implements the MCP JSON-RPC protocol in Go
 
 ## Considered Options
 
@@ -37,7 +37,7 @@ The agent host environment runs Python via `uv` with a pinned virtualenv. Any MC
 
 ## Decision Outcome
 
-Chosen option: "Go", because it produces standalone binaries decoupled from the Python runtime, provides native access to `client-go` and `crypto/ssh` without subprocess wrapping, and supports `io.Pipe()` unit testing without a live cluster.
+Chosen option: "Go", because it produces standalone binaries decoupled from the Python runtime, provides native access to `client-go` and `crypto/ssh` without subprocess wrapping, and supports `mcptest` in-process unit testing without a live cluster.
 
 ### Consequences
 
@@ -47,13 +47,13 @@ Chosen option: "Go", because it produces standalone binaries decoupled from the 
 - Bad: The monorepo requires a Go toolchain alongside Python and uv, increasing the onboarding surface
 - Bad: CI runs two separate lint and test pipelines: ruff + pytest for Python, golangci-lint + go test for Go
 
-**Validation Status:** Verified — 4/4 MCP servers; clean interface-driven pattern; `io.Pipe()` tests reliable across the v1.0 Hetzner eval campaign.
+**Validation Status:** Verified. 4/4 MCP servers; clean interface-driven pattern; `mcptest` tests reliable across the v1.0 Hetzner eval campaign.
 
 ### Confirmation
 
 The decision holds as long as:
 - All four MCP servers (`kubectl-mcp`, `flux-mcp`, `git-mcp`, `nixos-mcp`) build with `go build ./...` to single static binaries; the original `ssh-mcp` server was removed once OS remediation moved to the GitOps and NixOS-generation path
-- Each server has a passing Go test suite using `io.Pipe()` transport without a live cluster
+- Each server has a passing Go test suite using the `mcptest` in-process transport without a live cluster
 - No MCP server imports from the Python agent packages or depends on the `uv` virtualenv
 
 ### Pros and Cons of the Options
@@ -62,7 +62,7 @@ The decision holds as long as:
 
 - Good: `go build ./...` produces standalone executables with no runtime dependency
 - Good: `client-go` provides typed, authenticated K8s API access; `crypto/ssh` provides SSH without OpenSSH
-- Good: Interface-driven design enables `io.Pipe()` unit testing of the full JSON-RPC handler chain
+- Good: Interface-driven design enables `mcptest` in-process unit testing of the full JSON-RPC handler chain
 - Bad: Requires a Go toolchain in CI and on developer machines alongside the Python/uv stack
 
 #### Python MCP servers
@@ -73,7 +73,7 @@ The decision holds as long as:
 #### Shell-script servers
 
 - Good: Zero build step; scripts are editable without recompilation
-- Bad: Shell scripts cannot reasonably implement the MCP JSON-RPC protocol or call `client-go`/Flux REST APIs without spawning sub-processes per call, multiplying the command-injection surface they were meant to avoid. The kubectl-mcp tool list (`get_pods`, `describe_pod`, `apply_patch`, `rollout_undo`) requires structured K8s API access, not text-pasting through `kubectl`.
+- Bad: Shell scripts cannot reasonably implement the MCP JSON-RPC protocol or call `client-go`/Flux REST APIs without spawning sub-processes per call, multiplying the command-injection surface they were meant to avoid. The kubectl-mcp tool list (`get_pods`, `describe_pod`, `get_logs`, `delete_resource`) requires structured K8s API access, not text-pasting through `kubectl`.
 
 ## More Information
 

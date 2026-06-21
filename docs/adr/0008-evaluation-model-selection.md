@@ -55,7 +55,7 @@ Chosen option: "Three-model panel: Qwen 3.5 + DeepSeek V3.2 + Claude Sonnet 4.6"
 - Bad: DeepSeek V3.2's 128K context window is the binding constraint; all scenarios must fit within it
 - Bad: Claude Sonnet 4.6 requires a commercial API key and billing, unlike the two open-weight models
 
-**Validation Status:** Superseded. The three campaigns recorded against the original `v1.0.0` commit ran on an evaluation harness that leaked scenario ground truth to the agent (forbidden actions disclosed and the toolset pre-filtered; the drifted sysctl and the scenario identity carried in the alert). Those leaks are corrected and `v1.0.0` is re-pointed to the corrected commit; all three models — Qwen 3.5 and DeepSeek V3.2 (open-weight) plus Claude Sonnet 4.6 (frontier reference) — must be re-run across the 13-scenario campaign against the re-pointed tag before their figures are cited.
+**Validation Status:** Superseded. The three campaigns recorded against the original `v1.0.0` commit ran on an evaluation harness that leaked scenario ground truth to the agent (forbidden actions disclosed and the toolset pre-filtered; the drifted sysctl and the scenario identity carried in the alert). Those leaks are corrected and `v1.0.0` is re-pointed to the corrected commit; all three models, Qwen 3.5 and DeepSeek V3.2 (open-weight) plus Claude Sonnet 4.6 (frontier reference), must be re-run across the 13-scenario campaign against the re-pointed tag before their figures are cited.
 
 ### Confirmation
 

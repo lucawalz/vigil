@@ -22,7 +22,7 @@ The factory boundary is unchanged: `build_model()` in `agents/common/src/common/
 - Adding Claude Sonnet 4.6 must not lose feature parity with the native Anthropic API for tool-use and structured outputs.
 - Provider switching must remain env-var-driven; no agent code changes between runs.
 - Agents must not import provider SDKs directly; the adapter choice stays inside `build_model()`.
-- Inter-provider comparisons remain code-path-identical at the agent level — every agent calls `build_model()` and receives a `Model`.
+- Inter-provider comparisons remain code-path-identical at the agent level: every agent calls `build_model()` and receives a `Model`.
 
 ## Considered Options
 
@@ -38,11 +38,11 @@ Chosen option: "Multi-adapter factory", because Pydantic AI already encapsulates
 
 - Good: Native tool-call and structured-output coverage for Claude; no compat-shim limitations.
 - Good: Adding a provider in future is one more branch in the factory; agent code never touches provider SDKs directly.
-- Good: Env-var-driven config preserved — `LLM_MODEL_NAME` selects the adapter, `OLLAMA_*` and `ANTHROPIC_API_KEY` are read on demand.
+- Good: Env-var-driven config preserved: `LLM_MODEL_NAME` selects the adapter, `OLLAMA_*` and `ANTHROPIC_API_KEY` are read on demand.
 - Bad: Token-accounting and latency normalisation now depend on Pydantic AI normalising across two `Model` subclasses rather than on a single shared REST schema.
 - Bad: Cross-provider eval metrics must caveat that Anthropic and Ollama-compat paths use different Pydantic AI adapters; small inter-adapter differences may be absorbed into reported deltas.
 
-**Validation Status:** Pending — covered by `tests/agents/test_provider.py`; runtime verification arrives with the first claude-* eval campaign.
+**Validation Status:** Pending. Covered by `tests/agents/test_provider.py`; runtime verification arrives with the first claude-* eval campaign.
 
 ### Confirmation
 

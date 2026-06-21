@@ -30,7 +30,7 @@ Each eval campaign needs a fresh Kubernetes cluster. The permanent home-lab clus
 
 Chosen option: "Hetzner Cloud + Terraform + Flux v2 bootstrap", because each campaign starts from a clean cluster, cost stays within budget, and it integrates with the existing Flux GitOps setup.
 
-`terraform apply` in `infra/terraform/` provisions three CX22 nodes, writes kubeconfigs, and bootstraps Flux via `null_resource.flux_bootstrap`. The public key (`age1sd72gjj4689pgw6lnzu7kac8dlstxt2elfxgr0urv5nml20569zsrkylka`) is registered in `infra/overlays/hetzner/.sops.yaml`; the matching SOPS age secret must be present in `flux-system` before Flux reconciles sealed secrets. See [ADR-0010](0010-github-actions-eval-runner.md) for how the secret is injected in the automated runner path.
+`terraform apply` in `infra/terraform/` provisions four cpx22 servers (three Kubernetes nodes plus an agent host), writes kubeconfigs, and bootstraps Flux via `null_resource.flux_bootstrap`. The public key (`age1sd72gjj4689pgw6lnzu7kac8dlstxt2elfxgr0urv5nml20569zsrkylka`) is registered in `infra/overlays/hetzner/.sops.yaml`; the matching SOPS age secret must be present in `flux-system` before Flux reconciles sealed secrets. See [ADR-0010](0010-github-actions-eval-runner.md) for how the secret is injected in the automated runner path.
 
 ### Consequences
 
@@ -39,7 +39,7 @@ Chosen option: "Hetzner Cloud + Terraform + Flux v2 bootstrap", because each cam
 - Bad: Running outside GitHub Actions requires SSH into the provisioned node, manual `kubectl create secret` for the SOPS age key, and triggering the eval harness by hand
 - Bad: Hetzner availability zone outages affect campaign availability; no multi-region failover
 
-**Validation Status:** Verified — Terraform apply provisioned the cluster and Flux reconciled eval workloads successfully in the v1.0 Hetzner eval campaign.
+**Validation Status:** Verified. Terraform apply provisioned the cluster and Flux reconciled eval workloads successfully in the v1.0 Hetzner eval campaign.
 
 ### Confirmation
 
