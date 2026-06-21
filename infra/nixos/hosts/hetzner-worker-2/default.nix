@@ -40,4 +40,13 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
+
+  # Add k3s ephemeral storage management to prevent DiskPressure
+  services.k3s.extraFlags = [
+    "--node-label=node.kubernetes.io/role=worker"
+    "--eviction-hard=memory.available<100Mi,nodefs.available<10%,imagefs.available<15%,nodefs.inodesFree<5%"
+    "--eviction-minimum-reclaim=memory.available=0Mi,nodefs.available=500Mi,imagefs.available=1Gi,nodefs.inodesFree=0Mi"
+    "--image-gc-high-threshold=85"
+    "--image-gc-low-threshold=80"
+  ];
 }
