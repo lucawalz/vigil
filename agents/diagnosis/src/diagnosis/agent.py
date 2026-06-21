@@ -281,20 +281,18 @@ def _build_user_message(
 def is_diagnosis_tool_allowed(
     tool_name: str,
     allowed_tools: frozenset[str],
-    blocked_tools: frozenset[str],
 ) -> bool:
-    return tool_name in allowed_tools and tool_name not in blocked_tools
+    return tool_name in allowed_tools
 
 
 def _build_readonly_toolset(
     server: MCPServerStdio,
     allowed_tools: frozenset[str],
-    blocked_tools: frozenset[str],
 ) -> FilteredToolset:
     return FilteredToolset(
         server,
         filter_func=lambda _ctx, tool_def: is_diagnosis_tool_allowed(
-            tool_def.name, allowed_tools, blocked_tools
+            tool_def.name, allowed_tools
         ),
     )
 
@@ -304,22 +302,15 @@ async def run_diagnosis(
     fault: FaultEvent,
     context: DiagnosisContext,
     model: OpenAIChatModel | None = None,
-    blocked_tools: frozenset[str] = frozenset(),
     retry_hint: str | None = None,
     breaker: Breaker | None = None,
 ) -> tuple[DiagnosisReport, RunUsage, list[ModelMessage]]:
     kubectl_readonly = _build_readonly_toolset(
-        deps.kubectl_mcp, DIAGNOSIS_KUBECTL_READ_TOOLS, blocked_tools
+        deps.kubectl_mcp, DIAGNOSIS_KUBECTL_READ_TOOLS
     )
-    nixos_readonly = _build_readonly_toolset(
-        deps.nixos_mcp, DIAGNOSIS_NIXOS_READ_TOOLS, blocked_tools
-    )
-    git_readonly = _build_readonly_toolset(
-        deps.git_mcp, DIAGNOSIS_GIT_READ_TOOLS, blocked_tools
-    )
-    flux_readonly = _build_readonly_toolset(
-        deps.flux_mcp, DIAGNOSIS_FLUX_READ_TOOLS, blocked_tools
-    )
+    nixos_readonly = _build_readonly_toolset(deps.nixos_mcp, DIAGNOSIS_NIXOS_READ_TOOLS)
+    git_readonly = _build_readonly_toolset(deps.git_mcp, DIAGNOSIS_GIT_READ_TOOLS)
+    flux_readonly = _build_readonly_toolset(deps.flux_mcp, DIAGNOSIS_FLUX_READ_TOOLS)
     read_toolsets = (kubectl_readonly, nixos_readonly, git_readonly, flux_readonly)
     if breaker is not None:
         read_toolsets = tuple(
@@ -338,15 +329,7 @@ async def run_diagnosis(
         )
         for ts in repeat_limited
     ]
-    constraint_block = ""
-    if blocked_tools:
-        constraint_block = (
-            f"\n\nScenario constraint: these tools are unavailable for this run: "
-            f"{', '.join(sorted(blocked_tools))}. "
-            f"If your recommended action requires one of these tools, "
-            f"set recommended_action=escalate."
-        )
-    user_message = _build_user_message(fault, context, retry_hint) + constraint_block
+    user_message = _build_user_message(fault, context, retry_hint)
     try:
         async with diagnosis_agent.iter(
             user_message,

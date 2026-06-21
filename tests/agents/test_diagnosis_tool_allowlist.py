@@ -84,13 +84,12 @@ class _StubToolDef:
 def _exposed(
     server_tools: frozenset[str],
     allowed_tools: frozenset[str],
-    blocked_tools: frozenset[str] = frozenset(),
 ) -> frozenset[str]:
     tool_defs = [_StubToolDef(name) for name in server_tools]
     return frozenset(
         td.name
         for td in tool_defs
-        if is_diagnosis_tool_allowed(td.name, allowed_tools, blocked_tools)
+        if is_diagnosis_tool_allowed(td.name, allowed_tools)
     )
 
 
@@ -155,15 +154,8 @@ def test_side_effecting_tools_are_filtered_out() -> None:
 
 def test_unknown_tool_is_filtered_out_fail_safe() -> None:
     assert not is_diagnosis_tool_allowed(
-        "newly_added_write_tool", DIAGNOSIS_KUBECTL_READ_TOOLS, frozenset()
+        "newly_added_write_tool", DIAGNOSIS_KUBECTL_READ_TOOLS
     )
     assert not is_diagnosis_tool_allowed(
-        "newly_added_write_tool", DIAGNOSIS_GIT_READ_TOOLS, frozenset()
+        "newly_added_write_tool", DIAGNOSIS_GIT_READ_TOOLS
     )
-
-
-def test_blocked_tools_override_allow_list() -> None:
-    blocked = frozenset({"get_logs"})
-    exposed = _exposed(_KUBECTL_ALL_TOOLS, DIAGNOSIS_KUBECTL_READ_TOOLS, blocked)
-    assert "get_logs" not in exposed
-    assert exposed == DIAGNOSIS_KUBECTL_READ_TOOLS - blocked
