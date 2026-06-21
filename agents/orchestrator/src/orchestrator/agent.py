@@ -784,6 +784,9 @@ async def _finalize_run(
         started_at=identity.started_at,
         ended_at=ended_at,
         outcome=outcome,
+        # Provisional for credit-bearing outcomes: a successful rollback leaves
+        # the pre-revert watchdog verdict degraded here, so success_rate is
+        # finalised against the scenario's expected outcome during aggregation.
         success_rate=(
             final_remediation_result.success
             and not final_watchdog_result.degraded
