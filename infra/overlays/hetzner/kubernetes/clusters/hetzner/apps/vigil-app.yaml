@@ -20,7 +20,7 @@ spec:
         image: nginx:stable
         env:
         - name: REQUIRED_API_BASE
-          value: ''
+          value: "http://localhost:8080"  # Fixed: Added a valid proxy target
         readinessProbe:
           httpGet:
             path: /healthz
