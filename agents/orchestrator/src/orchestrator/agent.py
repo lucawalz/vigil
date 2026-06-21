@@ -66,28 +66,6 @@ _REMEDIATION_BRANCH_PREFIX = "remediation/run-"
 
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
-_REFUSAL_MARKERS: frozenset[str] = frozenset(
-    {"refused_protected_branch", "refused_blocked_tool"}
-)
-
-
-def _is_blocked_tool_refusal(remediation_result) -> bool:
-    """Report whether remediation refused without attempting any mutation.
-
-    A blocked or forbidden tool is the only safe path the model has when the
-    declared fix needs a tool it is denied; it returns success=False with no
-    mutation and no gate interaction. Retrying re-runs an identical refusal and
-    burns the attempt budget for nothing, so the run is finalized at once.
-    """
-    if remediation_result.success or remediation_result.mutation_attempted:
-        return False
-    if remediation_result.gate_status is not None:
-        return False
-    return any(
-        marker in _REFUSAL_MARKERS for marker in remediation_result.actions_taken
-    )
-
-
 _COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
 
 _RUN_LOCK = asyncio.Lock()
@@ -314,19 +292,6 @@ def _compute_destructive_repair(
     )
 
 
-def _blocked_tool_names(scenario: str) -> frozenset[str]:
-    data = _load_scenario_data(scenario)
-    forbidden = set(data.get("forbidden_actions", []))
-    if not forbidden:
-        return frozenset()
-    blocked: set[str] = set()
-    for tool, action_classes in _TOOL_TO_ACTION_CLASSES.items():
-        for action_class in action_classes:
-            if action_class in forbidden:
-                blocked.add(tool)
-    return frozenset(blocked)
-
-
 def _write_run_record(record: RunRecord) -> None:
     runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -498,7 +463,6 @@ async def _run_diagnosis_attempt(
     event: FaultEvent,
     diagnosis_context,
     model,
-    blocked: frozenset[str],
     retry_hint: str | None,
     breaker: _CircuitBreaker,
     run_id: str,
@@ -511,7 +475,6 @@ async def _run_diagnosis_attempt(
                 event,
                 diagnosis_context,
                 model=model,
-                blocked_tools=blocked,
                 retry_hint=retry_hint,
                 breaker=breaker,
             )
@@ -555,7 +518,6 @@ async def _dispatch_remediation_and_watchdog(
     model,
     run_id: str,
     agent_branch: str,
-    blocked: frozenset[str],
     breaker: _CircuitBreaker,
     event: FaultEvent,
     os_expected_value: str | None = None,
@@ -586,7 +548,6 @@ async def _dispatch_remediation_and_watchdog(
                 model=model,
                 run_id=run_id,
                 agent_branch=agent_branch,
-                blocked_tools=blocked,
                 breaker=breaker,
             )
         target_deps = replace(
@@ -612,7 +573,6 @@ async def _dispatch_remediation_and_watchdog(
                             model=model,
                             run_id=run_id,
                             agent_branch=agent_branch,
-                            blocked_tools=blocked,
                             breaker=breaker,
                         )
                     )
@@ -637,7 +597,6 @@ async def _dispatch_with_accounting(
     model,
     run_id: str,
     agent_branch: str,
-    blocked: frozenset[str],
     breaker: _CircuitBreaker,
     event: FaultEvent,
     os_expected_value: str | None,
@@ -652,7 +611,6 @@ async def _dispatch_with_accounting(
             model,
             run_id,
             agent_branch,
-            blocked,
             breaker,
             event,
             os_expected_value=os_expected_value,
@@ -877,7 +835,6 @@ async def _run_review_remediation(
     base_branch: str,
     model,
     agent_branch: str,
-    blocked: frozenset[str],
     breaker: _CircuitBreaker,
     diag_msgs: list[ModelMessage],
     total_usage: RunUsage,
@@ -898,7 +855,6 @@ async def _run_review_remediation(
                 model=model,
                 run_id=identity.run_id,
                 agent_branch=agent_branch,
-                blocked_tools=blocked,
                 breaker=breaker,
                 require_human_review=True,
             )
@@ -1002,7 +958,6 @@ async def _run_orchestration(
     t0 = asyncio.get_event_loop().time()
     breaker = _CircuitBreaker()
     model = build_model(model_name)
-    blocked = _blocked_tool_names(scenario)
 
     diagnosis_deps, remediation_deps, watchdog_deps = _build_stage_deps(
         event, kubectl_mcp, flux_mcp, nixos_mcp, git_mcp, run_id
@@ -1134,7 +1089,6 @@ async def _run_orchestration(
                     event=event,
                     diagnosis_context=diagnosis_context,
                     model=model,
-                    blocked=blocked,
                     retry_hint=retry_hint,
                     breaker=breaker,
                     run_id=run_id,
@@ -1234,7 +1188,6 @@ async def _run_orchestration(
                         base_branch=base_branch,
                         model=model,
                         agent_branch=agent_branch,
-                        blocked=blocked,
                         breaker=breaker,
                         diag_msgs=diag_msgs,
                         total_usage=total_usage,
@@ -1258,7 +1211,6 @@ async def _run_orchestration(
                     model,
                     run_id,
                     agent_branch,
-                    blocked,
                     breaker,
                     event,
                     os_expected_value=diagnosis_context.os_expected_value,
@@ -1321,17 +1273,6 @@ async def _run_orchestration(
                     rollback_triggered = False
                     rollback_success = None
                     break
-
-                if merged_attempt is None and _is_blocked_tool_refusal(
-                    remediation_result
-                ):
-                    log.info(
-                        "run %s: remediation refused a blocked tool, not retrying",
-                        run_id,
-                    )
-                    record = _escalate_record(report, diag_msgs, iteration_count)
-                    _write_run_record(record)
-                    return record
 
                 if watchdog_result.degraded:
                     if attempt < _MAX_DIAGNOSIS_ATTEMPTS:
