@@ -1193,9 +1193,7 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
     )
 
     report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
-    report = report.model_copy(
-        update={"discovered_sysctl_key": "net.ipv4.ip_forward"}
-    )
+    report = report.model_copy(update={"discovered_sysctl_key": "net.ipv4.ip_forward"})
 
     event = FaultEvent(
         receiver="vigil-webhook",
@@ -1270,9 +1268,7 @@ def test_sysctl_recovery_expected_derives_from_declared_config() -> None:
         diff="",
     )
     report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
-    report = report.model_copy(
-        update={"discovered_sysctl_key": "net.ipv4.ip_forward"}
-    )
+    report = report.model_copy(update={"discovered_sysctl_key": "net.ipv4.ip_forward"})
 
     assert _sysctl_recovery_expected(report, ctx) == "1"
 
@@ -1295,9 +1291,7 @@ def test_sysctl_recovery_expected_none_without_discovered_key() -> None:
 
 def test_diagnosis_report_accepts_discovered_sysctl_key() -> None:
     report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
-    report = report.model_copy(
-        update={"discovered_sysctl_key": "net.ipv4.ip_forward"}
-    )
+    report = report.model_copy(update={"discovered_sysctl_key": "net.ipv4.ip_forward"})
     assert report.discovered_sysctl_key == "net.ipv4.ip_forward"
 
     default_report = _canned_report_with_action("flux_reconcile")

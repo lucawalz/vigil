@@ -471,6 +471,7 @@ _K8S_LABEL_KEYS: frozenset[str] = frozenset(
     }
 )
 
+
 def _load_scenario(scenario_id: str) -> dict[str, Any]:
     scenarios_dir = Path(os.environ.get("VIGIL_SCENARIOS_DIR", "eval/scenarios"))
     scenario_yaml = scenarios_dir / scenario_id / "scenario.yaml"

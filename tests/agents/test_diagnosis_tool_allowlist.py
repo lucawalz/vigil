@@ -87,9 +87,7 @@ def _exposed(
 ) -> frozenset[str]:
     tool_defs = [_StubToolDef(name) for name in server_tools]
     return frozenset(
-        td.name
-        for td in tool_defs
-        if is_diagnosis_tool_allowed(td.name, allowed_tools)
+        td.name for td in tool_defs if is_diagnosis_tool_allowed(td.name, allowed_tools)
     )
 
 
