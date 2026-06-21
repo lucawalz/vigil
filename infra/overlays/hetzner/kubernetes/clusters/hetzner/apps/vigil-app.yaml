@@ -6,10 +6,9 @@ metadata:
   labels:
     app: vigil-app
 spec:
-  replicas: 1
-  selector:
+  replicas:依據鞨 selector:
     matchLabels:
-      app: vigil-app-typo
+      app: vigil-app
   template:
     metadata:
       labels:
