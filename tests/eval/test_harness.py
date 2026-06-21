@@ -802,7 +802,7 @@ def _write_sysctl_scenario(scenarios_dir: Path, key: str = _SYSCTL_KEY) -> None:
     )
 
 
-def test_build_fault_event_adds_sysctl_key_label(
+def test_build_fault_event_never_injects_sysctl_key_label(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from eval.harness import _build_fault_event
@@ -813,8 +813,8 @@ def test_build_fault_event_adds_sysctl_key_label(
 
     payload = _build_fault_event("os-drift-sysctl")
 
-    assert payload["alerts"][0]["labels"]["sysctl_key"] == _SYSCTL_KEY
-    assert payload["commonLabels"]["sysctl_key"] == _SYSCTL_KEY
+    assert "sysctl_key" not in payload["alerts"][0]["labels"]
+    assert "sysctl_key" not in payload["commonLabels"]
 
 
 def test_build_fault_event_omits_sysctl_key_for_non_sysctl_scenario(

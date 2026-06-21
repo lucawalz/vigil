@@ -28,8 +28,8 @@ from diagnosis.context import (
     ManifestPathUnresolvable,
     ResourceKindUnresolvable,
     build_diagnosis_context,
+    declared_sysctl_value,
     extract_alert_namespace,
-    extract_sysctl_key,
     extract_systemd_unit,
 )
 from diagnosis.models import (
@@ -47,7 +47,12 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 from remediation.agent import run_remediation
 from remediation.models import RemediationDeps, RemediationOutputRetryExhausted
-from watchdog.agent import capture_health_snapshot, run_watchdog
+from watchdog.agent import (
+    OS_CHECK_SYSCTL,
+    OS_CHECK_SYSTEMD,
+    capture_health_snapshot,
+    run_watchdog,
+)
 from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps
 
 from .models import FaultEvent, RunRecord
@@ -427,11 +432,22 @@ def _os_watchdog_check(event: FaultEvent) -> tuple[str | None, str | None]:
     """Map a fault event onto an OS verification (check_kind, check_key) pair."""
     unit = extract_systemd_unit(event)
     if unit:
-        return "systemd", unit
-    key = extract_sysctl_key(event)
-    if key:
-        return "sysctl", key
+        return OS_CHECK_SYSTEMD, unit
     return None, None
+
+
+def _sysctl_recovery_expected(report, diagnosis_context) -> str | None:
+    """Derive the Watchdog sysctl pass-value from declarative git truth.
+
+    The agent reports only the drifted key; the orchestrator independently reads
+    the expected value from the declared NixOS config so no scenario-supplied
+    oracle ever reaches diagnosis.
+    """
+    if not report.discovered_sysctl_key:
+        return None
+    return declared_sysctl_value(
+        diagnosis_context.declared_yaml, report.discovered_sysctl_key
+    )
 
 
 @dataclass(frozen=True)
@@ -530,13 +546,19 @@ async def _dispatch_remediation_and_watchdog(
     )
 
     if report.target_host:
-        os_check_kind, os_check_key = _os_watchdog_check(event)
+        if report.discovered_sysctl_key:
+            os_check_kind = OS_CHECK_SYSCTL
+            os_check_key = report.discovered_sysctl_key
+            os_check_expected = os_expected_value
+        else:
+            os_check_kind, os_check_key = _os_watchdog_check(event)
+            os_check_expected = None
         target_deps = replace(
             target_deps,
             target_host=report.target_host,
             os_check_kind=os_check_kind,
             os_check_key=os_check_key,
-            os_check_expected=os_expected_value,
+            os_check_expected=os_check_expected,
         )
 
     if report.recommended_action == "git_commit_k8s":
@@ -1213,7 +1235,9 @@ async def _run_orchestration(
                     agent_branch,
                     breaker,
                     event,
-                    os_expected_value=diagnosis_context.os_expected_value,
+                    os_expected_value=_sysctl_recovery_expected(
+                        report, diagnosis_context
+                    ),
                 )
                 if isinstance(dispatch_outcome, _RemediationAbort):
                     total_usage = total_usage + (dispatch_outcome.usage or RunUsage())

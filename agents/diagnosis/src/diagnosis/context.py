@@ -43,7 +43,6 @@ class DiagnosisContext:
     live_pod_status: str = field(default="")
     live_admission_objects: list[AdmissionObject] = field(default_factory=list)
     live_services: str = field(default="")
-    os_expected_value: str | None = None
 
 
 class ManifestPathUnresolvable(RuntimeError):
@@ -133,16 +132,6 @@ def _extract_systemd_unit(fault: FaultEvent) -> str | None:
     return None
 
 
-def _extract_sysctl_key(fault: FaultEvent) -> str | None:
-    for alert in fault.alerts:
-        key = alert.get("labels", {}).get("sysctl_key") or (
-            alert.get("annotations", {}).get("sysctl_key")
-        )
-        if key:
-            return key
-    return fault.commonLabels.get("sysctl_key") or fault.groupLabels.get("sysctl_key")
-
-
 def _declared_sysctl_value(declared_nix: str, key: str) -> str | None:
     match = re.search(r'"' + re.escape(key) + r'"\s*=\s*([^;]+);', declared_nix)
     if not match:
@@ -224,9 +213,13 @@ def extract_systemd_unit(fault: FaultEvent) -> str | None:
     return _extract_systemd_unit(fault)
 
 
-def extract_sysctl_key(fault: FaultEvent) -> str | None:
-    """Return the sysctl key named in the alert, or None."""
-    return _extract_sysctl_key(fault)
+def declared_sysctl_value(declared_nix: str, key: str) -> str | None:
+    """Return the value declared for a sysctl key in a NixOS config, or None.
+
+    The orchestrator derives the recovery pass-value from declarative git truth
+    rather than the agent, keeping any scenario-supplied value out of diagnosis.
+    """
+    return _declared_sysctl_value(declared_nix, key)
 
 
 def _extract_flux_annotations(live_text: str) -> tuple[str | None, str | None]:
@@ -702,18 +695,11 @@ async def _build_os_context(
     manifest_path = _extract_text(manifest_path_result)
 
     systemd_unit = _extract_systemd_unit(fault)
-    sysctl_key = _extract_sysctl_key(fault)
     if systemd_unit:
         live_result = await call_tool(
             deps.nixos_mcp,
             "get_systemd_status",
             {"host": target_host, "unit": systemd_unit},
-        )
-    elif sysctl_key:
-        live_result = await call_tool(
-            deps.nixos_mcp,
-            "get_sysctl",
-            {"host": target_host, "key": sysctl_key},
         )
     else:
         live_result = await call_tool(
@@ -741,16 +727,12 @@ async def _build_os_context(
     declared_full = declared_yaml + ("\n" + imported if imported else "")
 
     diff = _compute_diff(live_yaml, declared_full)
-    os_expected_value = (
-        _declared_sysctl_value(declared_full, sysctl_key) if sysctl_key else None
-    )
     return DiagnosisContext(
         source_branch=source_branch,
         manifest_path=manifest_path,
         live_yaml=live_yaml,
         declared_yaml=declared_full,
         diff=diff,
-        os_expected_value=os_expected_value,
     )
 
 

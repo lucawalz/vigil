@@ -101,6 +101,15 @@ class DiagnosisReport(BaseModel):
             " null for flux_reconcile / nixos_rebuild / escalate."
         ),
     )
+    discovered_sysctl_key: str | None = Field(
+        default=None,
+        description=(
+            "The kernel parameter identified as drifted: its live value diverges"
+            " from the declared boot.kernel.sysctl entry. Populate when"
+            " recommended_action is nixos_rebuild and the root cause is a runtime"
+            " sysctl drift, so recovery can be verified against the declared value."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod

@@ -342,7 +342,6 @@ def test_diagnosis_context_required_fields() -> None:
         "live_pod_status",
         "live_admission_objects",
         "live_services",
-        "os_expected_value",
     }
     assert fields["source_branch"].type in (str, "str")
     assert fields["manifest_path"].type in ("str | None", "Optional[str]")
@@ -1001,11 +1000,12 @@ def test_extract_systemd_unit_wrapper_returns_none_when_absent() -> None:
     assert extract_systemd_unit(fault) is None
 
 
-def test_extract_sysctl_key_wrapper_returns_key() -> None:
-    from diagnosis.context import extract_sysctl_key
+def test_declared_sysctl_value_public_wrapper_reads_declared_config() -> None:
+    from diagnosis.context import declared_sysctl_value
 
-    fault = _os_fault({"alertname": "SysctlDrift", "sysctl_key": "net.ipv4.ip_forward"})
-    assert extract_sysctl_key(fault) == "net.ipv4.ip_forward"
+    declared = 'boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkForce "0";\n'
+    assert declared_sysctl_value(declared, "net.ipv4.ip_forward") == "0"
+    assert declared_sysctl_value(declared, "net.ipv4.conf.all.forwarding") is None
 
 
 def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
@@ -1082,7 +1082,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     )
 
 
-def test_build_diagnosis_context_os_sysctl_key_surfaces_live_value() -> None:
+def test_build_diagnosis_context_os_does_not_prefetch_sysctl() -> None:
     import asyncio
     from unittest.mock import AsyncMock
 
@@ -1124,7 +1124,7 @@ def test_build_diagnosis_context_os_sysctl_key_surfaces_live_value() -> None:
         "    branch: main\n"
     )
 
-    live_sysctl_value = "net.ipv4.ip_forward = 1"
+    live_journal = "journal output"
 
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
@@ -1134,8 +1134,8 @@ def test_build_diagnosis_context_os_sysctl_key_surfaces_live_value() -> None:
         captured_calls.append((tool, args))
         if tool == "get_nix_path":
             return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
-        if tool == "get_sysctl":
-            return {"content": live_sysctl_value}
+        if tool == "get_journal":
+            return {"content": live_journal}
         return {"content": "state"}
 
     mock_nixos = AsyncMock()
@@ -1159,16 +1159,15 @@ def test_build_diagnosis_context_os_sysctl_key_surfaces_live_value() -> None:
     ctx = asyncio.run(build_diagnosis_context(deps, fault))
 
     sysctl_call = next((c for c in captured_calls if c[0] == "get_sysctl"), None)
-    assert sysctl_call is not None, "get_sysctl must be called when sysctl_key present"
-    assert sysctl_call[1].get("host") == "hetzner-worker-1"
-    assert sysctl_call[1].get("key") == "net.ipv4.ip_forward"
-
-    journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
-    assert journal_call is None, (
-        "get_journal must not be called when sysctl_key present"
+    assert sysctl_call is None, (
+        "get_sysctl must not be pre-fetched from a scenario-supplied sysctl_key"
     )
 
-    assert ctx.live_yaml == live_sysctl_value
+    journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
+    assert journal_call is not None, "non-systemd OS faults route through get_journal"
+    assert journal_call[1].get("host") == "hetzner-worker-1"
+
+    assert ctx.live_yaml == live_journal
 
 
 def test_declared_sysctl_value_extracts_mkdefault_literal() -> None:
@@ -1194,7 +1193,7 @@ def test_declared_sysctl_value_strips_quotes_and_missing_key() -> None:
     assert _declared_sysctl_value(declared, "net.ipv4.conf.all.forwarding") is None
 
 
-def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
+def test_build_diagnosis_context_os_surfaces_declared_sysctl_in_config() -> None:
     import asyncio
     from unittest.mock import AsyncMock
 
@@ -1211,7 +1210,6 @@ def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
                 "labels": {
                     "alertname": "KernelParameterDrift",
                     "node": "hetzner-worker-1",
-                    "sysctl_key": "net.ipv4.ip_forward",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -1250,8 +1248,6 @@ def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
     async def nixos_side_effect(tool, args):
         if tool == "get_nix_path":
             return {"content": "infra/nixos/hosts/hetzner-worker-1/default.nix"}
-        if tool == "get_sysctl":
-            return {"content": "net.ipv4.ip_forward = 0"}
         return {"content": "state"}
 
     mock_nixos = AsyncMock()
@@ -1279,8 +1275,9 @@ def test_build_diagnosis_context_os_sysctl_populates_expected_value() -> None:
 
     ctx = asyncio.run(build_diagnosis_context(deps, fault))
 
-    assert ctx.os_expected_value == "1"
-    assert "net.ipv4.ip_forward" in ctx.declared_yaml
+    from diagnosis.context import declared_sysctl_value
+
+    assert declared_sysctl_value(ctx.declared_yaml, "net.ipv4.ip_forward") == "1"
 
 
 def test_resolve_nix_imports_walks_transitive_modules() -> None:

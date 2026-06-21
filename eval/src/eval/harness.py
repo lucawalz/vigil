@@ -468,10 +468,6 @@ _K8S_LABEL_KEYS: frozenset[str] = frozenset(
     }
 )
 
-_SYSCTL_MODIFIED_SYMPTOM = "sysctl_modified"
-_SYSCTL_KEY_LABEL = "sysctl_key"
-
-
 def _load_scenario(scenario_id: str) -> dict[str, Any]:
     scenarios_dir = Path(os.environ.get("VIGIL_SCENARIOS_DIR", "eval/scenarios"))
     scenario_yaml = scenarios_dir / scenario_id / "scenario.yaml"
@@ -504,12 +500,6 @@ def _build_fault_event(
         for key in _K8S_LABEL_KEYS:
             if key in inject_params:
                 labels[key] = str(inject_params[key])
-
-    verify_broken: dict[str, Any] = scenario.get("verify_broken") or {}
-    if verify_broken.get("symptom") == _SYSCTL_MODIFIED_SYMPTOM:
-        sysctl_key = verify_broken.get("key")
-        if sysctl_key:
-            labels[_SYSCTL_KEY_LABEL] = str(sysctl_key)
 
     if target_host:
         labels["node"] = target_host

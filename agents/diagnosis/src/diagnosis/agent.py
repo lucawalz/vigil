@@ -144,6 +144,12 @@ OS-level fault rules:
 - A runtime kernel parameter whose live value (get_sysctl) diverges from its declared
   boot.kernel.sysctl value in git is live_only_drift; re-activation re-applies the
   declared value, so the action is nixos_rebuild, not escalate.
+- For OS/node faults, enumerate the declared boot.kernel.sysctl entries in the declared
+  config (declared_yaml) and probe each with get_sysctl(host, key) to locate the
+  parameter whose live value diverges from its declared value. When that sysctl drift
+  is the root cause and the action is nixos_rebuild, set discovered_sysctl_key to the
+  drifted key so recovery can be verified against the declared value. Do not report an
+  expected value; the orchestrator derives it from git.
 
 Drift classification from DiagnosisContext:
 Use the provided diff field from DiagnosisContext to classify drift direction.

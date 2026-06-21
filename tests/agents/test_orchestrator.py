@@ -1193,6 +1193,9 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
     )
 
     report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+    report = report.model_copy(
+        update={"discovered_sysctl_key": "net.ipv4.ip_forward"}
+    )
 
     event = FaultEvent(
         receiver="vigil-webhook",
@@ -1203,7 +1206,6 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
                 "labels": {
                     "alertname": "KernelParameterDrift",
                     "node": "hetzner-worker-1",
-                    "sysctl_key": "net.ipv4.ip_forward",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -1247,6 +1249,59 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
     assert len(captured_deps) == 1
     assert captured_deps[0].os_check_expected == "1"
     assert captured_deps[0].os_check_kind == "sysctl"
+    assert captured_deps[0].os_check_key == "net.ipv4.ip_forward"
+
+
+def test_sysctl_recovery_expected_derives_from_declared_config() -> None:
+    from diagnosis.context import DiagnosisContext
+    from orchestrator.agent import _sysctl_recovery_expected
+
+    declared = (
+        "{ lib, ... }:\n"
+        "{\n"
+        '  boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;\n'
+        "}\n"
+    )
+    ctx = DiagnosisContext(
+        source_branch="main",
+        manifest_path="infra/nixos/hosts/hetzner-worker-1/default.nix",
+        live_yaml="net.ipv4.ip_forward = 0",
+        declared_yaml=declared,
+        diff="",
+    )
+    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+    report = report.model_copy(
+        update={"discovered_sysctl_key": "net.ipv4.ip_forward"}
+    )
+
+    assert _sysctl_recovery_expected(report, ctx) == "1"
+
+
+def test_sysctl_recovery_expected_none_without_discovered_key() -> None:
+    from diagnosis.context import DiagnosisContext
+    from orchestrator.agent import _sysctl_recovery_expected
+
+    ctx = DiagnosisContext(
+        source_branch="main",
+        manifest_path=None,
+        live_yaml="",
+        declared_yaml='boot.kernel.sysctl."net.ipv4.ip_forward" = 1;',
+        diff="",
+    )
+    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+
+    assert _sysctl_recovery_expected(report, ctx) is None
+
+
+def test_diagnosis_report_accepts_discovered_sysctl_key() -> None:
+    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+    report = report.model_copy(
+        update={"discovered_sysctl_key": "net.ipv4.ip_forward"}
+    )
+    assert report.discovered_sysctl_key == "net.ipv4.ip_forward"
+
+    default_report = _canned_report_with_action("flux_reconcile")
+    assert default_report.discovered_sysctl_key is None
 
 
 async def test_outcome_gate_failed(

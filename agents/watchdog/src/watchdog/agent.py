@@ -50,8 +50,8 @@ _WORKLOAD_KINDS = frozenset({"Deployment", "StatefulSet"})
 _PROGRESS_DEADLINE_REASON = "ProgressDeadlineExceeded"
 
 _ACTIVE_RUNNING = "Active: active (running)"
-_OS_CHECK_SYSTEMD = "systemd"
-_OS_CHECK_SYSCTL = "sysctl"
+OS_CHECK_SYSTEMD = "systemd"
+OS_CHECK_SYSCTL = "sysctl"
 
 
 def _now_iso() -> str:
@@ -302,14 +302,14 @@ async def _os_target_healthy(deps: WatchdogDeps) -> bool:
     if deps.nixos_mcp is None or not deps.target_host:
         return False
     try:
-        if deps.os_check_kind == _OS_CHECK_SYSTEMD and deps.os_check_key:
+        if deps.os_check_kind == OS_CHECK_SYSTEMD and deps.os_check_key:
             result = await call_tool(
                 deps.nixos_mcp,
                 "get_systemd_status",
                 {"host": deps.target_host, "unit": deps.os_check_key},
             )
             return _ACTIVE_RUNNING in _coerce_tool_text(result)
-        if deps.os_check_kind == _OS_CHECK_SYSCTL and deps.os_check_key:
+        if deps.os_check_kind == OS_CHECK_SYSCTL and deps.os_check_key:
             result = await call_tool(
                 deps.nixos_mcp,
                 "get_sysctl",
