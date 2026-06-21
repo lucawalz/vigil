@@ -42,8 +42,9 @@ To keep the evaluated tree stable, Dependabot version updates are paused for the
 - Good: The evaluated dependency tree is frozen for the duration of the campaign, so a single campaign runs against one consistent tree from start to finish
 - Bad: Dependabot is paused, so dependencies receive no patch, minor, or security updates until the `updates` entries are restored after the evaluation
 - Neutral: Releases are cut manually by pushing a tag; there is no automated version-bump PR, so the decision to release and the version number are explicit human actions
+- Neutral: After the evaluation harness was corrected for scenario-ground-truth leakage, `v1.0.0` is re-pointed to the corrected commit rather than minting a new version, so the thesis keeps one cited tag; clones that fetched the earlier tag must re-fetch the moved `v1.0.0`, and the campaigns recorded against the earlier commit are superseded (see ADR-0008)
 
-**Validation Status:** Pending. Confirmed once `v1.0.0` is tagged, `release.yml` publishes git-cliff-generated notes for it, and the thesis cites the tag.
+**Validation Status:** Pending. Confirmed once `v1.0.0` is re-pointed to the corrected commit, `release.yml` publishes git-cliff-generated notes for it, and the thesis cites the tag.
 
 ### Confirmation
 
