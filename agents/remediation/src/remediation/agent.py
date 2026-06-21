@@ -41,17 +41,6 @@ REMEDIATION_REQUEST_LIMIT: int = int(os.environ.get("REMEDIATION_REQUEST_LIMIT",
 _COMMIT_TOOL_NAME = "commit_files"
 _COMMIT_GENERATION_TOOL_NAME = "commit_generation"
 
-_ESSENTIAL_MUTATING_TOOLS: dict[str, frozenset[str]] = {
-    "flux_reconcile": frozenset({"reconcile_kustomization"}),
-    "git_commit_k8s": frozenset(
-        {"write_manifest", "commit_files", "push_branch", "create_pr"}
-    ),
-    "git_commit_nix": frozenset(
-        {"write_manifest", "commit_files", "push_branch", "create_pr"}
-    ),
-    "nixos_rebuild": frozenset({"stage_generation"}),
-}
-
 _SYSTEM_PROMPT = """\
 You are the Remediation stage of the vigil fault-response pipeline. Execute one of
 four action classes, determined by recommended_action from the DiagnosisReport.
@@ -195,7 +184,6 @@ remediation_agent: Agent[RemediationDeps, RemediationResult] = Agent(
 def _preflight_refusal(
     report: DiagnosisReport,
     source_branch: str,
-    blocked_tools: frozenset[str],
 ) -> RemediationResult | None:
     """Return a deterministic refusal when guardrails forbid running the agent."""
     if source_branch in PROTECTED_BRANCHES:
@@ -205,30 +193,7 @@ def _preflight_refusal(
             tool_calls_count=0,
             mutation_attempted=False,
         )
-
-    essential_blocked = (
-        _ESSENTIAL_MUTATING_TOOLS.get(report.recommended_action, frozenset())
-        & blocked_tools
-    )
-    if essential_blocked:
-        return RemediationResult(
-            success=False,
-            actions_taken=["refused_blocked_tool"],
-            tool_calls_count=0,
-            mutation_attempted=False,
-        )
     return None
-
-
-def _build_constraint_block(blocked_tools: frozenset[str]) -> str:
-    if not blocked_tools:
-        return ""
-    return (
-        f" These tools are blocked for this run and must not be called: "
-        f"{', '.join(sorted(blocked_tools))}."
-        f" If remediation requires a blocked tool,"
-        f" return success=False immediately."
-    )
 
 
 def _build_review_block(require_human_review: bool) -> str:
@@ -258,47 +223,32 @@ async def run_remediation(
     model: OpenAIChatModel | None = None,
     run_id: str = "",
     agent_branch: str = "",
-    blocked_tools: frozenset[str] = frozenset(),
     breaker: Breaker | None = None,
     require_human_review: bool = False,
 ) -> tuple[RemediationResult, RunUsage, list[ModelMessage]]:
-    refusal = _preflight_refusal(report, source_branch, blocked_tools)
+    refusal = _preflight_refusal(report, source_branch)
     if refusal is not None:
         return refusal, RunUsage(), []
 
-    def _allow(tool_name: str) -> bool:
-        return tool_name not in blocked_tools
-
     def _allow_nixos(tool_name: str) -> bool:
-        return tool_name != _COMMIT_GENERATION_TOOL_NAME and _allow(tool_name)
+        return tool_name != _COMMIT_GENERATION_TOOL_NAME
 
-    filtered_git = (
-        FilteredToolset(deps.git_mcp, filter_func=lambda _ctx, td: _allow(td.name))
-        if blocked_tools
-        else deps.git_mcp
-    )
     git_toolset = CallBudgetToolset(
-        wrapped=filtered_git,
+        wrapped=deps.git_mcp,
         tool_name=_COMMIT_TOOL_NAME,
         budget=GIT_COMMIT_BUDGET,
         on_exceeded=GitCommitBudgetExceeded,
-    )
-    flux_toolset = (
-        FilteredToolset(deps.flux_mcp, filter_func=lambda _ctx, td: _allow(td.name))
-        if blocked_tools
-        else deps.flux_mcp
     )
     nixos_toolset = FilteredToolset(
         deps.nixos_mcp, filter_func=lambda _ctx, td: _allow_nixos(td.name)
     )
 
-    toolsets: list[object] = [git_toolset, flux_toolset, nixos_toolset]
+    toolsets: list[object] = [git_toolset, deps.flux_mcp, nixos_toolset]
     if breaker is not None:
         toolsets = [
             CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in toolsets
         ]
 
-    constraint_block = _build_constraint_block(blocked_tools)
     review_block = _build_review_block(require_human_review)
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
@@ -307,7 +257,6 @@ async def run_remediation(
         f"recommended_action = {report.recommended_action}. "
         f"source_branch = {source_branch}."
         f" agent_branch = {agent_branch}."
-        f"{constraint_block}"
         f"{review_block}"
     )
     try:
