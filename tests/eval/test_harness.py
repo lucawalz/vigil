@@ -774,6 +774,68 @@ def test_no_evalharness_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "EvalHarness-" not in payload["groupKey"]
 
 
+def _agent_visible_alert_strings(payload: dict) -> list[str]:
+    alert = payload["alerts"][0]
+    return [
+        alert["annotations"]["summary"],
+        alert["fingerprint"],
+        payload["groupKey"],
+    ]
+
+
+def test_alert_summary_fingerprint_groupkey_hide_scenario_and_eval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    _write_k8s1_scenario(scenarios_dir)
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    payload = _build_fault_event("k8s-1")
+
+    for value in _agent_visible_alert_strings(payload):
+        assert "k8s-1" not in value
+        assert "eval" not in value.lower()
+        assert "harness" not in value.lower()
+
+
+def test_alert_fingerprint_is_deterministic_hex_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _FINGERPRINT_LEN, _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    _write_k8s1_scenario(scenarios_dir)
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    fingerprint = _build_fault_event("k8s-1")["alerts"][0]["fingerprint"]
+
+    assert len(fingerprint) == _FINGERPRINT_LEN
+    assert all(c in "0123456789abcdef" for c in fingerprint)
+    assert fingerprint == _build_fault_event("k8s-1")["alerts"][0]["fingerprint"]
+
+
+def test_alert_name_falls_back_to_generic_constant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eval.harness import _DEFAULT_ALERT_NAME, _build_fault_event
+
+    scenarios_dir = tmp_path / "scenarios"
+    scenario_dir = scenarios_dir / "deceptive-2"
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+    import yaml as _yaml
+
+    (scenario_dir / "scenario.yaml").write_text(_yaml.dump({"id": "deceptive-2"}))
+    monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(scenarios_dir))
+
+    payload = _build_fault_event("deceptive-2")
+
+    assert payload["alerts"][0]["labels"]["alertname"] == _DEFAULT_ALERT_NAME
+    assert "deceptive-2" not in payload["groupKey"]
+    assert "deceptive-2" not in payload["alerts"][0]["annotations"]["summary"]
+
+
 _SYSCTL_KEY = "net.bridge.bridge-nf-call-iptables"
 
 

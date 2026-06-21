@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -27,6 +28,8 @@ CIRCUIT_BREAKER_THRESHOLD = 3
 CIRCUIT_BREAKER_EXIT_CODE = 10
 DEFAULT_CIRCUIT_BREAKER_STATE_PATH = "/tmp/vigil-circuit-breaker.json"
 _TRUNC = 300
+_DEFAULT_ALERT_NAME = "VigilFaultDetected"
+_FINGERPRINT_LEN = 16
 
 log = logging.getLogger(__name__)
 
@@ -477,12 +480,18 @@ def _load_scenario(scenario_id: str) -> dict[str, Any]:
     return {}
 
 
+def _alert_fingerprint(labels: dict[str, str]) -> str:
+    """Derive an opaque fingerprint from the sorted label set, as Alertmanager does."""
+    digest_input = ",".join(f"{k}={labels[k]}" for k in sorted(labels))
+    return hashlib.sha256(digest_input.encode()).hexdigest()[:_FINGERPRINT_LEN]
+
+
 def _build_fault_event(
     scenario_id: str, target_host: str | None = None
 ) -> dict[str, Any]:
     kubeconfig = os.environ.get("EVAL_RUNNER_KUBECONFIG") or None
     scenario = _load_scenario(scenario_id)
-    alert_name = scenario.get("alert_name") or scenario_id
+    alert_name = scenario.get("alert_name") or _DEFAULT_ALERT_NAME
     inject_params: dict[str, Any] = scenario.get("inject_params") or {}
     labels: dict[str, str] = {"alertname": alert_name}
 
@@ -510,11 +519,11 @@ def _build_fault_event(
             {
                 "status": "firing",
                 "labels": labels,
-                "annotations": {"summary": f"eval harness trigger for {scenario_id}"},
+                "annotations": {"summary": f"{alert_name} firing"},
                 "startsAt": "1970-01-01T00:00:00Z",
                 "endsAt": "",
                 "generatorURL": "",
-                "fingerprint": f"eval-{scenario_id}",
+                "fingerprint": _alert_fingerprint(labels),
             }
         ],
         "groupLabels": {"alertname": alert_name},
@@ -522,7 +531,7 @@ def _build_fault_event(
         "commonAnnotations": {},
         "externalURL": "",
         "version": "4",
-        "groupKey": f"eval/{alert_name}",
+        "groupKey": f'{{}}:{{alertname="{alert_name}"}}',
         "truncatedAlerts": 0,
     }
 
