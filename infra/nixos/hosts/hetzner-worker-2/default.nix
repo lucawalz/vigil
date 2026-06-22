@@ -23,7 +23,8 @@
   networking.hostName = "hetzner-worker-2";
   system.stateVersion = "25.05";
 
-  services.k3s.serverAddr = "https://10.0.0.10:6443";
+  # Remove duplicate serverAddr definition that conflicts with agent.nix module
+  # services.k3s.serverAddr = "https://10.0.0.10:6443";
 
   networking.firewall.allowedTCPPorts = [ 22 10250 ];
   networking.firewall.allowedUDPPorts = [ 8472 ];
