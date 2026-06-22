@@ -24,7 +24,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /healthz
-            port: значок
+            port: 80
           initialDelaySeconds: 2
           periodSeconds: 5
           failureThreshold: 3
