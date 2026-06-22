@@ -1,4 +1,4 @@
-"""Unit tests for orchestrator.poller — alert polling and FaultEvent mapping."""
+"""Unit tests for orchestrator.poller - alert polling and FaultEvent mapping."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from common.constants import POLLER_UNHEALTHY_AFTER
 from orchestrator.agent import run_orchestration
 from orchestrator.models import FaultEvent
 
-# These imports will fail until poller.py is created — that is the RED gate.
+# These imports will fail until poller.py is created - that is the RED gate.
 from orchestrator.poller import _alert_to_fault_event, prometheus_poller
 
 

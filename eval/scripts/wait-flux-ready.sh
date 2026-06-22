@@ -17,7 +17,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     -n flux-system \
     --request-timeout=15s \
     -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason' \
-    --no-headers 2>&1 || echo "(kubectl error — cluster not reachable yet)"
+    --no-headers 2>&1 || echo "(kubectl error - cluster not reachable yet)"
   kubectl --kubeconfig "$KUBECONFIG_PATH" get helmrelease \
     -A \
     --request-timeout=15s \
@@ -46,7 +46,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep "$POLL_INTERVAL_S"
 done
 
-echo "wait-flux-ready: timeout after ${DEADLINE_S}s — cluster not ready" >&2
+echo "wait-flux-ready: timeout after ${DEADLINE_S}s - cluster not ready" >&2
 kubectl --kubeconfig "$KUBECONFIG_PATH" get kustomization -n flux-system --request-timeout=15s 2>&1 || true
 kubectl --kubeconfig "$KUBECONFIG_PATH" get helmrelease -A --request-timeout=15s 2>&1 || true
 exit 1

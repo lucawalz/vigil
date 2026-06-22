@@ -78,7 +78,7 @@ func parseRepoURL(repoURL string) (owner, repo string) {
 	url = strings.TrimSuffix(url, ".git")
 	parts := strings.SplitN(url, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		log.Fatalf("git-mcp: cannot parse REPO_URL %q — expected https://github.com/owner/repo.git", repoURL)
+		log.Fatalf("git-mcp: cannot parse REPO_URL %q - expected https://github.com/owner/repo.git", repoURL)
 	}
 	return parts[0], parts[1]
 }

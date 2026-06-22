@@ -584,7 +584,7 @@ func HandleRevertCommit(client GitClient, state SessionState, protected Protecte
 			return mcp.NewToolResultError("merge_commit_sha: missing or wrong type"), nil
 		}
 		if !commitSHAPattern.MatchString(mergeCommitSHA) {
-			return mcp.NewToolResultError("merge_commit_sha: must be a lowercase hex string (7–40 chars)"), nil
+			return mcp.NewToolResultError("merge_commit_sha: must be a lowercase hex string (7-40 chars)"), nil
 		}
 
 		cloneDir := state.CloneDir()

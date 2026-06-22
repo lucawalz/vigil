@@ -187,8 +187,8 @@ def build_run_id(
 ) -> tuple[str, str, str]:
     """Return (run_id, seed_str, sha7).
 
-    When `seed` is None — as for raw Alertmanager webhooks routed through
-    `/webhook` without a `?seed=` query parameter — fall back to a UTC
+    When `seed` is None - as for raw Alertmanager webhooks routed through
+    `/webhook` without a `?seed=` query parameter - fall back to a UTC
     timestamp plus a random suffix so the run_id stays unique even for
     sub-second concurrent webhook deliveries.
     """
@@ -1135,7 +1135,7 @@ async def _run_orchestration(
                     diag_usage.input_tokens or 0
                 ) == 0:
                     log.error(
-                        "run %s: zero-token response (msg_count=%d) — quota exhausted",
+                        "run %s: zero-token response (msg_count=%d) - quota exhausted",
                         run_id,
                         len(diag_msgs),
                     )

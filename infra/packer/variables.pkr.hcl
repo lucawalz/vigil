@@ -20,7 +20,7 @@ variable "nixos_commit_sha" {
 
 variable "nixos_hash" {
   type        = string
-  description = "Git tree hash of infra/nixos/ — used as snapshot label for cache invalidation"
+  description = "Git tree hash of infra/nixos/ - used as snapshot label for cache invalidation"
 }
 
 variable "ssh_private_key_file" {

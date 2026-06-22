@@ -15,4 +15,4 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1"
 
-echo "reset.sh: os-1 seed=${SEED} — node at baseline"
+echo "reset.sh: os-1 seed=${SEED} - node at baseline"

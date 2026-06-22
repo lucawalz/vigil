@@ -8,4 +8,4 @@ SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "sysctl -w net.bridge.bridge-nf-call-iptables=1 || true"
 
-echo "reset.sh: os-drift-sysctl seed=${SEED} — node at baseline"
+echo "reset.sh: os-drift-sysctl seed=${SEED} - node at baseline"

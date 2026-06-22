@@ -20,7 +20,7 @@ _TRUNC = 1000
 
 
 def _t(s: str) -> str:
-    return s[:_TRUNC] + "…" if len(s) > _TRUNC else s
+    return s[:_TRUNC] + "..." if len(s) > _TRUNC else s
 
 
 def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
@@ -31,7 +31,7 @@ def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
                 if isinstance(part, ToolCallPart):
                     _iter += 1
                     _log.info(
-                        "[%s | %s | iter %d] → %s(%s)",
+                        "[%s | %s | iter %d] -> %s(%s)",
                         run_id,
                         phase,
                         _iter,
@@ -50,7 +50,7 @@ def log_messages(run_id: str, phase: str, messages: list[ModelMessage]) -> None:
             for part in msg.parts:
                 if isinstance(part, ToolReturnPart):
                     _log.info(
-                        "[%s | %s | iter %d] ← %s: %s",
+                        "[%s | %s | iter %d] <- %s: %s",
                         run_id,
                         phase,
                         _iter,

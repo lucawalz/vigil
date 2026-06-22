@@ -36,7 +36,7 @@ terraform init
 terraform apply
 ```
 
-The first apply takes ~10–15 minutes (kexec into rescue, disko partitioning, NixOS install, reboot, K3s join). Subsequent applies converge without changes unless a VM is replaced.
+The first apply takes ~10-15 minutes (kexec into rescue, disko partitioning, NixOS install, reboot, K3s join). Subsequent applies converge without changes unless a VM is replaced.
 
 ## Tear down
 
@@ -45,7 +45,7 @@ cd infra/terraform
 terraform destroy
 ```
 
-This removes Hetzner cloud resources only. The hetzner-* host attributes in nixos-homelab and the additional public keys in `secrets/secrets.nix` remain — remove them manually if no longer needed.
+This removes Hetzner cloud resources only. The hetzner-* host attributes in nixos-homelab and the additional public keys in `secrets/secrets.nix` remain - remove them manually if no longer needed.
 
 ## Cost
 

@@ -543,7 +543,7 @@ async def _healthz_check(client: httpx.AsyncClient, orchestrator_url: str) -> No
         r.raise_for_status()
     except httpx.ConnectError as e:
         raise RuntimeError(
-            f"Orchestrator not reachable at {orchestrator_url} — start it first "
+            f"Orchestrator not reachable at {orchestrator_url} - start it first "
             f"(uv run uvicorn orchestrator.main:app --port 9099). Underlying: {e}"
         ) from e
 
@@ -562,18 +562,18 @@ def _emit_trace_line(line: str) -> None:
                 args = args["args_dict"]
             args_s = json.dumps(args) if isinstance(args, dict) else str(args)
             if len(args_s) > _TRUNC:
-                args_s = args_s[:_TRUNC] + "…"
-            log.info("[%s] → %s(%s)", phase, part.get("tool_name", "?"), args_s)
+                args_s = args_s[:_TRUNC] + "..."
+            log.info("[%s] -> %s(%s)", phase, part.get("tool_name", "?"), args_s)
         elif kind == "tool-return":
             content = str(part.get("content", ""))
             if len(content) > _TRUNC:
-                content = content[:_TRUNC] + "…"
-            log.debug("[%s] ← %s: %s", phase, part.get("tool_name", "?"), content)
+                content = content[:_TRUNC] + "..."
+            log.debug("[%s] <- %s: %s", phase, part.get("tool_name", "?"), content)
         elif kind == "text":
             content = part.get("content", "").strip()
             if content:
                 if len(content) > _TRUNC:
-                    content = content[:_TRUNC] + "…"
+                    content = content[:_TRUNC] + "..."
                 log.debug("[%s] model: %s", phase, content)
 
 
@@ -623,7 +623,7 @@ async def trigger_and_wait(
         resp.raise_for_status()
         run_id = resp.json()["run_id"]
 
-    log.info("run_id=%s — polling for result", run_id)
+    log.info("run_id=%s - polling for result", run_id)
     result_path = runs_dir / f"{run_id}.json"
     result_path.unlink(missing_ok=True)
 
@@ -715,7 +715,7 @@ async def run_one(
         if new_count >= CIRCUIT_BREAKER_THRESHOLD:
             log.error(
                 "Campaign aborted: %d consecutive baseline_degraded"
-                " — check cluster-infrastructure readiness before retrying",
+                " - check cluster-infrastructure readiness before retrying",
                 new_count,
             )
             sys.exit(CIRCUIT_BREAKER_EXIT_CODE)

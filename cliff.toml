@@ -1,4 +1,4 @@
-# git-cliff configuration — https://git-cliff.org/docs/configuration
+# git-cliff configuration - https://git-cliff.org/docs/configuration
 
 [changelog]
 header = """

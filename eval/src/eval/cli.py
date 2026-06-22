@@ -333,7 +333,7 @@ def campaign_cmd(
                 checkpoint_path = runs_dir / "quota_checkpoint.json"
                 checkpoint_path.write_text(json.dumps(checkpoint, indent=2))
                 msg = (
-                    f"[{n}/{total}] {scenario}/seed{seed}/{model} — QUOTA_EXHAUSTED: "
+                    f"[{n}/{total}] {scenario}/seed{seed}/{model} - QUOTA_EXHAUSTED: "
                     f"campaign paused. Resume with --resume "
                     f"(checkpoint: {checkpoint_path})"
                 )
@@ -346,7 +346,7 @@ def campaign_cmd(
             mttr_s = f"{mttr:.0f}s" if isinstance(mttr, (int, float)) else "?s"
             click.echo(
                 f"[{n}/{total}] {scenario}/seed{seed}/{model}"
-                f" — {success} (MTTR={mttr_s})"
+                f" - {success} (MTTR={mttr_s})"
                 f" | trace: {trace_path}",
                 err=True,
             )
@@ -362,7 +362,7 @@ def campaign_cmd(
             with failures_path.open("a") as fh:
                 fh.write(json.dumps(failure) + "\n")
             click.echo(
-                f"[{n}/{total}] {scenario}/seed{seed}/{model} — FAILED: {e}",
+                f"[{n}/{total}] {scenario}/seed{seed}/{model} - FAILED: {e}",
                 err=True,
             )
 

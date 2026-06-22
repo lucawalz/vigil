@@ -22,7 +22,7 @@ variable "vigil_branch" {
 variable "github_token" {
   type        = string
   sensitive   = true
-  description = "GitHub PAT with repo scope — used by flux bootstrap to create deploy key (set via TF_VAR_github_token)"
+  description = "GitHub PAT with repo scope - used by flux bootstrap to create deploy key (set via TF_VAR_github_token)"
 }
 
 variable "ollama_api_key" {
@@ -48,7 +48,7 @@ variable "llm_model_name" {
 
 variable "group_name" {
   type        = string
-  description = "Scenario group name (cross|k8s|os|misc) — scopes Hetzner resource names so 4 stacks can coexist on one account"
+  description = "Scenario group name (cross|k8s|os|misc) - scopes Hetzner resource names so 4 stacks can coexist on one account"
 
   validation {
     condition     = contains(["cross", "k8s", "os", "misc"], var.group_name)
@@ -58,7 +58,7 @@ variable "group_name" {
 
 variable "run_id" {
   type        = string
-  description = "CI run identifier — appended to the SSH key name so parallel runs never collide on fingerprint"
+  description = "CI run identifier - appended to the SSH key name so parallel runs never collide on fingerprint"
   default     = "local"
 }
 
@@ -72,7 +72,7 @@ variable "operator_ssh_pubkey" {
 variable "location" {
   type        = string
   default     = "hel1"
-  description = "Hetzner EU location for the eval cluster (nbg1, fsn1, hel1 — all share the eu-central network zone)."
+  description = "Hetzner EU location for the eval cluster (nbg1, fsn1, hel1 - all share the eu-central network zone)."
 
   validation {
     condition     = contains(["nbg1", "fsn1", "hel1"], var.location)

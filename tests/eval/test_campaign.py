@@ -239,7 +239,7 @@ def test_campaign_cmd_skips_completed_run_ids(tmp_path: Path) -> None:
             ],
         )
     assert result.exit_code == 0, result.output
-    # (2 scenarios × 2 models × 2 seeds) − 2 completed = 6 calls
+    # (2 scenarios × 2 models × 2 seeds) - 2 completed = 6 calls
     assert len(calls) == 6
     assert ("k8s-1", 1, "qwen") not in calls
     assert ("k8s-1", 2, "qwen") not in calls
@@ -339,7 +339,7 @@ def test_campaign_cmd_prints_progress_lines_to_stderr(tmp_path: Path) -> None:
         )
     assert result.exit_code == 0
     # CliRunner mixes stdout+stderr into result.output in Click 8.x
-    assert "[1/1] k8s-1/seed1/qwen — SUCCESS (MTTR=47s)" in result.output
+    assert "[1/1] k8s-1/seed1/qwen - SUCCESS (MTTR=47s)" in result.output
 
 
 def test_campaign_cmd_retry_failed_reruns_only_failures(tmp_path: Path) -> None:

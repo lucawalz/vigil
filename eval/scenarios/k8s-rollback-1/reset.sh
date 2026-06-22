@@ -14,4 +14,4 @@ kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" scale deployment vigil-app \
 kubectl rollout status deployment/vigil-app -n default --timeout=60s \
   --kubeconfig "$EVAL_RUNNER_KUBECONFIG" 2>&1 || true
 
-echo "reset.sh: k8s-rollback-1 seed=${SEED} — cluster at baseline"
+echo "reset.sh: k8s-rollback-1 seed=${SEED} - cluster at baseline"

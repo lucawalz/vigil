@@ -46,7 +46,7 @@ def coerce_null_sentinels(model_cls: type[BaseModel], data: Any) -> Any:
 
     LLMs occasionally emit the literal string "None"/"null" for a nullable
     output field; pydantic rejects it and triggers an expensive validation
-    retry. Coercion is deliberately narrow — it never touches non-nullable
+    retry. Coercion is deliberately narrow - it never touches non-nullable
     fields or non-string values, so genuinely malformed output still fails.
     """
     if not isinstance(data, dict):

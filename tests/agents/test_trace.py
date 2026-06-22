@@ -1,4 +1,4 @@
-"""Unit tests for vigil.agent.trace — upgraded log_messages() behavior."""
+"""Unit tests for vigil.agent.trace - upgraded log_messages() behavior."""
 
 from __future__ import annotations
 
@@ -39,8 +39,8 @@ def test_trunc_value_is_1000():
 def test_trunc_helper_cuts_at_1000():
     long = "x" * 1001
     result = _t(long)
-    assert len(result) == 1001  # 1000 chars + "…"
-    assert result.endswith("…")
+    assert len(result) == 1003  # 1000 chars + "..."
+    assert result.endswith("...")
 
 
 def test_trunc_helper_passthrough_short():
@@ -60,7 +60,7 @@ def test_tool_call_emits_info_with_iter_prefix(caplog):
 
 
 def test_text_part_emits_info(caplog):
-    msgs = [_text_msg("CrashLoopBackOff detected — recommend rollout_undo")]
+    msgs = [_text_msg("CrashLoopBackOff detected - recommend rollout_undo")]
     with caplog.at_level(logging.INFO, logger="vigil.agent.trace"):
         log_messages("k8s-1_1_qwen_abc", "diagnosis", msgs)
     assert any("model:" in r.message for r in caplog.records)
@@ -73,8 +73,8 @@ def test_tool_return_emits_info(caplog):
     msgs = [_tool_return_msg("kubectl_get_pods", "pod/nginx-xxx Running")]
     with caplog.at_level(logging.INFO, logger="vigil.agent.trace"):
         log_messages("k8s-1_1_qwen_abc", "diagnosis", msgs)
-    assert any("←" in r.message for r in caplog.records)
-    assert all(r.levelno == logging.INFO for r in caplog.records if "←" in r.message)
+    assert any("<-" in r.message for r in caplog.records)
+    assert all(r.levelno == logging.INFO for r in caplog.records if "<-" in r.message)
 
 
 def test_iter_counter_increments_per_tool_call(caplog):

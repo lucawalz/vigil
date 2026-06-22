@@ -130,7 +130,7 @@ jobs:
           DEADLINE=$(($(date +%s) + 300))
           until [ -s "$KUBECONFIG" ]; do
             if [ $(date +%s) -gt $DEADLINE ]; then
-              echo "kubeconfig not written after 5 minutes — terraform apply may have failed"
+              echo "kubeconfig not written after 5 minutes - terraform apply may have failed"
               ls -la ~/.kube/ || true
               exit 1
             fi
@@ -174,7 +174,7 @@ jobs:
           until ssh $SSH_OPTS root@${{ steps.agent.outputs.ip }} \
               "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
             if [ $(date +%s) -gt $DEADLINE ]; then
-              echo "Orchestrator not ready after 10 minutes — diagnostics:"
+              echo "Orchestrator not ready after 10 minutes - diagnostics:"
               ssh $SSH_OPTS root@${{ steps.agent.outputs.ip }} "
                 systemctl status vigil-setup.service vigil-orchestrator.service --no-pager -l 2>&1 || true
                 echo '--- journal: vigil-setup ---'
@@ -246,13 +246,13 @@ jobs:
               || VIGIL_EVAL_STATUS=$?
             echo "::endgroup::"
             if [ "$VIGIL_EVAL_STATUS" -eq 10 ]; then
-              echo "Campaign circuit breaker tripped (3 consecutive baseline_degraded) — aborting group $GROUP"
+              echo "Campaign circuit breaker tripped (3 consecutive baseline_degraded) - aborting group $GROUP"
               break
             fi
             if [ "$VIGIL_EVAL_STATUS" -eq 1 ] || [ "$VIGIL_EVAL_STATUS" -eq 2 ]; then
-              echo "scenario $S exited $VIGIL_EVAL_STATUS — recorded in runs_index.jsonl"
+              echo "scenario $S exited $VIGIL_EVAL_STATUS - recorded in runs_index.jsonl"
             elif [ "$VIGIL_EVAL_STATUS" -ne 0 ]; then
-              echo "scenario $S exited $VIGIL_EVAL_STATUS — NOT recorded in runs_index.jsonl"
+              echo "scenario $S exited $VIGIL_EVAL_STATUS - NOT recorded in runs_index.jsonl"
             fi
             PREV=$S
           done

@@ -608,7 +608,7 @@ def write_report(summary: dict[str, Any], output_dir: Path) -> None:
     seed_counts = [row["n_runs"] for row in summary["by_scenario"].values()]
     max_n = max(seed_counts) if seed_counts else 0
     if max_n <= 1:
-        footer = "_Single-seed campaign — std values omitted._"
+        footer = "_Single-seed campaign - std values omitted._"
     else:
         footer = (
             f"_Note: std values computed from {max_n} seeds per cell; "

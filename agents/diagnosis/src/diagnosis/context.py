@@ -145,7 +145,7 @@ _NIX_COMMENT_RE = re.compile(r"#.*")
 
 
 def _parse_nix_import_entries(entry_text: str) -> list[str]:
-    """Return the raw paths listed in a Nix ``imports = [ … ];`` block."""
+    """Return the raw paths listed in a Nix ``imports = [ ... ];`` block."""
     block = _NIX_IMPORTS_BLOCK_RE.search(entry_text)
     if not block:
         return []

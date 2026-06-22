@@ -17,4 +17,4 @@ kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" \
 kubectl rollout status deployment/vigil-app -n default \
   --timeout="${ROLLOUT_TIMEOUT_S}s" --kubeconfig "$EVAL_RUNNER_KUBECONFIG" 2>&1
 
-echo "reset.sh: live-quota-injected seed=${SEED} — cluster at baseline"
+echo "reset.sh: live-quota-injected seed=${SEED} - cluster at baseline"
