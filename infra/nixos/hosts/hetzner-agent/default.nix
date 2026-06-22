@@ -32,7 +32,7 @@ let
   };
   nixos-mcp = mkMcpServer {
     name = "nixos-mcp";
-    vendorHash = "sha256-juvcOgXWOFu0iW2yD1UX/wxmFixKtRR/xlCU9vtencI=";
+    vendorHash = "sha256-SawLD+fMH4jqKjPOeqF3lsp6XXw5ofjUQF+FghnnDyI=";
   };
   git-mcp = mkMcpServer {
     name = "git-mcp";
