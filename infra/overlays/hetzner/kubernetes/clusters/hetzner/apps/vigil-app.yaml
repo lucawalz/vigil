@@ -9,7 +9,7 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vigil-app-typo
+      app: vigil-app
   template:
     metadata:
       labels:
@@ -24,7 +24,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /healthz
-            port: 80
+            port: значок
           initialDelaySeconds: 2
           periodSeconds: 5
           failureThreshold: 3
