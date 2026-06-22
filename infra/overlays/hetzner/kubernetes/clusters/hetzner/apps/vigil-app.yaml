@@ -20,7 +20,7 @@ spec:
         image: nginx:stable
         env:
         - name: REQUIRED_API_BASE
-          value: ''
+          value: 'http://app-backend'
         readinessProbe:
           httpGet:
             path: /healthz
