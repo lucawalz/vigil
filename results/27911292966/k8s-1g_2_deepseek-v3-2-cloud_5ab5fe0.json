@@ -1,0 +1,43 @@
+{
+  "run_id": "k8s-1g_2_deepseek-v3-2-cloud_5ab5fe0",
+  "scenario": "k8s-1g",
+  "seed": "2",
+  "model": "deepseek-v3.2:cloud",
+  "git_sha7": "5ab5fe0",
+  "started_at": "2026-06-21T19:41:29Z",
+  "ended_at": "2026-06-21T19:47:10Z",
+  "outcome": "success",
+  "success_rate": true,
+  "remediation_success": true,
+  "diagnosis_accuracy": true,
+  "MTTR_s": 340.832346556,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "rollback_success": null,
+  "total_input_tokens": 160255,
+  "total_output_tokens": 4075,
+  "total_tool_calls": 18,
+  "iteration_count": 10,
+  "autonomy_level": "full",
+  "actions_taken": [
+    "clone_repo",
+    "read_file",
+    "write_manifest",
+    "commit_files",
+    "push_branch",
+    "create_pr",
+    "wait_for_gate",
+    "reconcile_kustomization",
+    "final_result"
+  ],
+  "attempts": 1,
+  "model_version": "deepseek-v3.2:cloud",
+  "setup_error": null,
+  "agent_branch": "remediation/run-k8s-1g_2_deepseek-v3-2-cloud_5ab5fe0-attempt-1",
+  "agent_commits": [
+    "b502070400b0bc7ede95cdd7a756828ce5084025"
+  ],
+  "gate_status": "merged",
+  "merge_commit_sha": "7efc307edcdedba1ecbc2906b10b144c2e3d737f",
+  "forbidden_action_violations": []
+}
