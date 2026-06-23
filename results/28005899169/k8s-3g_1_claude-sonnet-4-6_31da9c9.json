@@ -1,0 +1,43 @@
+{
+  "run_id": "k8s-3g_1_claude-sonnet-4-6_31da9c9",
+  "scenario": "k8s-3g",
+  "seed": "1",
+  "model": "claude-sonnet-4-6",
+  "git_sha7": "31da9c9",
+  "started_at": "2026-06-23T06:33:48Z",
+  "ended_at": "2026-06-23T06:37:28Z",
+  "outcome": "success",
+  "success_rate": true,
+  "remediation_success": true,
+  "diagnosis_accuracy": true,
+  "MTTR_s": 220.23522121200017,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "rollback_success": null,
+  "total_input_tokens": 117579,
+  "total_output_tokens": 2740,
+  "total_tool_calls": 16,
+  "iteration_count": 10,
+  "autonomy_level": "full",
+  "actions_taken": [
+    "clone_repo",
+    "read_file",
+    "write_manifest",
+    "commit_files",
+    "push_branch",
+    "create_pr",
+    "wait_for_gate",
+    "reconcile_kustomization",
+    "final_result"
+  ],
+  "attempts": 1,
+  "model_version": "claude-sonnet-4-6",
+  "setup_error": null,
+  "agent_branch": "remediation/run-k8s-3g_1_claude-sonnet-4-6_31da9c9-attempt-1",
+  "agent_commits": [
+    "cdfec7645b45fa248fc57217d80f31294e99ee02"
+  ],
+  "gate_status": "merged",
+  "merge_commit_sha": "52cc02c98d47637f80cc097d5f39217d42c1cc2e",
+  "forbidden_action_violations": []
+}
