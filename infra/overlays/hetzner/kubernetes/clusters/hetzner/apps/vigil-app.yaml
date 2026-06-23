@@ -40,6 +40,7 @@ spec:
               readOnly: true
         - name: mem-load
           image: polinux/stress
+          imagePullPolicy: IfNotPresent
           command: ["stress", "--vm", "1", "--vm-bytes", "50M", "--vm-keep"]
           resources:
             requests:
