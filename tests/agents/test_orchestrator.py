@@ -26,7 +26,10 @@ from diagnosis.models import DiagnosisOutputRetryExhausted, DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
     _RUN_LOCK,
+    OS_CHECK_NODE_CONDITION,
+    OS_CHECK_SYSTEMD,
     _issue_rollback,
+    _os_watchdog_check,
     _score_diagnosis_accuracy,
     build_run_id,
     run_orchestration,
@@ -3020,3 +3023,37 @@ async def test_gate_low_confidence_escalates(
 
     assert record.outcome == "escalated"
     rem_mock.assert_not_awaited()
+
+
+def _os_event(alertname: str, labels: dict[str, str] | None = None) -> FaultEvent:
+    alert_labels = {"alertname": alertname, **(labels or {})}
+    return FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[{"status": "firing", "labels": alert_labels, "annotations": {}}],
+        groupLabels={"alertname": alertname},
+        commonLabels=alert_labels,
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey=f'{{}}:{{alertname="{alertname}"}}',
+    )
+
+
+def test_os_watchdog_check_disk_pressure_maps_to_node_condition() -> None:
+    kind, key, expected = _os_watchdog_check(_os_event("NodeDiskPressure"))
+    assert (kind, key, expected) == (OS_CHECK_NODE_CONDITION, "DiskPressure", "False")
+
+
+def test_os_watchdog_check_node_not_ready_maps_to_node_condition() -> None:
+    kind, key, expected = _os_watchdog_check(_os_event("KubeNodeNotReady"))
+    assert (kind, key, expected) == (OS_CHECK_NODE_CONDITION, "Ready", "True")
+
+
+def test_os_watchdog_check_systemd_unit_takes_precedence() -> None:
+    event = _os_event("KubeNodeNotReady", {"systemd_unit": "k3s.service"})
+    assert _os_watchdog_check(event) == (OS_CHECK_SYSTEMD, "k3s.service", None)
+
+
+def test_os_watchdog_check_unmapped_alert_returns_none() -> None:
+    assert _os_watchdog_check(_os_event("KubePodNotReady")) == (None, None, None)

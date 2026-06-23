@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 from watchdog import agent as watchdog_agent_mod
 from watchdog.agent import (
+    OS_CHECK_NODE_CONDITION,
     _coerce_rollout_status,
     _parse_pod_counts,
     capture_health_snapshot,
@@ -582,3 +583,154 @@ async def test_run_watchdog_os_path_does_not_call_kubectl(
 
     assert result.degraded is False
     kubectl.direct_call_tool.assert_not_called()
+
+
+def _describe_node(conditions: dict[str, str]) -> str:
+    body = "".join(f"  {k}: {v}\n" for k, v in conditions.items())
+    return f"Name: hetzner-worker-2\nConditions:\n{body}"
+
+
+async def test_run_watchdog_os_node_disk_pressure_present_degrades(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 0.2)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    kubectl = AsyncMock()
+    kubectl.direct_call_tool = AsyncMock(
+        return_value={
+            "content": _describe_node({"DiskPressure": "True", "Ready": "True"})
+        }
+    )
+    deps = WatchdogDeps(
+        kubectl_mcp=kubectl,
+        flux_mcp=AsyncMock(),
+        nixos_mcp=AsyncMock(),
+        target_host="hetzner-worker-2",
+        os_check_kind=OS_CHECK_NODE_CONDITION,
+        os_check_key="DiskPressure",
+        os_check_expected="False",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is True
+    assert result.reason == "deadline_reached"
+    kubectl.direct_call_tool.assert_awaited_with(
+        "describe_node", {"name": "hetzner-worker-2"}
+    )
+
+
+async def test_run_watchdog_os_node_disk_pressure_cleared_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 5.0)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    kubectl = AsyncMock()
+    kubectl.direct_call_tool = AsyncMock(
+        return_value={
+            "content": _describe_node({"DiskPressure": "False", "Ready": "True"})
+        }
+    )
+    deps = WatchdogDeps(
+        kubectl_mcp=kubectl,
+        flux_mcp=AsyncMock(),
+        nixos_mcp=AsyncMock(),
+        target_host="hetzner-worker-2",
+        os_check_kind=OS_CHECK_NODE_CONDITION,
+        os_check_key="DiskPressure",
+        os_check_expected="False",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is False
+    assert result.reason == "healthy"
+
+
+async def test_run_watchdog_os_node_not_ready_degrades(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 0.2)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    kubectl = AsyncMock()
+    kubectl.direct_call_tool = AsyncMock(
+        return_value={"content": _describe_node({"Ready": "False"})}
+    )
+    deps = WatchdogDeps(
+        kubectl_mcp=kubectl,
+        flux_mcp=AsyncMock(),
+        nixos_mcp=AsyncMock(),
+        target_host="hetzner-worker-2",
+        os_check_kind=OS_CHECK_NODE_CONDITION,
+        os_check_key="Ready",
+        os_check_expected="True",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is True
+    assert result.reason == "deadline_reached"
+
+
+async def test_run_watchdog_os_node_ready_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 5.0)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 2)
+
+    kubectl = AsyncMock()
+    kubectl.direct_call_tool = AsyncMock(
+        return_value={"content": _describe_node({"Ready": "True"})}
+    )
+    deps = WatchdogDeps(
+        kubectl_mcp=kubectl,
+        flux_mcp=AsyncMock(),
+        nixos_mcp=AsyncMock(),
+        target_host="hetzner-worker-2",
+        os_check_kind=OS_CHECK_NODE_CONDITION,
+        os_check_key="Ready",
+        os_check_expected="True",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is False
+    assert result.reason == "healthy"
+
+
+async def test_run_watchdog_os_node_condition_does_not_call_nixos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(watchdog_agent_mod, "POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(watchdog_agent_mod, "WINDOW_S", 5.0)
+    monkeypatch.setattr(watchdog_agent_mod, "HEALTHY_STREAK_K", 1)
+
+    kubectl = AsyncMock()
+    kubectl.direct_call_tool = AsyncMock(
+        return_value={
+            "content": _describe_node({"DiskPressure": "False", "Ready": "True"})
+        }
+    )
+    nixos = AsyncMock()
+    nixos.direct_call_tool = AsyncMock()
+    deps = WatchdogDeps(
+        kubectl_mcp=kubectl,
+        flux_mcp=AsyncMock(),
+        nixos_mcp=nixos,
+        target_host="hetzner-worker-2",
+        os_check_kind=OS_CHECK_NODE_CONDITION,
+        os_check_key="DiskPressure",
+        os_check_expected="False",
+    )
+
+    result = await run_watchdog(deps)
+
+    assert result.degraded is False
+    nixos.direct_call_tool.assert_not_called()

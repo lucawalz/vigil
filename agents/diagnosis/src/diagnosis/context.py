@@ -113,6 +113,15 @@ def extract_alert_namespace(fault: FaultEvent, default: str) -> str:
     return fault.commonLabels.get("namespace") or default
 
 
+def extract_alert_name(fault: FaultEvent) -> str | None:
+    """Return the alertname named in the fault event, or None."""
+    for alert in fault.alerts:
+        name = alert.get("labels", {}).get("alertname")
+        if name:
+            return name
+    return fault.commonLabels.get("alertname") or fault.groupLabels.get("alertname")
+
+
 def _extract_target_host(fault: FaultEvent) -> str | None:
     for alert in fault.alerts:
         labels = alert.get("labels", {})

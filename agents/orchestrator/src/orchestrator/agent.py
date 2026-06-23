@@ -29,6 +29,7 @@ from diagnosis.context import (
     ResourceKindUnresolvable,
     build_diagnosis_context,
     declared_sysctl_value,
+    extract_alert_name,
     extract_alert_namespace,
     extract_systemd_unit,
 )
@@ -48,6 +49,7 @@ from pydantic_ai.usage import RunUsage
 from remediation.agent import run_remediation
 from remediation.models import RemediationDeps, RemediationOutputRetryExhausted
 from watchdog.agent import (
+    OS_CHECK_NODE_CONDITION,
     OS_CHECK_SYSCTL,
     OS_CHECK_SYSTEMD,
     capture_health_snapshot,
@@ -428,12 +430,23 @@ async def _resolve_gitrepository_revision(flux_mcp: MCPServerStdio) -> str | Non
         return None
 
 
-def _os_watchdog_check(event: FaultEvent) -> tuple[str | None, str | None]:
-    """Map a fault event onto an OS verification (check_kind, check_key) pair."""
+_NODE_CONDITION_CHECKS: dict[str, tuple[str, str]] = {
+    "NodeDiskPressure": ("DiskPressure", "False"),
+    "KubeNodeNotReady": ("Ready", "True"),
+}
+
+
+def _os_watchdog_check(
+    event: FaultEvent,
+) -> tuple[str | None, str | None, str | None]:
+    """Map a fault event onto an OS verification (kind, key, expected) triple."""
     unit = extract_systemd_unit(event)
     if unit:
-        return OS_CHECK_SYSTEMD, unit
-    return None, None
+        return OS_CHECK_SYSTEMD, unit, None
+    condition = _NODE_CONDITION_CHECKS.get(extract_alert_name(event) or "")
+    if condition:
+        return OS_CHECK_NODE_CONDITION, condition[0], condition[1]
+    return None, None, None
 
 
 def _sysctl_recovery_expected(report, diagnosis_context) -> str | None:
@@ -551,8 +564,7 @@ async def _dispatch_remediation_and_watchdog(
             os_check_key = report.discovered_sysctl_key
             os_check_expected = os_expected_value
         else:
-            os_check_kind, os_check_key = _os_watchdog_check(event)
-            os_check_expected = None
+            os_check_kind, os_check_key, os_check_expected = _os_watchdog_check(event)
         target_deps = replace(
             target_deps,
             target_host=report.target_host,
