@@ -40,5 +40,5 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
-  services.k3s.enable = lib.mkForce false;
+  # Removed conflicting lib.mkForce false that overrides agent.nix module
 }
