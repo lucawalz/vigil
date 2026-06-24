@@ -4,7 +4,6 @@
     ./disko-config.nix
     ../common
     ../../modules/k3s/agent.nix
-    ../../modules/k3s/hetzner.nix
     ../../modules/services/monitoring.nix
     ../../modules/services/storage.nix
     ../../modules/services/rollback-gate.nix
@@ -40,5 +39,4 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
-  services.k3s.enable = lib.mkForce false;
 }
