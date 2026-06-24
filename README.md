@@ -186,6 +186,8 @@ Open a GitHub issue using the bug-report or feature-request templates under `.gi
 
 Developed by Luca Walz as a bachelor thesis project.
 
+Parts of this codebase were developed with AI assistance; see [AI-USAGE.md](AI-USAGE.md).
+
 ## License
 
 Released under the MIT License. See [LICENSE](LICENSE).
