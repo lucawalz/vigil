@@ -14,4 +14,14 @@
 
   networking.firewall.allowedTCPPorts = [ 10250 ];
   networking.firewall.allowedUDPPorts = [ 8472 ];
+
+  systemd.services.k3s = {
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [ "network-online.target" ];
+    serviceConfig = {
+      Restart = "on-failure";
+      RestartSec = "5s";
+    };
+  };
 }
