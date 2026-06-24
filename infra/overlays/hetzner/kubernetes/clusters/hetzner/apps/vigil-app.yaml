@@ -40,14 +40,6 @@ spec:
             - name: nginx-config-template
               mountPath: /etc/nginx/templates
               readOnly: true
-        - name: mem-load
-          image: polinux/stress
-          command: ["stress", "--vm", "1", "--vm-bytes", "50M", "--vm-keep"]
-          resources:
-            requests:
-              memory: "8Mi"
-            limits:
-              memory: "96Mi"
       volumes:
         - name: nginx-config-template
           configMap:
