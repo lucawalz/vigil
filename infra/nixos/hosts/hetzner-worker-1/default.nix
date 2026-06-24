@@ -40,4 +40,18 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
+
+  # Fix: Explicitly configure k3s service ExecStart to ensure valid systemd unit
+  systemd.services.k3s = {
+    enable = true;
+    description = "Lightweight Kubernetes Agent";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "notify";
+      ExecStart = "${pkgs.k3s}/bin/k3s agent --server https://10.0.0.10:6443";
+      Restart = "always";
+    };
+  };
 }
