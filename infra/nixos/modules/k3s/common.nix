@@ -1,10 +1,10 @@
-{ ... }:
+{ lib, ... }:
 {
   systemd.services.k3s = {
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
     serviceConfig = {
-      Type = "notify";
+      Type = lib.mkForce "notify";
       KillMode = "mixed";
       Restart = "always";
       RestartSec = "5s";
