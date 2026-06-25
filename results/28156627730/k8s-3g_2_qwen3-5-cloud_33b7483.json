@@ -1,0 +1,43 @@
+{
+  "run_id": "k8s-3g_2_qwen3-5-cloud_33b7483",
+  "scenario": "k8s-3g",
+  "seed": "2",
+  "model": "qwen3.5:cloud",
+  "git_sha7": "33b7483",
+  "started_at": "2026-06-25T10:05:38Z",
+  "ended_at": "2026-06-25T10:14:14Z",
+  "outcome": "success",
+  "success_rate": true,
+  "remediation_success": true,
+  "diagnosis_accuracy": true,
+  "MTTR_s": 516.8064635630001,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "rollback_success": null,
+  "total_input_tokens": 135541,
+  "total_output_tokens": 5485,
+  "total_tool_calls": 17,
+  "iteration_count": 10,
+  "autonomy_level": "full",
+  "actions_taken": [
+    "clone_repo",
+    "read_file",
+    "write_manifest",
+    "commit_files",
+    "push_branch",
+    "create_pr",
+    "wait_for_gate",
+    "reconcile_kustomization",
+    "final_result"
+  ],
+  "attempts": 1,
+  "model_version": "qwen3.5:cloud",
+  "setup_error": null,
+  "agent_branch": "remediation/run-k8s-3g_2_qwen3-5-cloud_33b7483-attempt-1",
+  "agent_commits": [
+    "9d129106e98e8e2bfce981d15d782221266142e7"
+  ],
+  "gate_status": "merged",
+  "merge_commit_sha": "861406483ee8ad6f904d98d56e33d02540db1a05",
+  "forbidden_action_violations": []
+}
