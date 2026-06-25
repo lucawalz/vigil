@@ -40,5 +40,5 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
-  services.k3s.enable = lib.mkForce false;
+  # Remove conflicting k3s.enable = lib.mkForce false; as k3s agent modules expect k3s to be enabled
 }
