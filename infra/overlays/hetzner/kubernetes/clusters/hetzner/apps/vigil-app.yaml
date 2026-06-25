@@ -20,7 +20,7 @@ spec:
         image: nginx:stable
         env:
         - name: REQUIRED_API_BASE
-          value: ''
+          value: 'http://api.default.svc.cluster.local:8080'
         readinessProbe:
           httpGet:
             path: /healthz
