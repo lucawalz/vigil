@@ -6,7 +6,7 @@ metadata:
   labels:
     app: vigil-app
 spec:
-  replicas: 1
+  replicas: 217
   selector:
     matchLabels:
       app: vigil-app
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: vigil-app
-          image: nginx:declared-missing
+          image: nginx:latest
           env:
             - name: REQUIRED_API_BASE
               value: "http://app-backend"
