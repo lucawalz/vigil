@@ -1170,6 +1170,82 @@ def test_build_diagnosis_context_os_does_not_prefetch_sysctl() -> None:
     assert ctx.live_yaml == live_journal
 
 
+def test_build_diagnosis_context_os_degrades_on_node_ssh_failure() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from diagnosis.context import build_diagnosis_context
+    from orchestrator.models import FaultEvent
+
+    fault = FaultEvent(
+        receiver="vigil-webhook",
+        status="firing",
+        alerts=[
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "NodeExporterDown",
+                    "node": "hetzner-worker-1",
+                },
+                "annotations": {},
+                "startsAt": "2026-05-01T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+            }
+        ],
+        groupLabels={"alertname": "NodeExporterDown"},
+        commonLabels={"node": "hetzner-worker-1"},
+        commonAnnotations={},
+        externalURL="http://alertmanager:9093",
+        version="4",
+        groupKey='{}:{alertname="NodeExporterDown"}',
+    )
+
+    git_repo_yaml = (
+        "apiVersion: source.toolkit.fluxcd.io/v1\n"
+        "kind: GitRepository\n"
+        "metadata:\n"
+        "  name: flux-system\n"
+        "  namespace: flux-system\n"
+        "spec:\n"
+        "  ref:\n"
+        "    branch: main\n"
+    )
+
+    ssh_error_text = "ssh: connect to host hetzner-worker-1 port 22: Connection refused"
+
+    mock_kubectl = AsyncMock()
+    mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
+
+    async def nixos_side_effect(tool, args):
+        if tool == "get_nix_path":
+            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+        if tool == "get_journal":
+            raise RuntimeError(ssh_error_text)
+        return {"content": "state"}
+
+    mock_nixos = AsyncMock()
+    mock_nixos.direct_call_tool = AsyncMock(side_effect=nixos_side_effect)
+    mock_git = AsyncMock()
+    mock_git.direct_call_tool = AsyncMock(return_value={"content": "declared config"})
+    mock_flux = AsyncMock()
+
+    from diagnosis.models import DiagnosisDeps
+
+    deps = DiagnosisDeps(
+        run_id="test-run",
+        kubectl_mcp=mock_kubectl,
+        nixos_mcp=mock_nixos,
+        git_mcp=mock_git,
+        flux_mcp=mock_flux,
+    )
+
+    ctx = asyncio.run(build_diagnosis_context(deps, fault))
+
+    assert "live node state unavailable" in ctx.live_yaml
+    assert ssh_error_text in ctx.live_yaml
+    assert "declared config" in ctx.declared_yaml
+
+
 def test_declared_sysctl_value_extracts_mkdefault_literal() -> None:
     from diagnosis.context import _declared_sysctl_value
 

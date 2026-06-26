@@ -704,19 +704,22 @@ async def _build_os_context(
     manifest_path = _extract_text(manifest_path_result)
 
     systemd_unit = _extract_systemd_unit(fault)
-    if systemd_unit:
-        live_result = await call_tool(
-            deps.nixos_mcp,
-            "get_systemd_status",
-            {"host": target_host, "unit": systemd_unit},
-        )
-    else:
-        live_result = await call_tool(
-            deps.nixos_mcp,
-            "get_journal",
-            {"host": target_host, "lines": 50},
-        )
-    live_yaml = _extract_text(live_result)
+    try:
+        if systemd_unit:
+            live_result = await call_tool(
+                deps.nixos_mcp,
+                "get_systemd_status",
+                {"host": target_host, "unit": systemd_unit},
+            )
+        else:
+            live_result = await call_tool(
+                deps.nixos_mcp,
+                "get_journal",
+                {"host": target_host, "lines": 50},
+            )
+        live_yaml = _extract_text(live_result)
+    except Exception as exc:
+        live_yaml = f"(live node state unavailable: {exc})"
 
     declared_result = await call_tool(
         deps.git_mcp,
