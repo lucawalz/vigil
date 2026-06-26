@@ -19,8 +19,8 @@ spec:
       - name: vigil-app
         image: nginx:stable
         env:
-        - name: REQUIRED_API_BASE
-          value: http://app-backend
+      - name: REQUIRED_API_BASE
+        value: http://app-backend
         readinessProbe:
           httpGet:
             path: /healthz
@@ -55,5 +55,3 @@ spec:
       - name: nginx-config-template
         configMap:
           name: vigil-app-nginx-config
-      nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
