@@ -50,7 +50,6 @@
 
   # More aggressive disk cleanup for k3s worker
   services.k3s.extraFlags = [
-    "--node-label=node.kubernetes.io/role=worker"
     "--eviction-hard=memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5%,imagefs.available<10%,imagefs.inodesFree<5%"
   ];
 
