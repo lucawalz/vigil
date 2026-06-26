@@ -40,4 +40,22 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
+
+  # Disk space management for Kubernetes worker node
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 7d";
+  };
+
+  services.journald.extraConfig = ''
+    SystemMaxUse=1G
+    SystemKeepFree=4G
+    SystemMaxFileSize=100M
+    RuntimeMaxUse=200M
+    RuntimeKeepFree=1G
+    RuntimeMaxFileSize=20M
+  '';
+
+  boot.cleanTmpDir = true;
 }
