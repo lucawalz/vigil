@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: vigil-app
-          image: nginx:declared-missing
+          image: nginx:stable
           env:
             - name: REQUIRED_API_BASE
               value: "http://app-backend"
