@@ -10,12 +10,19 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 )
 
-const defaultSSHDialTimeout = 15 * time.Second
+const (
+	defaultSSHDialTimeout = 15 * time.Second
+	defaultSSHDialRetries = 3
+	defaultSSHDialBackoff = 500 * time.Millisecond
+)
+
+type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 func expandTilde(path string) (string, error) {
 	if !strings.HasPrefix(path, "~/") {
@@ -62,9 +69,12 @@ type realNixOSClient struct {
 	signer       gossh.Signer
 	allowedHosts []string
 	dialTimeout  time.Duration
+	dialRetries  int
+	dialBackoff  time.Duration
+	dialFunc     dialFunc
 }
 
-func NewRealNixOSClient(user, keyPath string, allowedHosts []string, dialTimeout time.Duration) (NixOSClient, error) {
+func NewRealNixOSClient(user, keyPath string, allowedHosts []string, dialTimeout time.Duration, dialRetries int, dialBackoff time.Duration) (NixOSClient, error) {
 	expanded, err := expandTilde(keyPath)
 	if err != nil {
 		return nil, err
@@ -80,11 +90,20 @@ func NewRealNixOSClient(user, keyPath string, allowedHosts []string, dialTimeout
 	if dialTimeout <= 0 {
 		dialTimeout = defaultSSHDialTimeout
 	}
+	if dialRetries <= 0 {
+		dialRetries = defaultSSHDialRetries
+	}
+	if dialBackoff <= 0 {
+		dialBackoff = defaultSSHDialBackoff
+	}
 	return &realNixOSClient{
 		user:         user,
 		signer:       signer,
 		allowedHosts: allowedHosts,
 		dialTimeout:  dialTimeout,
+		dialRetries:  dialRetries,
+		dialBackoff:  dialBackoff,
+		dialFunc:     (&net.Dialer{Timeout: dialTimeout}).DialContext,
 	}, nil
 }
 
@@ -117,12 +136,12 @@ func (c *realNixOSClient) runSSH(ctx context.Context, host, cmd string) (string,
 		Timeout:         c.dialTimeout,
 	}
 
-	dialer := net.Dialer{Timeout: c.dialTimeout}
-	netConn, err := dialer.DialContext(ctx, "tcp", host+":22")
+	addr := host + ":22"
+	netConn, err := c.dialWithRetry(ctx, addr)
 	if err != nil {
 		return "", fmt.Errorf("ssh dial %s: %w", host, err)
 	}
-	sshConn, chans, reqs, err := gossh.NewClientConn(netConn, host+":22", cfg)
+	sshConn, chans, reqs, err := gossh.NewClientConn(netConn, addr, cfg)
 	if err != nil {
 		_ = netConn.Close()
 		return "", fmt.Errorf("ssh handshake %s: %w", host, err)
@@ -138,6 +157,38 @@ func (c *realNixOSClient) runSSH(ctx context.Context, host, cmd string) (string,
 
 	out, err := session.CombinedOutput(cmd)
 	return string(out), err
+}
+
+func (c *realNixOSClient) dialWithRetry(ctx context.Context, addr string) (net.Conn, error) {
+	backoff := c.dialBackoff
+	var err error
+	for attempt := 0; attempt < c.dialRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+				backoff *= 2
+			}
+		}
+		var conn net.Conn
+		conn, err = c.dialFunc(ctx, "tcp", addr)
+		if err == nil {
+			return conn, nil
+		}
+		if !isRetryableDialError(err) {
+			return nil, err
+		}
+	}
+	return nil, err
+}
+
+func isRetryableDialError(err error) bool {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)
 }
 
 func (c *realNixOSClient) GetGenerations(ctx context.Context, host string) (string, error) {
