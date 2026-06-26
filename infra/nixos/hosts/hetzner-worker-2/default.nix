@@ -44,9 +44,15 @@
   # Disk space management for Kubernetes worker node
   nix.gc = {
     automatic = true;
-    dates = "weekly";
-    options = "--delete-older-than 7d";
+    dates = "daily";
+    options = "--delete-older-than 2d";
   };
+
+  # More aggressive disk cleanup for k3s worker
+  services.k3s.extraFlags = [
+    "--node-label=node.kubernetes.io/role=worker"
+    "--eviction-hard=memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5%,imagefs.available<10%,imagefs.inodesFree<5%"
+  ];
 
   services.journald.extraConfig = ''
     SystemMaxUse=1G
