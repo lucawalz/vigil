@@ -49,6 +49,8 @@ Chosen option: "Go", because it produces standalone binaries decoupled from the 
 
 **Validation Status:** Verified. 4/4 MCP servers; clean interface-driven pattern; `mcptest` tests reliable across the v1.0 Hetzner eval campaign.
 
+**Update 2026-06-27:** The `nixos-mcp` SSH client now rides out transient node-unreachable windows. A NixOS generation switch briefly drops a node's SSH daemon for seconds, and the single-attempt dial aborted any eval call landing in that window. The TCP dial is wrapped in a bounded retry-with-backoff loop that retries only transient transport errors (`net.Error` timeouts plus connection refused/reset); deterministic failures (host allow-list, command validation, authentication, session, and command errors) fail fast with no retry. The total retry budget stays well under the 60-second MCP call timeout. Two knobs tune the behaviour: `SSH_DIAL_RETRIES` (default 3) caps the attempt count and `SSH_DIAL_BACKOFF_MS` (default 500) sets the initial exponential backoff. The change uses only the Go standard library, so no module dependency or vendor hash is affected.
+
 ### Confirmation
 
 The decision holds as long as:
