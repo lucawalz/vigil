@@ -40,5 +40,5 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
-  services.k3s.enable = lib.mkForce false;
+  # REMOVE THIS LINE: services.k3s.enable = lib.mkForce false;
 }
