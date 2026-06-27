@@ -23,6 +23,9 @@
   networking.hostName = "hetzner-worker-1";
   system.stateVersion = "25.05";
 
+  # Ensure privateIp is defined for hetzner.nix module
+  privateIp = "10.0.0.11"; # Worker node IP in the cluster
+
   services.k3s.serverAddr = "https://10.0.0.10:6443";
 
   networking.firewall.allowedTCPPorts = [ 22 10250 ];
