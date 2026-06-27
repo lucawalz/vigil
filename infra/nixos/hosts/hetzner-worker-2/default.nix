@@ -39,17 +39,6 @@
     branch = "chore/eval-cluster-baseline";
   };
 
-  # Ensure k3s service has proper systemd configuration
-  systemd.services.k3s = {
-    wants = [ "network-online.target" ];
-    after = [ "network-online.target" ];
-    serviceConfig = {
-      Type = "notify";
-      Restart = "always";
-      RestartSec = "5s";
-    };
-  };
-
   services.k3s = {
     enable = true;
     role = "agent";
