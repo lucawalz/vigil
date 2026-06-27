@@ -40,4 +40,12 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
+
+  # Add swap configuration to prevent NodeDiskPressure alerts
+  swapDevices = [
+    {
+      device = "/swapfile";
+      size = 4096; # 4GB swap
+    }
+  ];
 }
