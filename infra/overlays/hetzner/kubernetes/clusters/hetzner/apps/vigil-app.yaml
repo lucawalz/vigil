@@ -42,9 +42,9 @@ spec:
           command: ["stress", "--vm", "1", "--vm-bytes", "50M", "--vm-keep"]
           resources:
             requests:
-              memory: "8Mi"
+              memory: "64Mi"
             limits:
-              memory: "32Mi"
+              memory: "64Mi"
       volumes:
         - name: nginx-config-template
           configMap:
