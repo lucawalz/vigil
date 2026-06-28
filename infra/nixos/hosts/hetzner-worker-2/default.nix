@@ -40,4 +40,17 @@
     enable = true;
     branch = "chore/eval-cluster-baseline";
   };
+
+  # Add kubelet disk pressure management
+  services.k3s.extraFlags = [
+    "--node-label=node.kubernetes.io/role=worker"
+    # Adjust disk pressure thresholds to be more tolerant
+    "--eviction-hard=memory.available<100Mi,nodefs.available<5%,nodefs.inodesFree<5%,imagefs.available<5%"
+    "--eviction-soft=memory.available<300Mi,nodefs.available<10%,nodefs.inodesFree<10%,imagefs.available<10%"
+    "--eviction-soft-grace-period=memory.available=2m,nodefs.available=2m,nodefs.inodesFree=2m,imagefs.available=2m"
+    "--eviction-minimum-reclaim=memory.available=0Mi,nodefs.available=500Mi,nodefs.inodesFree=1000,imagefs.available=500Mi"
+    # Configure image garbage collection
+    "--image-gc-high-threshold=85"
+    "--image-gc-low-threshold=80"
+  ];
 }
