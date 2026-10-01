@@ -14,7 +14,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-token:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: eval
+    outputs:
+      available: ${{ steps.token.outputs.available }}
+    steps:
+      - id: token
+        env:
+          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+        run: |
+          if [ -n "$HCLOUD_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::TF_VAR_HCLOUD_TOKEN is not set; snapshot build and cleanup skipped"
+          fi
+
   build:
+    needs: check-token
+    if: needs.check-token.outputs.available == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: eval
@@ -82,8 +102,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: eval
-    needs: [build]
-    if: always()
+    needs: [check-token, build]
+    if: always() && needs.check-token.outputs.available == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
