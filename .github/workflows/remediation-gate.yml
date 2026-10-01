@@ -11,6 +11,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  KUBECONFORM_VERSION: v0.7.0
+  KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+  KUSTOMIZE_VERSION: v5.8.1
+  KUSTOMIZE_SHA256: 029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
+  CONFTEST_VERSION: 0.68.2
+  CONFTEST_SHA256: e8144c6d6d2ae0260b869caa60c7c262a1f95ac63ec1e5d2fb19be452d606347
+  FLUX_VERSION: 2.8.6
+  FLUX_CRD_SCHEMAS_SHA256: f7c2854d8e04a03d1b5fce0d6933565643a92d6b6b855c363bc54932d64374e5
+
 jobs:
   remediation-gate:
     runs-on: ubuntu-latest
@@ -33,24 +43,28 @@ jobs:
 
       - name: Install kubeconform
         run: |
-          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
-            | tar -xz -C /usr/local/bin kubeconform
+          curl -fsSLo "$RUNNER_TEMP/kubeconform.tar.gz" "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          echo "$KUBECONFORM_SHA256  $RUNNER_TEMP/kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/kubeconform.tar.gz" -C /usr/local/bin kubeconform
 
       - name: Install kustomize
         run: |
-          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz \
-            | tar -xz -C /usr/local/bin kustomize
+          curl -fsSLo "$RUNNER_TEMP/kustomize.tar.gz" "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F$KUSTOMIZE_VERSION/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          echo "$KUSTOMIZE_SHA256  $RUNNER_TEMP/kustomize.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/kustomize.tar.gz" -C /usr/local/bin kustomize
 
       - name: Install conftest
         run: |
-          curl -sL https://github.com/open-policy-agent/conftest/releases/download/v0.68.2/conftest_0.68.2_Linux_x86_64.tar.gz \
-            | tar -xz -C /usr/local/bin conftest
+          curl -fsSLo "$RUNNER_TEMP/conftest.tar.gz" "https://github.com/open-policy-agent/conftest/releases/download/v$CONFTEST_VERSION/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          echo "$CONFTEST_SHA256  $RUNNER_TEMP/conftest.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/conftest.tar.gz" -C /usr/local/bin conftest
 
       - name: Download Flux CRD schemas
         run: |
+          curl -fsSLo "$RUNNER_TEMP/crd-schemas.tar.gz" "https://github.com/fluxcd/flux2/releases/download/v$FLUX_VERSION/crd-schemas.tar.gz"
+          echo "$FLUX_CRD_SCHEMAS_SHA256  $RUNNER_TEMP/crd-schemas.tar.gz" | sha256sum -c -
           mkdir -p /tmp/flux-crd-schemas/master-standalone-strict
-          curl -sL https://github.com/fluxcd/flux2/releases/latest/download/crd-schemas.tar.gz \
-            | tar -xz -C /tmp/flux-crd-schemas/master-standalone-strict
+          tar -xzf "$RUNNER_TEMP/crd-schemas.tar.gz" -C /tmp/flux-crd-schemas/master-standalone-strict
 
       - name: kubeconform
         if: steps.diff.outputs.files != ''
