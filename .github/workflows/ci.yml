@@ -183,6 +183,40 @@ jobs:
       - name: terraform fmt, init and validate
         run: make tf-check
 
+  nix-vendor-hash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect go module or nixos changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" HEAD -- 'mcp-servers/*/go.mod' 'mcp-servers/*/go.sum' infra/nixos; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No go.mod, go.sum or infra/nixos changes; vendor hash check skipped"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: DeterminateSystems/nix-installer-action@v22
+      - name: Recompute vendor hashes
+        if: steps.changes.outputs.run == 'true'
+        run: make vendor-hash
+      - name: Require committed vendor hashes to match
+        if: steps.changes.outputs.run == 'true'
+        run: git diff --exit-code
+      - name: Evaluate nixos configurations
+        if: steps.changes.outputs.run == 'true'
+        run: make nix-check
+
   ci-gate:
     if: always()
     needs:
@@ -196,6 +230,7 @@ jobs:
       - go-test
       - govulncheck
       - terraform-lint
+      - nix-vendor-hash
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -1,7 +1,5 @@
 { config, lib, pkgs, meta, self, ... }:
 let
-  repoRoot = builtins.dirOf (builtins.dirOf (toString self));
-
   vigilGitCredentialHelper = pkgs.writeShellScript "vigil-git-credentials" ''
     set -eu
     if [ "''${1:-}" != "get" ]; then exit 0; fi
@@ -14,31 +12,7 @@ let
       printf 'username=x-access-token\npassword=%s\n' "$GITHUB_TOKEN"
     fi
   '';
-  mkMcpServer = { name, vendorHash, nativeBuildInputs ? [] }: pkgs.buildGoModule {
-    pname = name;
-    version = "0.0.1";
-    src = builtins.path { inherit name; path = "${repoRoot}/mcp-servers/${name}"; };
-    inherit vendorHash nativeBuildInputs;
-    env.CGO_ENABLED = "0";
-  };
-
-  kubectl-mcp = mkMcpServer {
-    name = "kubectl-mcp";
-    vendorHash = "sha256-KocuKzTe+pLkcyvKvbnCoijiqtHsoO8P5wRMmNkG3oc=";
-  };
-  flux-mcp = mkMcpServer {
-    name = "flux-mcp";
-    vendorHash = "sha256-sEf8VBbS4XThS+xobo5Od74uayJApNt9l3oX71p0U1k=";
-  };
-  nixos-mcp = mkMcpServer {
-    name = "nixos-mcp";
-    vendorHash = "sha256-YKM1Eyo48MrqvrKws4YrYPN2UWtvt9HGrZQFpA7ph9g=";
-  };
-  git-mcp = mkMcpServer {
-    name = "git-mcp";
-    vendorHash = "sha256-d1ysWqpEehizALW5agbtXZuIS4zdP+n+Zj38mNLxUdY=";
-    nativeBuildInputs = [ pkgs.git ];
-  };
+  inherit (import ../../pkgs/mcp-servers.nix { inherit pkgs self; }) kubectl-mcp flux-mcp nixos-mcp git-mcp;
 in
 {
   imports = [

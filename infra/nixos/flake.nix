@@ -19,5 +19,10 @@
       hetzner-worker-2 = lib.mkHetznerWorker { workerId = 2; privateIp = "10.0.0.30"; };
       hetzner-agent    = lib.mkHetznerAgent {};
     };
+
+    packages.x86_64-linux = import ./pkgs/mcp-servers.nix {
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      inherit self;
+    };
   };
 }
