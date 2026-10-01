@@ -134,7 +134,7 @@ jobs:
           KUBECONFIG="$HOME/.kube/hetzner-vigil-$GROUP"
           DEADLINE=$(($(date +%s) + 300))
           until [ -s "$KUBECONFIG" ]; do
-            if [ $(date +%s) -gt $DEADLINE ]; then
+            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
               echo "kubeconfig not written after 5 minutes - terraform apply may have failed"
               ls -la ~/.kube/ || true
               exit 1
@@ -171,20 +171,20 @@ jobs:
       - name: Resolve agent host IP
         id: agent
         working-directory: infra/terraform
-        run: echo "ip=$(terraform output -raw agent_public_ip)" >> $GITHUB_OUTPUT
+        run: echo "ip=$(terraform output -raw agent_public_ip)" >> "$GITHUB_OUTPUT"
 
       - name: Wait for orchestrator to be reachable
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
           DEADLINE=$(($(date +%s) + 600))
           ITER=0
-          until ssh $SSH_OPTS "root@$AGENT_IP" \
+          until ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" \
               "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
-            if [ $(date +%s) -gt $DEADLINE ]; then
+            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
               echo "Orchestrator not ready after 10 minutes - diagnostics:"
-              ssh $SSH_OPTS "root@$AGENT_IP" "
+              ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "
                 systemctl status vigil-setup.service vigil-orchestrator.service --no-pager -l 2>&1 || true
                 echo '--- journal: vigil-setup ---'
                 journalctl -u vigil-setup.service --no-pager -n 200 2>&1 || true
@@ -203,7 +203,7 @@ jobs:
             ITER=$((ITER + 1))
             if [ $((ITER % 6)) -eq 0 ]; then
               echo "--- orchestrator status (${ITER}x10s) ---"
-              ssh $SSH_OPTS "root@$AGENT_IP" "
+              ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "
                 systemctl is-active vigil-setup.service vigil-orchestrator.service 2>&1 || true
                 journalctl -u vigil-setup.service -u vigil-orchestrator.service -n 20 --no-pager 2>&1 || true
               " || true
@@ -215,16 +215,16 @@ jobs:
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
-          ssh $SSH_OPTS root@$AGENT_IP \
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
+          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" \
             "set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 bash /root/vigil/eval/scripts/reset-eval-baseline.sh"
-          ssh $SSH_OPTS root@$AGENT_IP "systemctl restart vigil-orchestrator.service"
+          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "systemctl restart vigil-orchestrator.service"
           DEADLINE=$(($(date +%s) + 120))
-          until ssh $SSH_OPTS root@$AGENT_IP "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
-            [ $(date +%s) -gt $DEADLINE ] && { echo "orchestrator did not recover after baseline reset"; exit 1; }
+          until ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
+            [ "$(date +%s)" -gt "$DEADLINE" ] && { echo "orchestrator did not recover after baseline reset"; exit 1; }
             sleep 5
           done
-          ssh $SSH_OPTS root@$AGENT_IP \
+          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" \
             "set -a; . /etc/vigil/env; set +a; bash /root/vigil/eval/scripts/health-gate.sh /etc/vigil/kubeconfig-eval-runner"
 
       - name: Run scenarios in group
@@ -233,23 +233,25 @@ jobs:
           MODEL: ${{ inputs.model }}
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
           PREV=""
           for S in $SCENARIOS; do
             if [ -n "$PREV" ]; then
-              SHA7=$(ssh $SSH_OPTS root@$AGENT_IP "git -C /root/vigil rev-parse --short=7 HEAD")
+              SHA7=$(ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "git -C /root/vigil rev-parse --short=7 HEAD")
               SAFE_MODEL=$(printf '%s' "$MODEL" | tr -c 'a-zA-Z0-9_-' '-')
               PREV_RUN_ID="${PREV}_${SEED}_${SAFE_MODEL}_${SHA7}"
               echo "::group::between-scenarios prev=$PREV next=$S"
-              ssh $SSH_OPTS root@$AGENT_IP \
-                "set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 PREV_RUN_ID=$PREV_RUN_ID bash /root/vigil/eval/scripts/between-scenarios.sh $PREV $GROUP" \
+              printf -v REMOTE 'set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 PREV_RUN_ID=%q bash /root/vigil/eval/scripts/between-scenarios.sh %q %q' \
+                "$PREV_RUN_ID" "$PREV" "$GROUP"
+              ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" -- "$REMOTE" \
                 || echo "between-scenarios returned non-zero"
               echo "::endgroup::"
             fi
             echo "::group::scenario $S"
             VIGIL_EVAL_STATUS=0
-            ssh $SSH_OPTS root@$AGENT_IP \
-              "set -a; . /etc/vigil/env; set +a; cd /root/vigil && vigil-eval run --scenario $S --seed $SEED --model $MODEL" \
+            printf -v REMOTE 'set -a; . /etc/vigil/env; set +a; cd /root/vigil && vigil-eval run --scenario %q --seed %q --model %q' \
+              "$S" "$SEED" "$MODEL"
+            ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" -- "$REMOTE" \
               || VIGIL_EVAL_STATUS=$?
             echo "::endgroup::"
             if [ "$VIGIL_EVAL_STATUS" -eq 10 ]; then
@@ -269,9 +271,9 @@ jobs:
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
           mkdir -p eval/runs
-          ssh $SSH_OPTS root@$AGENT_IP "
+          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "
             echo '=== systemctl status ==='
             systemctl status vigil-setup.service vigil-orchestrator.service --no-pager -l 2>&1 || true
             echo '=== journal: vigil-setup ==='
@@ -284,11 +286,11 @@ jobs:
             ls -la /etc/vigil/ 2>&1 || true
             test -f /etc/vigil/env && sed 's/=.*\$/=REDACTED/' /etc/vigil/env || echo '/etc/vigil/env MISSING'
           " > "eval/runs/_diagnostics-$GROUP-s$SEED.log" 2>&1 || true
-          rsync -avz -e "ssh $SSH_OPTS" \
-            root@$AGENT_IP:/root/vigil/eval/runs/ ./eval/runs/ || true
-          if ssh $SSH_OPTS root@$AGENT_IP "test -f /root/vigil/eval/runs_index.jsonl"; then
-            rsync -avz -e "ssh $SSH_OPTS" \
-              root@$AGENT_IP:/root/vigil/eval/runs_index.jsonl \
+          rsync -avz -e "ssh ${SSH_OPTS[*]}" \
+            "root@$AGENT_IP:/root/vigil/eval/runs/" ./eval/runs/ || true
+          if ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "test -f /root/vigil/eval/runs_index.jsonl"; then
+            rsync -avz -e "ssh ${SSH_OPTS[*]}" \
+              "root@$AGENT_IP:/root/vigil/eval/runs_index.jsonl" \
               "./eval/runs/runs_index_$GROUP-s$SEED.jsonl" || true
           fi
 
@@ -306,8 +308,8 @@ jobs:
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
-          ssh $SSH_OPTS root@$AGENT_IP \
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
+          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" \
             "set -a; . /etc/vigil/env; set +a; bash /root/vigil/eval/scripts/reset-eval-baseline.sh" \
             || echo "reset-eval-baseline returned non-zero; branch may need manual cleanup"
 
@@ -362,7 +364,7 @@ jobs:
         run: uv run vigil-eval aggregate --seed-count "$SEED_COUNT"
 
       - name: Publish results to step summary
-        run: cat eval/results/step_summary.md >> $GITHUB_STEP_SUMMARY
+        run: cat eval/results/step_summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish results to docs/eval-results
         if: ${{ env.LOCAL_RUN != '1' }}
