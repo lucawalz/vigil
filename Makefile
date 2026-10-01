@@ -4,7 +4,7 @@ TF_DIR := infra/terraform
 TEST_ENV := LLM_MODEL_NAME=test-model OLLAMA_BASE_URL=http://localhost:1/v1 OLLAMA_API_KEY=sk-test VIGIL_WEBHOOK_SECRET=test-secret
 
 .DEFAULT_GOAL := ci
-.PHONY: setup fmt lint lint-py lint-go typecheck test test-py test-go build vuln tf-check nix-check ci
+.PHONY: setup fmt lint lint-py lint-go lock-check typecheck test test-py test-go build vuln tf-check nix-check ci
 
 setup:
 	uv sync --all-extras --dev --all-packages
@@ -21,10 +21,12 @@ lint: lint-py lint-go
 lint-py:
 	uv run ruff check .
 	uv run ruff format --check .
-	uv lock --check
 
 lint-go:
 	@set -e; for m in $(GO_MODULES); do echo "golangci-lint $$m"; (cd $$m && golangci-lint run ./...); done
+
+lock-check:
+	uv lock --check
 
 typecheck:
 	uv run basedpyright
@@ -51,4 +53,4 @@ tf-check:
 nix-check:
 	cd infra/nixos && nix flake check --no-build --all-systems
 
-ci: lint typecheck test build vuln tf-check
+ci: lint lock-check typecheck test build vuln tf-check
