@@ -78,8 +78,43 @@ jobs:
             '[ $seeds[] as $s | $base[] | . + {seed:$s} ]')
           echo "matrix=$(jq -cn --argjson inc "$include" '{include:$inc}')" >> "$GITHUB_OUTPUT"
 
+  check-secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: eval
+      deployment: false
+    steps:
+      - name: Check required secrets
+        env:
+          MODEL: ${{ inputs.model }}
+          TF_VAR_HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          TF_VAR_GITHUB_TOKEN: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
+          TF_VAR_LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
+          OPERATOR_SSH_PUBKEY: ${{ secrets.OPERATOR_SSH_PUBKEY }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+          TF_VAR_ANTHROPIC_API_KEY: ${{ secrets.TF_VAR_ANTHROPIC_API_KEY }}
+          TF_VAR_OLLAMA_API_KEY: ${{ secrets.TF_VAR_OLLAMA_API_KEY }}
+          TF_VAR_OLLAMA_BASE_URL: ${{ secrets.TF_VAR_OLLAMA_BASE_URL }}
+        run: |
+          required=(TF_VAR_HCLOUD_TOKEN TF_VAR_GITHUB_TOKEN TF_VAR_LLM_MODEL_NAME OPERATOR_SSH_PUBKEY SOPS_AGE_KEY)
+          if [[ "$MODEL" == claude-* ]]; then
+            required+=(TF_VAR_ANTHROPIC_API_KEY)
+          else
+            required+=(TF_VAR_OLLAMA_API_KEY TF_VAR_OLLAMA_BASE_URL)
+          fi
+          missing=()
+          for name in "${required[@]}"; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing secrets in the eval environment: ${missing[*]}"
+            exit 1
+          fi
+          echo "All required secrets are set"
+
   run-scenarios:
-    needs: setup
+    needs: [setup, check-secrets]
     if: ${{ needs.setup.outputs.matrix != '{"include":[]}' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
