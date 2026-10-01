@@ -83,7 +83,9 @@ jobs:
     if: ${{ needs.setup.outputs.matrix != '{"include":[]}' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
-    environment: eval
+    environment:
+      name: eval
+      deployment: false
     strategy:
       fail-fast: false
       max-parallel: 1

@@ -17,7 +17,9 @@ jobs:
   check-token:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    environment: eval
+    environment:
+      name: eval
+      deployment: false
     outputs:
       available: ${{ steps.token.outputs.available }}
     steps:
@@ -37,7 +39,9 @@ jobs:
     if: needs.check-token.outputs.available == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: eval
+    environment:
+      name: eval
+      deployment: false
     strategy:
       fail-fast: false
       matrix:
@@ -101,7 +105,9 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: eval
+    environment:
+      name: eval
+      deployment: false
     needs: [check-token, build]
     if: always() && needs.check-token.outputs.available == 'true'
     steps:
