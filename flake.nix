@@ -20,6 +20,7 @@
             uv
             python312
             gnumake
+            shellcheck
           ];
           env.UV_PYTHON_DOWNLOADS = "never";
         };

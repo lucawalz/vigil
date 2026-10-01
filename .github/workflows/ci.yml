@@ -74,6 +74,25 @@ jobs:
       - name: Check lockfile is up to date
         run: make lock-check
 
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: false
+      - name: Install dependencies
+        run: make setup
+      - name: zizmor and actionlint
+        run: make workflow-lint
+
   detect-go-modules:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -171,6 +190,7 @@ jobs:
       - python-test
       - python-typecheck
       - lockfile-drift
+      - workflow-lint
       - detect-go-modules
       - go-lint
       - go-test

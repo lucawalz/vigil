@@ -1,10 +1,11 @@
 GO_MODULES := $(shell awk '/^[[:space:]]+\.\//{print $$1}' go.work)
 GOVULNCHECK_VERSION := v1.8.0
+ACTIONLINT_VERSION := v1.7.12
 TF_DIR := infra/terraform
 TEST_ENV := LLM_MODEL_NAME=test-model OLLAMA_BASE_URL=http://localhost:1/v1 OLLAMA_API_KEY=sk-test VIGIL_WEBHOOK_SECRET=test-secret
 
 .DEFAULT_GOAL := ci
-.PHONY: setup fmt lint lint-py lint-go lock-check typecheck test test-py test-go build vuln tf-check nix-check ci
+.PHONY: setup fmt lint lint-py lint-go lock-check typecheck test test-py test-go build vuln tf-check nix-check workflow-lint ci
 
 setup:
 	uv sync --all-extras --dev --all-packages
@@ -53,4 +54,9 @@ tf-check:
 nix-check:
 	cd infra/nixos && nix flake check --no-build --all-systems
 
-ci: lint lock-check typecheck test build vuln tf-check
+workflow-lint:
+	@command -v shellcheck >/dev/null || { echo "shellcheck is required by actionlint" >&2; exit 1; }
+	uv run zizmor --offline .github/workflows
+	GOWORK=off go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
+
+ci: lint lock-check typecheck test build vuln tf-check workflow-lint
