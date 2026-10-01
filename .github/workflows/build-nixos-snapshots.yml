@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: eval
     strategy:
       fail-fast: false
       matrix:
@@ -40,11 +41,13 @@ jobs:
         id: check
         env:
           HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          ROLE: ${{ matrix.role }}
+          NIXOS_HASH: ${{ steps.hash.outputs.nixos_hash }}
         run: |
           COUNT=$(curl -sf -G \
             -H "Authorization: Bearer $HCLOUD_TOKEN" \
             --data-urlencode "type=snapshot" \
-            --data-urlencode "label_selector=vigil-role=${{ matrix.role }},vigil-nixos-hash=${{ steps.hash.outputs.nixos_hash }}" \
+            --data-urlencode "label_selector=vigil-role=$ROLE,vigil-nixos-hash=$NIXOS_HASH" \
             "https://api.hetzner.cloud/v1/images" \
             | jq '.images | length')
           echo "exists=$([ "$COUNT" -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
@@ -72,6 +75,7 @@ jobs:
 
   cleanup:
     runs-on: ubuntu-latest
+    environment: eval
     needs: [build]
     if: always()
     steps:

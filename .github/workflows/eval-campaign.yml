@@ -56,15 +56,19 @@ jobs:
       matrix: ${{ steps.build.outputs.matrix }}
     steps:
       - id: build
+        env:
+          SKIP_K8S: ${{ inputs.skip_k8s }}
+          SKIP_OS: ${{ inputs.skip_os }}
+          SEED_COUNT: ${{ inputs.seed_count }}
         run: |
           base='[]'
-          if [ '${{ inputs.skip_k8s }}' != 'true' ]; then
+          if [ "$SKIP_K8S" != 'true' ]; then
             base=$(echo "$base" | jq -c '. + [{"group":"k8s","scenarios":"k8s-1g k8s-2g k8s-3g k8s-4g k8s-5g live-quota-injected deceptive-2 k8s-rollback-1"}]')
           fi
-          if [ '${{ inputs.skip_os }}' != 'true' ]; then
+          if [ "$SKIP_OS" != 'true' ]; then
             base=$(echo "$base" | jq -c '. + [{"group":"os","scenarios":"os-1 os-1g os-drift-sysctl os-stale-generation disk-pressure"}]')
           fi
-          seeds=$(jq -cn --argjson n '${{ inputs.seed_count }}' '[range(1; $n + 1)]')
+          seeds=$(jq -cn --argjson n "$SEED_COUNT" '[range(1; $n + 1)]')
           include=$(jq -cn --argjson base "$base" --argjson seeds "$seeds" \
             '[ $seeds[] as $s | $base[] | . + {seed:$s} ]')
           echo "matrix=$(jq -cn --argjson inc "$include" '{include:$inc}')" >> "$GITHUB_OUTPUT"
@@ -73,20 +77,18 @@ jobs:
     needs: setup
     if: ${{ needs.setup.outputs.matrix != '{"include":[]}' }}
     runs-on: ubuntu-latest
+    environment: eval
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     env:
-      TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-      TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
-      TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
-      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
       TF_VAR_group_name: ${{ matrix.group }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}-s${{ matrix.seed }}
-      TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
       TF_VAR_vigil_branch: chore/eval-cluster-baseline
       TF_VAR_location: ${{ inputs.location }}
+      GROUP: ${{ matrix.group }}
+      SEED: ${{ matrix.seed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -110,28 +112,26 @@ jobs:
       - name: Prepare kube directory
         run: mkdir -p ~/.kube
 
-      - name: Detect provider
-        env:
-          MODEL: ${{ inputs.model }}
-        run: |
-          if [[ "$MODEL" == claude-* ]]; then
-            echo "TF_VAR_anthropic_api_key=${{ secrets.TF_VAR_ANTHROPIC_API_KEY }}" >> "$GITHUB_ENV"
-          else
-            echo "TF_VAR_ollama_api_key=${{ secrets.TF_VAR_OLLAMA_API_KEY }}" >> "$GITHUB_ENV"
-            echo "TF_VAR_ollama_base_url=${{ secrets.TF_VAR_OLLAMA_BASE_URL }}" >> "$GITHUB_ENV"
-          fi
-
       - name: Terraform init
         working-directory: infra/terraform
         run: terraform init -input=false
 
       - name: Terraform apply
         working-directory: infra/terraform
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
+          TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
+          TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
+          TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
+          TF_VAR_ollama_api_key: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
+          TF_VAR_ollama_base_url: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_BASE_URL || '' }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: terraform apply -auto-approve -input=false
 
       - name: Wait for kubeconfig
         run: |
-          KUBECONFIG=~/.kube/hetzner-vigil-${{ matrix.group }}
+          KUBECONFIG="$HOME/.kube/hetzner-vigil-$GROUP"
           DEADLINE=$(($(date +%s) + 300))
           until [ -s "$KUBECONFIG" ]; do
             if [ $(date +%s) -gt $DEADLINE ]; then
@@ -145,26 +145,28 @@ jobs:
           echo "kubeconfig ready ($(wc -c < "$KUBECONFIG") bytes)"
 
       - name: Inject SOPS age key into Flux
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: |
           set -o pipefail
-          echo "${{ secrets.SOPS_AGE_KEY }}" > /tmp/sops-age.txt
-          chmod 600 /tmp/sops-age.txt
-          kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} \
+          KCFG="$HOME/.kube/hetzner-vigil-$GROUP"
+          (umask 077 && printf '%s\n' "$SOPS_AGE_KEY" > /tmp/sops-age.txt)
+          kubectl --kubeconfig "$KCFG" \
             create secret generic sops-age \
             --namespace=flux-system \
             --from-file=age.agekey=/tmp/sops-age.txt \
             --dry-run=client -o yaml \
-            | kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} apply -f -
+            | kubectl --kubeconfig "$KCFG" apply -f -
           rm -f /tmp/sops-age.txt
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           for ks in flux-system cluster-namespaces cluster-sources cluster-secrets cluster-infrastructure cluster-apps; do
-            kubectl --kubeconfig ~/.kube/hetzner-vigil-${{ matrix.group }} \
+            kubectl --kubeconfig "$KCFG" \
               annotate kustomization "$ks" -n flux-system \
               "reconcile.fluxcd.io/requestedAt=$NOW" --overwrite || true
           done
 
       - name: Wait for Flux kustomizations ready
-        run: eval/scripts/wait-flux-ready.sh "$HOME/.kube/hetzner-vigil-${{ matrix.group }}"
+        run: eval/scripts/wait-flux-ready.sh "$HOME/.kube/hetzner-vigil-$GROUP"
 
       - name: Resolve agent host IP
         id: agent
@@ -172,15 +174,17 @@ jobs:
         run: echo "ip=$(terraform output -raw agent_public_ip)" >> $GITHUB_OUTPUT
 
       - name: Wait for orchestrator to be reachable
+        env:
+          AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
           SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
           DEADLINE=$(($(date +%s) + 600))
           ITER=0
-          until ssh $SSH_OPTS root@${{ steps.agent.outputs.ip }} \
+          until ssh $SSH_OPTS "root@$AGENT_IP" \
               "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
             if [ $(date +%s) -gt $DEADLINE ]; then
               echo "Orchestrator not ready after 10 minutes - diagnostics:"
-              ssh $SSH_OPTS root@${{ steps.agent.outputs.ip }} "
+              ssh $SSH_OPTS "root@$AGENT_IP" "
                 systemctl status vigil-setup.service vigil-orchestrator.service --no-pager -l 2>&1 || true
                 echo '--- journal: vigil-setup ---'
                 journalctl -u vigil-setup.service --no-pager -n 200 2>&1 || true
@@ -199,7 +203,7 @@ jobs:
             ITER=$((ITER + 1))
             if [ $((ITER % 6)) -eq 0 ]; then
               echo "--- orchestrator status (${ITER}x10s) ---"
-              ssh $SSH_OPTS root@${{ steps.agent.outputs.ip }} "
+              ssh $SSH_OPTS "root@$AGENT_IP" "
                 systemctl is-active vigil-setup.service vigil-orchestrator.service 2>&1 || true
                 journalctl -u vigil-setup.service -u vigil-orchestrator.service -n 20 --no-pager 2>&1 || true
               " || true
@@ -226,9 +230,7 @@ jobs:
       - name: Run scenarios in group
         env:
           SCENARIOS: ${{ matrix.scenarios }}
-          SEED: ${{ matrix.seed }}
           MODEL: ${{ inputs.model }}
-          GROUP: ${{ matrix.group }}
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
           SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10"
@@ -281,13 +283,13 @@ jobs:
             echo '=== /etc/vigil ==='
             ls -la /etc/vigil/ 2>&1 || true
             test -f /etc/vigil/env && sed 's/=.*\$/=REDACTED/' /etc/vigil/env || echo '/etc/vigil/env MISSING'
-          " > eval/runs/_diagnostics-${{ matrix.group }}-s${{ matrix.seed }}.log 2>&1 || true
+          " > "eval/runs/_diagnostics-$GROUP-s$SEED.log" 2>&1 || true
           rsync -avz -e "ssh $SSH_OPTS" \
             root@$AGENT_IP:/root/vigil/eval/runs/ ./eval/runs/ || true
           if ssh $SSH_OPTS root@$AGENT_IP "test -f /root/vigil/eval/runs_index.jsonl"; then
             rsync -avz -e "ssh $SSH_OPTS" \
               root@$AGENT_IP:/root/vigil/eval/runs_index.jsonl \
-              ./eval/runs/runs_index_${{ matrix.group }}-s${{ matrix.seed }}.jsonl || true
+              "./eval/runs/runs_index_$GROUP-s$SEED.jsonl" || true
           fi
 
       - name: Upload run artifacts
@@ -312,6 +314,15 @@ jobs:
       - name: Terraform destroy
         if: always() && !inputs.skip_destroy
         working-directory: infra/terraform
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
+          TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
+          TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
+          TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
+          TF_VAR_ollama_api_key: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
+          TF_VAR_ollama_base_url: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_BASE_URL || '' }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: terraform destroy -auto-approve -input=false
 
   aggregate:
@@ -346,7 +357,9 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Aggregate
-        run: uv run vigil-eval aggregate --seed-count ${{ inputs.seed_count }}
+        env:
+          SEED_COUNT: ${{ inputs.seed_count }}
+        run: uv run vigil-eval aggregate --seed-count "$SEED_COUNT"
 
       - name: Publish results to step summary
         run: cat eval/results/step_summary.md >> $GITHUB_STEP_SUMMARY

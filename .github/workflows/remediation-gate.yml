@@ -49,6 +49,8 @@ jobs:
 
       - name: kubeconform
         if: steps.diff.outputs.files != ''
+        env:
+          FILES: ${{ steps.diff.outputs.files }}
         run: |
           # shellcheck disable=SC2086
           kubeconform \
@@ -57,7 +59,7 @@ jobs:
             -schema-location default \
             -schema-location /tmp/flux-crd-schemas \
             -skip Secret \
-            ${{ steps.diff.outputs.files }}
+            $FILES
 
       - name: kustomize build
         run: |
@@ -65,6 +67,8 @@ jobs:
 
       - name: conftest
         if: steps.diff.outputs.files != ''
+        env:
+          FILES: ${{ steps.diff.outputs.files }}
         run: |
           # shellcheck disable=SC2086
-          conftest test --policy infra/policy/ ${{ steps.diff.outputs.files }}
+          conftest test --policy infra/policy/ $FILES
