@@ -8,7 +8,7 @@ TEST_ENV := LLM_MODEL_NAME=test-model OLLAMA_BASE_URL=http://localhost:1/v1 OLLA
 VENDOR_HASH_EXPR := { name }: let flake = builtins.getFlake "git+file://$(CURDIR)?dir=$(NIX_DIR)"; pkgs = flake.inputs.nixpkgs.legacyPackages.$${builtins.currentSystem}; in (import ./$(MCP_SERVERS_NIX) { inherit pkgs; self = flake; }).$${name}.goModules.overrideAttrs { outputHash = pkgs.lib.fakeHash; }
 
 .DEFAULT_GOAL := ci
-.PHONY: setup fmt lint lint-py lint-go lock-check typecheck test test-py test-go build vuln tf-check nix-check workflow-lint vendor-hash ci
+.PHONY: setup fmt lint lint-py lint-go lock-check typecheck test test-py test-go build vuln tf-check nix-check workflow-lint vendor-hash release ci
 
 setup:
 	uv sync --all-extras --dev --all-packages
@@ -72,5 +72,8 @@ vendor-hash:
 		grep -q "name = \"$$n\"; vendorHash = \"$$h\"" $(MCP_SERVERS_NIX) || { echo "vendor hash for $$n not written" >&2; exit 1; }; \
 		echo "$$n $$h"; \
 	done
+
+release:
+	scripts/release.sh $(VERSION)
 
 ci: lint lock-check typecheck test build vuln tf-check workflow-lint
