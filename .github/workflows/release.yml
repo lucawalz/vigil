@@ -5,17 +5,19 @@ on:
     tags:
       - "v*.*.*"
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Generate release notes
         id: git-cliff

@@ -7,11 +7,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   python-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
@@ -26,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
@@ -44,6 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
@@ -56,6 +65,8 @@ jobs:
       modules: ${{ steps.set-modules.outputs.modules }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -72,6 +83,8 @@ jobs:
         module: ${{ fromJSON(needs.detect-go-modules.outputs.modules) }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -91,6 +104,8 @@ jobs:
         module: ${{ fromJSON(needs.detect-go-modules.outputs.modules) }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -138,6 +153,8 @@ jobs:
         working-directory: infra/terraform
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "~1.14"
