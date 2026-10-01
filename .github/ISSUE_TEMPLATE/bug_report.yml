@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a reproducible problem in vigil
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Observed behaviour and the expected behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - orchestrator
+        - diagnosis
+        - remediation
+        - watchdog
+        - common
+        - eval
+        - kubectl-mcp
+        - flux-mcp
+        - git-mcp
+        - nixos-mcp
+        - infra
+        - ci
+        - docs
+        - not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v1.0.0 or 1a2b3c4
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Kubernetes version, NixOS version and LLM provider and model, where relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant agent or MCP server output with secrets removed.
+      render: shell

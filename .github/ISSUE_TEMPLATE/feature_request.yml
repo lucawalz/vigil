@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a new capability for vigil
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: The need or gap the request addresses.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: The desired behaviour or capability.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      multiple: true
+      options:
+        - orchestrator
+        - diagnosis
+        - remediation
+        - watchdog
+        - common
+        - eval
+        - kubectl-mcp
+        - flux-mcp
+        - git-mcp
+        - nixos-mcp
+        - infra
+        - ci
+        - docs
+        - not sure
