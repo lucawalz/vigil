@@ -7,9 +7,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   remediation-gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: startsWith(github.head_ref, 'remediation/run-')
     steps:
       - uses: actions/checkout@v6

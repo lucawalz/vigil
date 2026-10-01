@@ -49,9 +49,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   setup:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.build.outputs.matrix }}
     steps:
@@ -77,6 +82,7 @@ jobs:
     needs: setup
     if: ${{ needs.setup.outputs.matrix != '{"include":[]}' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     environment: eval
     strategy:
       fail-fast: false
@@ -330,6 +336,7 @@ jobs:
   aggregate:
     needs: run-scenarios
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: always()
     permissions:
       contents: write

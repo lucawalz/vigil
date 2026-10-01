@@ -10,9 +10,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python-lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,6 +34,7 @@ jobs:
 
   python-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,6 +55,7 @@ jobs:
   lockfile-drift:
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -61,6 +68,7 @@ jobs:
 
   detect-go-modules:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       modules: ${{ steps.set-modules.outputs.modules }}
     steps:
@@ -77,6 +85,7 @@ jobs:
   go-lint:
     needs: detect-go-modules
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +107,7 @@ jobs:
   go-test:
     needs: detect-go-modules
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -124,6 +134,7 @@ jobs:
   govulncheck:
     needs: detect-go-modules
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -148,6 +159,7 @@ jobs:
 
   terraform-lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: infra/terraform
@@ -177,6 +189,7 @@ jobs:
       - govulncheck
       - terraform-lint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Require all checks to pass
         uses: re-actors/alls-green@release/v1

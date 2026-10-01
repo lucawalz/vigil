@@ -9,9 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: eval
     strategy:
       fail-fast: false
@@ -75,6 +80,7 @@ jobs:
 
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: eval
     needs: [build]
     if: always()
