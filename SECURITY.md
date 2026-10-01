@@ -8,4 +8,7 @@ Report a suspected vulnerability privately through the "Report a vulnerability" 
 
 ## Supported versions
 
-Only the `main` branch is maintained.
+| Version  | Supported                                                                |
+| -------- | ------------------------------------------------------------------------ |
+| `main`   | Receives fixes                                                           |
+| `v1.0.0` | Archived evaluation release, kept unchanged for reproducibility          |
