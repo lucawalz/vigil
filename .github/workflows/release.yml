@@ -13,27 +13,57 @@ concurrency:
 
 jobs:
   release:
+    if: github.ref_name != 'v1.0.0'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      checks: read
+    env:
+      TAG: ${{ github.ref_name }}
+      SHA: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true
           persist-credentials: false
 
-      - name: Generate release notes
-        id: git-cliff
-        uses: orhun/git-cliff-action@v4
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
-          config: cliff.toml
-          args: --latest --strip header
+          enable-cache: false
 
-      - name: Create GitHub release # zizmor: ignore[superfluous-actions]
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body_path: ${{ steps.git-cliff.outputs.changelog }}
+      - name: Check version and changelog
+        run: |
+          version="${TAG#v}"
+          project_version="$(uv version --short --frozen)"
+          if [ "$project_version" != "${version/-rc./rc}" ]; then
+            echo "::error::pyproject.toml version $project_version does not match tag $TAG"
+            exit 1
+          fi
+          if ! grep -qF "## [$version]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
+
+      - name: Require a green ci-gate on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?check_name=ci-gate" > "$RUNNER_TEMP/check-runs.json"
+          if ! jq -e 'any(.check_runs[]; .conclusion == "success")' "$RUNNER_TEMP/check-runs.json" > /dev/null; then
+            echo "::error::ci-gate has not succeeded on $SHA; wait for a green ci-gate before tagging"
+            exit 1
+          fi
+
+      - name: Generate release notes
+        run: uvx git-cliff==2.14.2 --latest --strip header > "$RUNNER_TEMP/notes.md"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$TAG" == *-rc.* ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}"
