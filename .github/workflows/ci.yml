@@ -74,6 +74,35 @@ jobs:
       - name: Check lockfile is up to date
         run: make lock-check
 
+  commit-format:
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check Conventional Commits format
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pattern='^(feat|fix|chore|ci|docs|refactor|perf|test|build)(\([a-z0-9-]+\))?: [a-z0-9](.*[^.])?$'
+          failed=0
+          check() {
+            if ! [[ $1 =~ $pattern ]]; then
+              echo "::error::Commit subject does not follow Conventional Commits: $1"
+              failed=1
+            fi
+          }
+          check "$PR_TITLE"
+          while IFS= read -r subject; do
+            check "$subject"
+          done < <(git log --no-merges --format=%s "$BASE_SHA..$HEAD_SHA")
+          exit "$failed"
+
   workflow-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -224,6 +253,7 @@ jobs:
       - python-test
       - python-typecheck
       - lockfile-drift
+      - commit-format
       - workflow-lint
       - detect-go-modules
       - go-lint
@@ -238,4 +268,4 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: lockfile-drift
+          allowed-skips: lockfile-drift,commit-format
