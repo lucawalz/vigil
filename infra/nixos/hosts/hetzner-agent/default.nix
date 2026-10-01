@@ -24,19 +24,19 @@ let
 
   kubectl-mcp = mkMcpServer {
     name = "kubectl-mcp";
-    vendorHash = "sha256-1V68Z8p+N5s/3xLRRrjBgn1cimFPcsuVDN5atj0l91E=";
+    vendorHash = "sha256-KocuKzTe+pLkcyvKvbnCoijiqtHsoO8P5wRMmNkG3oc=";
   };
   flux-mcp = mkMcpServer {
     name = "flux-mcp";
-    vendorHash = "sha256-qpXQtxvUUMwUVIMWjQauHLXqRuNWW5fwuX32UouULmA=";
+    vendorHash = "sha256-sEf8VBbS4XThS+xobo5Od74uayJApNt9l3oX71p0U1k=";
   };
   nixos-mcp = mkMcpServer {
     name = "nixos-mcp";
-    vendorHash = "sha256-SawLD+fMH4jqKjPOeqF3lsp6XXw5ofjUQF+FghnnDyI=";
+    vendorHash = "sha256-YKM1Eyo48MrqvrKws4YrYPN2UWtvt9HGrZQFpA7ph9g=";
   };
   git-mcp = mkMcpServer {
     name = "git-mcp";
-    vendorHash = "sha256-UtzZCIZ1pBfOUd0NtAiy1Ldz3csNzQz8HWHFi685hjo=";
+    vendorHash = "sha256-d1ysWqpEehizALW5agbtXZuIS4zdP+n+Zj38mNLxUdY=";
     nativeBuildInputs = [ pkgs.git ];
   };
 in
