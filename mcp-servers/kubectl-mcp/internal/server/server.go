@@ -13,7 +13,7 @@ type TextResult struct {
 }
 
 func NewServer(client k8s.K8sClient, cfg *config.Config) *server.MCPServer {
-	s := server.NewMCPServer("kubectl-mcp", "1.0.0",
+	s := server.NewMCPServer("kubectl-mcp", "1.1.0",
 		server.WithToolCapabilities(true),
 	)
 

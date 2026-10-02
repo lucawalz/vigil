@@ -1,6 +1,6 @@
 [project]
 name = "vigil-common"
-version = "1.0.0"
+version = "1.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic-ai>=1.84.0",

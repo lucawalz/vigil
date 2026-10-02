@@ -2951,7 +2951,7 @@ wheels = [
 
 [[package]]
 name = "vigil"
-version = "1.0.0"
+version = "1.1.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -2980,7 +2980,7 @@ dev = [
 
 [[package]]
 name = "vigil-common"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "agents/common" }
 dependencies = [
     { name = "openai" },
@@ -2995,7 +2995,7 @@ requires-dist = [
 
 [[package]]
 name = "vigil-diagnosis"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "agents/diagnosis" }
 dependencies = [
     { name = "vigil-common" },
@@ -3006,7 +3006,7 @@ requires-dist = [{ name = "vigil-common", editable = "agents/common" }]
 
 [[package]]
 name = "vigil-eval"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "eval" }
 dependencies = [
     { name = "click" },
@@ -3027,7 +3027,7 @@ requires-dist = [
 
 [[package]]
 name = "vigil-orchestrator"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "agents/orchestrator" }
 dependencies = [
     { name = "fastapi" },
@@ -3048,7 +3048,7 @@ requires-dist = [
 
 [[package]]
 name = "vigil-remediation"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "agents/remediation" }
 dependencies = [
     { name = "vigil-common" },
@@ -3059,7 +3059,7 @@ requires-dist = [{ name = "vigil-common", editable = "agents/common" }]
 
 [[package]]
 name = "vigil-watchdog"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "agents/watchdog" }
 dependencies = [
     { name = "vigil-common" },

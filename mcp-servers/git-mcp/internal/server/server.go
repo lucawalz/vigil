@@ -68,7 +68,7 @@ func (s *GitServer) CloneDir() string {
 	return s.cloneDir
 }
 
-const serverVersion = "1.0.0"
+const serverVersion = "1.1.0"
 
 func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 	s := &GitServer{}
