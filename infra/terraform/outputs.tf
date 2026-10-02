@@ -31,5 +31,5 @@ output "agent_private_ip" {
 }
 
 output "kubeconfig_hint" {
-  value = "KUBECONFIG=~/.kube/hetzner-vigil kubectl get nodes  # context: hetzner-vigil"
+  value = "KUBECONFIG=~/.kube/hetzner-vigil-${var.group_name} kubectl get nodes  # context: hetzner-vigil-${var.group_name}"
 }
