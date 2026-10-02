@@ -1,62 +1,64 @@
 # infra/terraform
 
-Terraform module that provisions the Hetzner Cloud eval cluster: 4 VMs (1× master + 2× workers + 1× agent host), a private network, a firewall, and a NixOS installation per VM via the nixos-anywhere all-in-one Terraform module. Idempotent: `terraform apply` re-runs are no-ops unless a VM is replaced.
+Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` servers (master, two workers and the agent host) in `hel1` by default, a private network, a firewall and an SSH key. The servers boot from pre-built NixOS snapshots. Terraform then joins the K3s nodes, bootstraps Flux, applies the eval RBAC and starts the orchestrator on the agent host.
 
 ## Prerequisites
 
-- Terraform 1.14+ installed locally
-- `nix` available on PATH (nixos-anywhere is invoked via `nix run`)
-- A Hetzner Cloud project and API token with read+write scope
-- A local SOPS age private key matching the public key already trusted by the nixos-homelab flake
-- The nixos-homelab flake exposing `nixosConfigurations.hetzner-master`, `nixosConfigurations.hetzner-worker-1`, `nixosConfigurations.hetzner-worker-2`, `nixosConfigurations.hetzner-agent`
+- Terraform 1.14 or later, `ssh`, `kubectl`, and `nix` on `PATH` (Flux is bootstrapped through `nix shell`).
+- A Hetzner Cloud project and a read-write API token.
+- One NixOS snapshot per role in that project, labelled `vigil-role=master`, `worker-1`, `worker-2` and `agent`. The Build NixOS Snapshots workflow builds them with Packer from [`infra/packer/`](../packer/) when `infra/nixos/` or `mcp-servers/` change on `main`.
+- The SOPS age private key for the recipient in [`infra/overlays/hetzner/.sops.yaml`](../overlays/hetzner/.sops.yaml), exported as `SOPS_AGE_KEY_FILE` or `SOPS_AGE_KEY`. Terraform decrypts the orchestrator webhook secret with it.
+- An SSH key pair, `~/.ssh/id_ed25519` by default (`ssh_public_key_path` and `ssh_private_key_path` override it), and an existing `~/.kube/` directory.
+- A GitHub token with write access to `lucawalz/vigil`, the repository that Flux, the hosts and the scenario scripts track.
 
-## Environment variables
+## Variables
 
-Set before running `terraform apply` or `terraform destroy`:
+[`variables.tf`](variables.tf) is the source of truth.
 
-```
-export TF_VAR_hcloud_token=<hetzner-cloud-api-token>
-export TF_VAR_sops_age_key_path=/Users/luca/.config/sops/age/keys.txt
-export SOPS_AGE_KEY_FILE=$TF_VAR_sops_age_key_path
-```
-
-Optional override:
-
-```
-export TF_VAR_ssh_public_key_path=$HOME/.ssh/id_ed25519.pub
-```
-
-Secrets are never written to Terraform state, `.tfvars`, or git.
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `TF_VAR_hcloud_token` | required | Hetzner Cloud API token |
+| `TF_VAR_github_token` | required | GitHub token with `repo` scope, used by `flux bootstrap` and the orchestrator |
+| `TF_VAR_group_name` | required | Scenario group (`k8s`, `os`, `cross`, `misc`); prefixes every resource name |
+| `TF_VAR_llm_model_name` | required | Orchestrator model, for example `qwen3.5:cloud` or `claude-sonnet-4-6` |
+| `TF_VAR_anthropic_api_key` | empty | Required for `claude-*` models |
+| `TF_VAR_ollama_api_key`, `TF_VAR_ollama_base_url` | empty | Required for every other model (OpenAI-compatible endpoint) |
+| `TF_VAR_location` | `hel1` | `hel1`, `fsn1` or `nbg1` |
+| `TF_VAR_vigil_branch` | `chore/eval-cluster-baseline` | Branch that Flux and the hosts track |
+| `TF_VAR_run_id` | `local` | Suffix for resource names |
+| `TF_VAR_operator_ssh_pubkey` | empty | Extra public key added to every host |
+| `TF_VAR_ssh_public_key_path`, `TF_VAR_ssh_private_key_path` | `~/.ssh/id_ed25519.pub`, `~/.ssh/id_ed25519` | Key pair for provisioning |
 
 ## Provision
 
-```
-cd infra/terraform
-terraform init
-terraform apply
+```bash
+terraform -chdir=infra/terraform init
+terraform -chdir=infra/terraform apply
 ```
 
-The first apply takes ~10-15 minutes (kexec into rescue, disko partitioning, NixOS install, reboot, K3s join). Subsequent applies converge without changes unless a VM is replaced.
+## After apply
+
+The kubeconfig is written to `~/.kube/hetzner-vigil-<group_name>`. Flux decrypts the cluster secrets with a `sops-age` secret, created from the same age key:
+
+```bash
+export KUBECONFIG=~/.kube/hetzner-vigil-k8s
+kubectl create secret generic sops-age --namespace=flux-system --from-file=age.agekey="$SOPS_AGE_KEY_FILE"
+```
+
+The orchestrator listens on port 9099 of the agent host:
+
+```bash
+ssh root@"$(terraform -chdir=infra/terraform output -raw agent_public_ip)" curl -sf http://localhost:9099/healthz
+```
 
 ## Tear down
 
+```bash
+terraform -chdir=infra/terraform destroy
 ```
-cd infra/terraform
-terraform destroy
-```
 
-This removes Hetzner cloud resources only. The hetzner-* host attributes in nixos-homelab and the additional public keys in `secrets/secrets.nix` remain - remove them manually if no longer needed.
+This removes the servers, network, firewall and SSH key. The NixOS snapshots remain.
 
-## Cost
+## State
 
-Pricing as of 2026-04 (Hetzner Cloud Nuremberg):
-
-| Host             | Type | Hourly  | Daily  |
-|------------------|------|---------|--------|
-| hetzner-master   | CX33 | €0.012  | €0.288 |
-| hetzner-worker-1 | CX23 | €0.008  | €0.192 |
-| hetzner-worker-2 | CX23 | €0.008  | €0.192 |
-| hetzner-agent    | CX23 | €0.008  | €0.192 |
-| **Total**        |      | **€0.036/h** | **€0.864/day** |
-
-Run `terraform destroy` after each eval campaign block to bound spend.
+State is local and holds decrypted secrets. [`.gitignore`](.gitignore) excludes it from git.
