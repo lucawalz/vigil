@@ -235,7 +235,7 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changes.outputs.run == 'true'
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
       - name: Recompute vendor hashes
         if: steps.changes.outputs.run == 'true'
         run: make vendor-hash
