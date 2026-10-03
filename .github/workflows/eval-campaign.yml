@@ -133,7 +133,7 @@ jobs:
       GROUP: ${{ matrix.group }}
       SEED: ${{ matrix.seed }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -378,7 +378,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: true
 

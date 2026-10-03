@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 10
     if: startsWith(github.head_ref, 'remediation/run-')
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
