@@ -48,7 +48,7 @@ jobs:
         role: [master, worker-1, worker-2, agent]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -111,7 +111,7 @@ jobs:
     needs: [check-token, build]
     if: always() && needs.check-token.outputs.available == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
