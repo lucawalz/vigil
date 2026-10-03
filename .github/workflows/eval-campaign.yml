@@ -146,6 +146,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Generate ephemeral SSH key
         run: |
@@ -385,6 +386,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Download all group artifacts
         uses: actions/download-artifact@v8
