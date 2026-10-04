@@ -233,9 +233,9 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = workflow_dispatch ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$BASE_SHA" HEAD -- 'mcp-servers/*/go.mod' 'mcp-servers/*/go.sum' infra/nixos; then
+          elif git diff --quiet "$BASE_SHA" HEAD -- 'mcp-servers/*/go.mod' 'mcp-servers/*/go.sum' infra/nixos infra/inventory.json infra/lab; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No go.mod, go.sum or infra/nixos changes; vendor hash check skipped"
+            echo "::notice::No go.mod, go.sum, infra/nixos, infra/inventory.json or infra/lab changes; vendor hash check skipped"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
@@ -250,6 +250,175 @@ jobs:
       - name: Evaluate nixos configurations
         if: steps.changes.outputs.run == 'true'
         run: make nix-check
+
+  lab-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      LAB_STATE: /home/runner/.local/state/vigil-lab
+      SSH_TIMEOUT_S: 30
+      THROUGHPUT_SSH_TIMEOUT_S: 120
+      ALERTMANAGER_READY_TIMEOUT_S: 120
+      ALERT_LOG_TIMEOUT_S: 180
+      ROLLBACK_RETURN_TIMEOUT_S: 600
+      ROLLBACK_BUILD_TIMEOUT_S: 900
+      MCP_INIT_TIMEOUT_S: 60
+      MCP_CALL_TIMEOUT_S: 300
+      ALERTMANAGER_LOCAL_PORT: 19093
+      IPERF_PORT: 5201
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect lab changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" HEAD -- \
+              infra/nixos infra/lab infra/overlays/lab infra/inventory.json infra/scripts infra/kubernetes \
+              infra/overlays/hetzner/kubernetes/clusters/hetzner/namespaces \
+              infra/overlays/hetzner/kubernetes/clusters/hetzner/sources \
+              infra/overlays/hetzner/kubernetes/clusters/hetzner/apps \
+              infra/overlays/hetzner/kubernetes/clusters/hetzner/infrastructure/monitoring/kube-prometheus-stack \
+              mcp-servers eval/scripts agents/orchestrator .github/workflows/ci.yml; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No lab-relevant changes; lab smoke skipped"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Free runner disk
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          { echo "### Free disk after cleanup"; echo '```'; df -h /; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.changes.outputs.run == 'true'
+        uses: DeterminateSystems/nix-installer-action@v23
+      - if: steps.changes.outputs.run == 'true'
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          prune-cache: true
+      - name: Lab up
+        if: steps.changes.outputs.run == 'true'
+        env:
+          LAB_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          LAB_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          nix run ./infra/nixos#lab -- up --no-golden --repo "$LAB_REPO" --branch "$LAB_BRANCH"
+          { echo "### Free disk after lab up"; echo '```'; df -h /; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Agent start
+        if: steps.changes.outputs.run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LLM_MODEL_NAME: lab-smoke
+          OLLAMA_BASE_URL: http://127.0.0.1:1/v1
+          OLLAMA_API_KEY: unused
+        run: |
+          uv sync --locked --all-packages
+          nix run ./infra/nixos#lab -- agent start
+          { echo "### Free disk after agent start"; echo '```'; df -h /; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Health gate
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          set -a; . "$LAB_STATE/lab.env"; set +a
+          eval/scripts/health-gate.sh "$EVAL_RUNNER_KUBECONFIG"
+      - name: Boot through SeaBIOS and GRUB
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          timeout "$SSH_TIMEOUT_S" "$LAB_STATE/bin/ssh" vigil-worker-1 \
+            'test ! -d /sys/firmware/efi && grep -q "^BOOT_IMAGE=" /proc/cmdline && test -f /boot/EFI/BOOT/BOOTX64.EFI'
+      - name: Record guest memory
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          {
+            echo "### Guest memory with the Alertmanager stack"
+            for h in vigil-control-plane-1 vigil-worker-1 vigil-worker-2; do
+              echo "#### $h"; echo '```'; timeout "$SSH_TIMEOUT_S" "$LAB_STATE/bin/ssh" "$h" free -m; echo '```'
+            done
+            echo "### Alertmanager stack pods (subtract for the figure without them)"
+            echo '```'; kubectl --kubeconfig "$LAB_STATE/kube/admin.yaml" top pods -n monitoring || true; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Alertmanager reaches the native orchestrator
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          kubectl --kubeconfig "$LAB_STATE/kube/admin.yaml" -n monitoring \
+            port-forward svc/kube-prometheus-stack-alertmanager "$ALERTMANAGER_LOCAL_PORT:9093" > /dev/null 2>&1 &
+          PF=$!
+          trap 'kill "$PF"' EXIT
+          DEADLINE=$(($(date +%s) + ALERTMANAGER_READY_TIMEOUT_S))
+          until curl -sf "http://127.0.0.1:$ALERTMANAGER_LOCAL_PORT/-/ready" > /dev/null; do
+            [ "$(date +%s)" -gt "$DEADLINE" ] && { echo "alertmanager not ready"; exit 1; }
+            sleep 2
+          done
+          curl -sf -X POST -H 'Content-Type: application/json' "http://127.0.0.1:$ALERTMANAGER_LOCAL_PORT/api/v2/alerts" \
+            -d '[{"labels":{"alertname":"LabSmoke","severity":"warning"}}]'
+          DEADLINE=$(($(date +%s) + ALERT_LOG_TIMEOUT_S))
+          until grep -q "ignoring alert-triggered run" "$LAB_STATE/logs/agent.log"; do
+            [ "$(date +%s)" -gt "$DEADLINE" ] && { tail -n 50 "$LAB_STATE/logs/agent.log"; exit 1; }
+            sleep 5
+          done
+      - name: Rollback gate returns to the boot default
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          set -a; . "$LAB_STATE/lab.env"; set +a
+          S() { timeout "$SSH_TIMEOUT_S" "$LAB_STATE/bin/ssh" "$@"; }
+          BOOT_DEFAULT=$(S vigil-worker-1 readlink -f /run/current-system)
+          timeout "$ROLLBACK_BUILD_TIMEOUT_S" "$LAB_STATE/bin/ssh" vigil-worker-1 bash -s <<'EOF'
+            set -e
+            rm -rf /root/smoke && cp -a /opt/vigil /root/smoke
+            D=/root/smoke/infra/nixos/hosts/vigil-worker-1
+            printf "{ ... }:\n{\n  environment.etc.\"vigil-smoke-marker\".text = \"staged\";\n}\n" > "$D/bad-module.nix"
+            sed -i "s|imports = \[|imports = [\n    ./bad-module.nix|" "$D/default.nix"
+            cd /root/smoke && nixos-rebuild build --flake "/root/smoke/infra/nixos#$(cat /etc/vigil/flake-attr)"
+            nix-env -p /nix/var/nix/profiles/system --set "$(readlink -f /root/smoke/result)"
+          EOF
+          GEN=$(S vigil-worker-1 "nix-env -p /nix/var/nix/profiles/system --list-generations | awk 'END {print \$1}'")
+          coproc MCP { nixos-mcp 2>>"$LAB_STATE/logs/smoke-nixos-mcp.log"; }
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"lab-smoke","version":"1"}}}' >&"${MCP[1]}"
+          read -r -t "$MCP_INIT_TIMEOUT_S" INIT <&"${MCP[0]}"
+          echo "$INIT" | jq -e '.result.serverInfo.name == "nixos-mcp"'
+          printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&"${MCP[1]}"
+          printf '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"stage_generation","arguments":{"host":"vigil-worker-1","generation":%s}}}\n' "$GEN" >&"${MCP[1]}"
+          read -r -t "$MCP_CALL_TIMEOUT_S" RESULT <&"${MCP[0]}"
+          kill "$MCP_PID"
+          echo "$RESULT" | jq -e '.result.isError != true'
+          S vigil-worker-1 test -f /etc/vigil-smoke-marker
+          DEADLINE=$(($(date +%s) + ROLLBACK_RETURN_TIMEOUT_S))
+          until [ "$(S vigil-worker-1 readlink -f /run/current-system 2>/dev/null)" = "$BOOT_DEFAULT" ] \
+                && ! S vigil-worker-1 test -e /etc/vigil-smoke-marker; do
+            [ "$(date +%s)" -gt "$DEADLINE" ] && { echo "rollback gate did not return to $BOOT_DEFAULT"; exit 1; }
+            sleep 10
+          done
+          echo "rollback gate rebooted into $BOOT_DEFAULT"
+      - name: Hub throughput
+        if: steps.changes.outputs.run == 'true'
+        continue-on-error: true
+        run: |
+          S() { timeout "$THROUGHPUT_SSH_TIMEOUT_S" "$LAB_STATE/bin/ssh" "$@"; }
+          W2=$(nix eval --raw ./infra/nixos#lib.addresses.hosts.vigil-worker-2.ip)
+          S vigil-worker-2 "iptables -I nixos-fw -p tcp --dport $IPERF_PORT -j nixos-fw-accept && nix run --inputs-from /opt/nixos-config nixpkgs#iperf3 -- -s -p $IPERF_PORT -D -1"
+          { echo "### Hub throughput worker-1 to worker-2"; echo '```'
+            S vigil-worker-1 "nix run --inputs-from /opt/nixos-config nixpkgs#iperf3 -- -c $W2 -p $IPERF_PORT -t 10"
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload lab logs
+        if: failure() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-smoke-logs
+          path: /home/runner/.local/state/vigil-lab/logs/
+          if-no-files-found: warn
+      - name: Lab down and destroy
+        if: always() && steps.changes.outputs.run == 'true'
+        run: |
+          nix run ./infra/nixos#lab -- down
+          nix run ./infra/nixos#lab -- destroy
+          if pgrep -f qemu-system || pgrep -f 'vigil_lab hub'; then exit 1; fi
+          test ! -e "$LAB_STATE"
 
   ci-gate:
     if: always()
@@ -266,6 +435,7 @@ jobs:
       - govulncheck
       - terraform-lint
       - nix-vendor-hash
+      - lab-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
