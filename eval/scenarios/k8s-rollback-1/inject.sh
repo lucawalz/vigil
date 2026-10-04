@@ -10,10 +10,11 @@ MANIFEST="$VIGIL_REPO_ROOT/infra/overlays/hetzner/kubernetes/clusters/hetzner/ap
 
 git -C "$VIGIL_REPO_ROOT" checkout -- "$MANIFEST" 2>/dev/null || true
 
-sed -i 's|memory: "96Mi"|memory: "32Mi"|' "$MANIFEST"
+sed -i.bak 's|memory: "96Mi"|memory: "32Mi"|' "$MANIFEST"
+rm -f "$MANIFEST.bak"
 
 git -C "$VIGIL_REPO_ROOT" commit -am "k8s-rollback-1: inject fault"
-git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
+git -C "$VIGIL_REPO_ROOT" push origin HEAD:"${VIGIL_EVAL_BRANCH:-chore/eval-cluster-baseline}"
 
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" apply -f - <<'EOF'
 apiVersion: v1

@@ -23,6 +23,7 @@ _ORCHESTRATOR_RUN_TIMEOUT_S = float(
 _HARNESS_WAIT_BUFFER_S = 300
 DEFAULT_TIMEOUT_S = int(_ORCHESTRATOR_RUN_TIMEOUT_S + _HARNESS_WAIT_BUFFER_S)
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
+DEFAULT_EVAL_BRANCH = "chore/eval-cluster-baseline"
 BASELINE_KUSTOMIZATIONS = ("cluster-apps", "cluster-infrastructure")
 CIRCUIT_BREAKER_THRESHOLD = 3
 CIRCUIT_BREAKER_EXIT_CODE = 10
@@ -678,7 +679,11 @@ async def run_one(
     inject_sh = _script_path(scenarios_dir, scenario_id, "inject.sh")
 
     if reset_baseline_sh.is_file():
-        log.info("resetting chore/eval-cluster-baseline before %s", scenario_id)
+        log.info(
+            "resetting %s before %s",
+            os.environ.get("VIGIL_EVAL_BRANCH", DEFAULT_EVAL_BRANCH),
+            scenario_id,
+        )
         _run_script(reset_baseline_sh, seed, verbose=verbose)
 
     if wait_flux_ready_sh.is_file():

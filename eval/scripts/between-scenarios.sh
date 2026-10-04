@@ -12,10 +12,11 @@ REPO_ROOT="${VIGIL_REPO_ROOT:-/root/vigil}"
 AGENT_HOST="${AGENT_HOST:-}"
 SSH_KEY="${SSH_KEY_PATH:-/root/.ssh/id_ed25519}"
 SSH_USER="${SSH_USER:-root}"
+EVAL_BRANCH="${VIGIL_EVAL_BRANCH:-chore/eval-cluster-baseline}"
 
 echo "between-scenarios: prev=$PREV_SCENARIO group=$GROUP" >&2
 
-echo "between-scenarios: step 0/6 - reset chore/eval-cluster-baseline to origin/main" >&2
+echo "between-scenarios: step 0/6 - reset $EVAL_BRANCH to origin/main" >&2
 "$REPO_ROOT/eval/scripts/reset-eval-baseline.sh"
 
 RESET_SCRIPT="$REPO_ROOT/eval/scenarios/$PREV_SCENARIO/reset.sh"
@@ -34,10 +35,10 @@ kubectl --kubeconfig "$EVAL_RUNNER_KUBECONFIG" \
 
 if [ "$GROUP" = "cross" ] || [ "$GROUP" = "os" ]; then
   echo "between-scenarios: step 4/6 - nixos-rebuild switch on workers" >&2
-  for host in hetzner-worker-1 hetzner-worker-2; do
+  for host in vigil-worker-1 vigil-worker-2; do
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
       "$SSH_USER@$host" \
-      "git -C /opt/nixos-config fetch origin && git -C /opt/nixos-config reset --hard origin/chore/eval-cluster-baseline && flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake /opt/nixos-config#$host" \
+      "git -C /opt/nixos-config fetch origin && git -C /opt/nixos-config reset --hard origin/$EVAL_BRANCH && flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake /opt/nixos-config#\$(cat /etc/vigil/flake-attr)" \
       || echo "between-scenarios: nixos-rebuild on $host failed, continuing" >&2
   done
 else
@@ -50,8 +51,9 @@ if [ -n "$AGENT_HOST" ]; then
     "$SSH_USER@$AGENT_HOST" \
     "systemctl restart vigil-orchestrator.service"
 else
-  systemctl restart vigil-orchestrator.service \
-    || echo "between-scenarios: systemctl restart failed, continuing" >&2
+  read -r -a RESTART_CMD <<< "${VIGIL_ORCHESTRATOR_RESTART_CMD:-systemctl restart vigil-orchestrator.service}"
+  "${RESTART_CMD[@]}" \
+    || echo "between-scenarios: orchestrator restart failed, continuing" >&2
 fi
 
 echo "between-scenarios: step 6/6 - health gate" >&2

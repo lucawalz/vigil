@@ -2,9 +2,9 @@
 set -euo pipefail
 
 SEED="${1:-1}"
-TARGET_HOST="${TARGET_HOST:-hetzner-worker-1}"
+TARGET_HOST="${TARGET_HOST:-vigil-worker-1}"
 SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
-CONFIG_DIR="/opt/nixos-config/hosts/hetzner-worker-1"
+CONFIG_DIR="/opt/nixos-config/hosts/vigil-worker-1"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "systemctl stop vigil-auto-reconcile.timer"
@@ -16,7 +16,7 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "grep -q 'bad-module.nix' ${CONFIG_DIR}/default.nix || sed -i 's|imports = \[|imports = [\n    ./bad-module.nix|' ${CONFIG_DIR}/default.nix"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
-  "flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake /opt/nixos-config#hetzner-worker-1 || [ \$? -eq 4 ]"
+  "flock /var/lock/vigil-nixos-rebuild nixos-rebuild switch --flake /opt/nixos-config#\$(cat /etc/vigil/flake-attr) || [ \$? -eq 4 ]"
 
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${TARGET_HOST}" \
   "! systemctl is-active --quiet k3s"

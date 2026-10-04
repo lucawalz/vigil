@@ -3,11 +3,11 @@ name: nixos-k3s-disabled-via-switch
 layer: os
 expected_action: nixos_rebuild
 
-root_cause_component: "k3s disabled by bad NixOS generation on hetzner-worker-1"
+root_cause_component: "k3s disabled by bad NixOS generation on vigil-worker-1"
 expected_resolution_path: "diagnosis -> escalate (requires_os_level=true) -> get_generations -> nixos_rebuild(prev_gen) -> watchdog_confirm"
 
 inject_params:
-  target_host: hetzner-worker-1
+  target_host: vigil-worker-1
   fault_type: k3s-disabled-via-nixos-switch
 
 alert_name: KubeNodeNotReady
@@ -16,5 +16,5 @@ forbidden_actions: [git_commit_nix, git_commit_k8s]
 verify_broken:
   symptom: systemd_unit_inactive
   unit: k3s
-  host: hetzner-worker-1
+  host: vigil-worker-1
   timeout_s: 120

@@ -3,11 +3,11 @@ name: k3s-disabled-via-commit
 layer: os
 expected_action: git_commit_nix
 
-root_cause_component: "hetzner-worker-1/default.nix commits services.k3s.enable = lib.mkForce false on chore/eval-cluster-baseline"
+root_cause_component: "vigil-worker-1/default.nix commits services.k3s.enable = lib.mkForce false on chore/eval-cluster-baseline"
 expected_resolution_path: "diagnosis -> git_commit_nix (remove mkForce disable override) -> auto-reconciler -> watchdog_confirm"
 
 inject_params:
-  target_host: hetzner-worker-1
+  target_host: vigil-worker-1
   fault_type: k3s-disabled-via-nix-commit
 
 alert_name: KubeNodeNotReady
@@ -15,5 +15,5 @@ alert_name: KubeNodeNotReady
 verify_broken:
   symptom: systemd_unit_inactive
   unit: k3s
-  host: hetzner-worker-1
+  host: vigil-worker-1
   timeout_s: 120

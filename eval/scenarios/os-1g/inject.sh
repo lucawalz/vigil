@@ -5,8 +5,8 @@ set -euo pipefail
 : "${SSH_KEY_PATH:?SSH_KEY_PATH must be set}"
 
 SEED="${1:-1}"
-TARGET_HOST="hetzner-worker-1"
-NIX_CONFIG="$VIGIL_REPO_ROOT/infra/nixos/hosts/hetzner-worker-1/default.nix"
+TARGET_HOST="vigil-worker-1"
+NIX_CONFIG="$VIGIL_REPO_ROOT/infra/nixos/hosts/vigil-worker-1/default.nix"
 SSH_OPTS=(-i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 
 git -C "$VIGIL_REPO_ROOT" checkout -- "$NIX_CONFIG" 2>/dev/null || true
@@ -23,7 +23,7 @@ open(path, 'w').writelines(lines)
 PYEOF
 
 git -C "$VIGIL_REPO_ROOT" commit -am "os-1g: inject fault"
-git -C "$VIGIL_REPO_ROOT" push origin HEAD:chore/eval-cluster-baseline
+git -C "$VIGIL_REPO_ROOT" push origin HEAD:"${VIGIL_EVAL_BRANCH:-chore/eval-cluster-baseline}"
 
 ssh "${SSH_OPTS[@]}" "root@${TARGET_HOST}" \
   "systemctl start --no-block vigil-auto-reconcile.service"

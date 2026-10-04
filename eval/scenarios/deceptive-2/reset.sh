@@ -10,11 +10,12 @@ NAMESPACE="default"
 DEPLOYMENT="vigil-app"
 CONTAINER="vigil-app"
 BASELINE_IMAGE="nginx:stable"
+EVAL_BRANCH="${VIGIL_EVAL_BRANCH:-chore/eval-cluster-baseline}"
 
 git -C "$VIGIL_REPO_ROOT" fetch origin
-git -C "$VIGIL_REPO_ROOT" checkout chore/eval-cluster-baseline
+git -C "$VIGIL_REPO_ROOT" checkout "$EVAL_BRANCH"
 git -C "$VIGIL_REPO_ROOT" reset --hard origin/main
-git -C "$VIGIL_REPO_ROOT" push --force-with-lease origin chore/eval-cluster-baseline
+git -C "$VIGIL_REPO_ROOT" push --force-with-lease origin "$EVAL_BRANCH"
 
 kubectl --kubeconfig "$FAULT_INJECTION_KUBECONFIG" set image \
   "deployment/${DEPLOYMENT}" "${CONTAINER}=${BASELINE_IMAGE}" \

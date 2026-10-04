@@ -4,7 +4,7 @@ set -euo pipefail
 : "${SSH_KEY_PATH:?SSH_KEY_PATH must be set}"
 
 SEED="${1:-1}"
-TARGET_HOST="hetzner-worker-1"
+TARGET_HOST="vigil-worker-1"
 SSH_OPTS=(-i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 
 ssh "${SSH_OPTS[@]}" "root@${TARGET_HOST}" \

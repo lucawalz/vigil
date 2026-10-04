@@ -17,14 +17,15 @@ flux suspend kustomization cluster-apps -n flux-system --kubeconfig "$EVAL_RUNNE
 
 git -C "$VIGIL_REPO_ROOT" checkout -- "$MANIFEST" 2>/dev/null || true
 
-sed -i "s|image: nginx:stable|image: ${DECLARED_IMAGE}|" "$MANIFEST"
+sed -i.bak "s|image: nginx:stable|image: ${DECLARED_IMAGE}|" "$MANIFEST"
+rm -f "$MANIFEST.bak"
 
 git -C "$VIGIL_REPO_ROOT" \
   -c user.name="eval-harness" \
   -c user.email="eval@vigil.local" \
   commit -am "deceptive-2: inject fault"
 
-(cd "$VIGIL_REPO_ROOT" && git push origin HEAD:chore/eval-cluster-baseline)
+(cd "$VIGIL_REPO_ROOT" && git push origin HEAD:"${VIGIL_EVAL_BRANCH:-chore/eval-cluster-baseline}")
 
 flux reconcile source git flux-system --timeout=60s --kubeconfig "$EVAL_RUNNER_KUBECONFIG" || true
 
