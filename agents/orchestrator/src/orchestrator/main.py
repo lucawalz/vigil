@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_ai.mcp import MCPServerStdio
 
 from .agent import build_run_id, run_orchestration
-from .models import FaultEvent
+from .models import FaultEvent, eval_target_from_env
 from .poller import log_task_exception, prometheus_poller
 
 log = logging.getLogger("vigil.orchestrator")
@@ -44,6 +44,7 @@ def _mcp_commands() -> dict[str, list[str]]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    eval_target_from_env()
     _configure_logging()
     cmds = _mcp_commands()
     # MCPServerStdio defaults env=None which gives child processes an empty

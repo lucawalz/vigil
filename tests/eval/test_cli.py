@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from eval.cli import _run_id_for, _write_setup_error_record
 
 
@@ -75,3 +76,15 @@ def test_default_timeout_exceeds_orchestrator_run_cap() -> None:
     from eval.harness import _ORCHESTRATOR_RUN_TIMEOUT_S, DEFAULT_TIMEOUT_S
 
     assert DEFAULT_TIMEOUT_S > _ORCHESTRATOR_RUN_TIMEOUT_S
+
+
+def test_write_setup_error_record_carries_the_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VIGIL_EVAL_TARGET", "runner")
+    runs_dir = tmp_path / "runs"
+    _write_setup_error_record("k8s-3g", 1, "m", runs_dir, "boom")
+    record = json.loads(next(runs_dir.glob("*.json")).read_text())
+    index = json.loads((tmp_path / "runs_index.jsonl").read_text().splitlines()[0])
+    assert record["target"] == "runner"
+    assert index["target"] == "runner"

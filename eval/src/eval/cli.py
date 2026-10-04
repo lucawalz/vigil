@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import click
+from orchestrator.models import eval_target_from_env
 
 from eval.campaign import combinations, completed_run_ids
 from eval.harness import DEFAULT_ORCHESTRATOR_URL, DEFAULT_TIMEOUT_S, run_one
@@ -166,6 +167,7 @@ def _write_setup_error_record(
     outcome: str = "setup_error",
     started_at: str | None = None,
 ) -> bool:
+    target = eval_target_from_env()
     run_id = _run_id_for(scenario_id, seed, model)
     result_path = runs_dir / f"{run_id}.json"
     if result_path.exists():
@@ -194,6 +196,7 @@ def _write_setup_error_record(
         "started_at": started_at or now_str,
         "ended_at": now_str,
         "setup_error": error_msg[:500],
+        "target": target,
     }
     result_path.write_text(json.dumps(record, indent=2))
 
@@ -205,6 +208,7 @@ def _write_setup_error_record(
         "model": model,
         "outcome": outcome,
         "success_rate": False,
+        "target": target,
     }
     with index_path.open("a") as fh:
         fh.write(json.dumps(index_entry) + "\n")
@@ -449,13 +453,21 @@ def aggregate_cmd(
 ) -> None:
     """Read completed run JSONs and produce summary.json, REPORT.md,
     and step_summary.md."""
-    from eval.aggregate import aggregate_runs, write_report, write_step_summary
+    from eval.aggregate import (
+        MixedTargetsError,
+        aggregate_runs,
+        write_report,
+        write_step_summary,
+    )
 
     runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
     index_path = Path(index) if index else (runs_dir.parent / "runs_index.jsonl")
     output_dir = Path(output_dir)
 
-    summary = aggregate_runs(runs_dir, index_path, scenarios_dir, seed_count)
+    try:
+        summary = aggregate_runs(runs_dir, index_path, scenarios_dir, seed_count)
+    except MixedTargetsError as exc:
+        raise click.ClickException(str(exc)) from exc
     write_report(summary, output_dir)
     write_step_summary(runs_dir, index_path, output_dir, scenarios_dir, seed_count)
     click.echo(

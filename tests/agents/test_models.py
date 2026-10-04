@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 from diagnosis.models import DiagnosisReport
-from orchestrator.models import FaultEvent, RunRecord
+from orchestrator.agent import _write_run_record
+from orchestrator.models import FaultEvent, RunRecord, eval_target_from_env
 from pydantic import ValidationError
 from watchdog.models import HealthSnapshot, WatchdogResult
 
@@ -278,3 +279,54 @@ def test_existing_run_record_fixtures_still_deserialise() -> None:
         pytest.skip("no fixtures present")
     for p in runs_dir.glob("*.json"):
         RunRecord.model_validate(json.loads(p.read_text()))
+
+
+def _run_record(**overrides: object) -> RunRecord:
+    fields: dict[str, object] = {
+        "run_id": "k8s-1_1_m_abc1234",
+        "scenario": "k8s-1",
+        "seed": "1",
+        "model": "m",
+        "git_sha7": "abc1234",
+        "started_at": "2026-10-03T10:00:00Z",
+        "ended_at": "2026-10-03T10:01:00Z",
+        "outcome": "success",
+        "success_rate": True,
+        "diagnosis_accuracy": True,
+        "MTTR_s": 10.0,
+        "destructive_repair": False,
+        "rollback_triggered": False,
+        "rollback_success": None,
+        "total_input_tokens": 1,
+        "total_output_tokens": 1,
+        "total_tool_calls": 1,
+        "iteration_count": 1,
+        "autonomy_level": "full",
+        "actions_taken": [],
+    }
+    fields.update(overrides)
+    return RunRecord.model_validate(fields)
+
+
+def test_run_record_without_target_reads_as_hetzner() -> None:
+    assert _run_record().target == "hetzner"
+
+
+def test_eval_target_from_env_rejects_an_unknown_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIGIL_EVAL_TARGET", "laptop")
+    with pytest.raises(ValueError, match="VIGIL_EVAL_TARGET"):
+        eval_target_from_env()
+
+
+def test_write_run_record_stamps_the_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("VIGIL_EVAL_TARGET", "lab")
+    _write_run_record(_run_record())
+    record = json.loads((tmp_path / "runs" / "k8s-1_1_m_abc1234.json").read_text())
+    index = json.loads((tmp_path / "runs_index.jsonl").read_text().splitlines()[0])
+    assert record["target"] == "lab"
+    assert index["target"] == "lab"

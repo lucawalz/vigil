@@ -95,6 +95,15 @@ def test_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     return new_app
 
 
+async def test_lifespan_rejects_an_unknown_eval_target_at_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIGIL_EVAL_TARGET", "laptop")
+    with pytest.raises(ValueError, match="VIGIL_EVAL_TARGET"):
+        async with main_mod.lifespan(main_mod.app):
+            pass
+
+
 async def test_healthz_returns_ok_with_detection_fields(test_app: FastAPI) -> None:
     transport = httpx.ASGITransport(app=test_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

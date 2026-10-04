@@ -1,11 +1,33 @@
 """Typed contracts for the Orchestrator: webhook input, run record, circuit breaker."""
 
-from typing import Any, Literal
+import os
+from typing import Any, Literal, cast, get_args
 
 from common.toolset_guards import CircuitBreakerTripped
 from pydantic import BaseModel, Field
 
-__all__ = ["CircuitBreakerTripped", "FaultEvent", "RunRecord"]
+__all__ = [
+    "CircuitBreakerTripped",
+    "DEFAULT_EVAL_TARGET",
+    "EVAL_TARGETS",
+    "EvalTarget",
+    "FaultEvent",
+    "RunRecord",
+    "eval_target_from_env",
+]
+
+EvalTarget = Literal["hetzner", "runner", "lab"]
+EVAL_TARGETS: tuple[str, ...] = get_args(EvalTarget)
+DEFAULT_EVAL_TARGET: EvalTarget = "hetzner"
+
+
+def eval_target_from_env() -> EvalTarget:
+    value = os.environ.get("VIGIL_EVAL_TARGET", DEFAULT_EVAL_TARGET)
+    if value not in EVAL_TARGETS:
+        raise ValueError(
+            f"VIGIL_EVAL_TARGET must be one of {', '.join(EVAL_TARGETS)}, got {value!r}"
+        )
+    return cast(EvalTarget, value)
 
 
 class FaultEvent(BaseModel):
@@ -69,3 +91,4 @@ class RunRecord(BaseModel):
     gate_status: str | None = None
     merge_commit_sha: str | None = None
     forbidden_action_violations: list[str] | None = Field(default_factory=list)
+    target: EvalTarget = DEFAULT_EVAL_TARGET

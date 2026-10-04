@@ -57,7 +57,7 @@ from watchdog.agent import (
 )
 from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps
 
-from .models import FaultEvent, RunRecord
+from .models import FaultEvent, RunRecord, eval_target_from_env
 
 log = logging.getLogger("vigil.orchestrator.agent")
 
@@ -300,6 +300,7 @@ def _compute_destructive_repair(
 
 
 def _write_run_record(record: RunRecord) -> None:
+    record = record.model_copy(update={"target": eval_target_from_env()})
     runs_dir = Path(os.environ.get("EVAL_RUNS_DIR", "eval/runs"))
     runs_dir.mkdir(parents=True, exist_ok=True)
     (runs_dir / f"{record.run_id}.json").write_text(record.model_dump_json(indent=2))

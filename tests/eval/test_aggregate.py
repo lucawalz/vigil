@@ -26,6 +26,7 @@ def _write_run(
     setup_error: str | None = None,
     rollback_triggered: bool = False,
     rollback_success: bool | None = None,
+    target: str | None = None,
 ) -> None:
     record = {
         "run_id": run_id,
@@ -53,6 +54,8 @@ def _write_run(
         "actions_taken": [],
         "model_version": model,
     }
+    if target is not None:
+        record["target"] = target
     (runs_dir / f"{run_id}.json").write_text(json.dumps(record))
     with index_path.open("a") as fh:
         fh.write(json.dumps({"run_id": run_id}) + "\n")
@@ -267,6 +270,7 @@ def test_write_report_produces_markdown_with_three_tables(tmp_path: Path) -> Non
             "k8s-1": {"layer": "k8s", "accuracy": None},
         },
         "totals": {"n": 3, "n_models": 1, "n_scenarios": 1},
+        "target": "hetzner",
     }
 
     output_dir = tmp_path / "results"
@@ -289,6 +293,7 @@ def test_write_report_produces_summary_json(tmp_path: Path) -> None:
         "by_scenario": {},
         "escalation": {},
         "totals": {"n": 0, "n_models": 0, "n_scenarios": 0},
+        "target": "hetzner",
     }
     output_dir = tmp_path / "results"
     write_report(summary, output_dir)
@@ -1346,3 +1351,84 @@ def test_seed_count_sizes_planned_runs_and_surfaces_lost_seed(tmp_path: Path) ->
     requested = aggregate_runs(runs_dir, index_path, scenarios_dir, seed_count=3)
     assert requested["n_planned_runs"] == 3
     assert requested["run_buckets"]["not-run"] == 1
+
+
+def _two_runs(
+    tmp_path: Path, first: str | None, second: str | None
+) -> tuple[Path, Path, Path]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = _make_scenarios_dir(tmp_path / "scenarios", "k8s-1")
+    _write_run(
+        runs_dir,
+        index_path,
+        run_id="a",
+        scenario="k8s-1",
+        seed=1,
+        model="m",
+        target=first,
+    )
+    _write_run(
+        runs_dir,
+        index_path,
+        run_id="b",
+        scenario="k8s-1",
+        seed=2,
+        model="m",
+        target=second,
+    )
+    return runs_dir, index_path, scenarios_dir
+
+
+def test_aggregate_rejects_records_from_two_targets(tmp_path: Path) -> None:
+    from eval.aggregate import MixedTargetsError, aggregate_runs
+
+    with pytest.raises(MixedTargetsError, match="hetzner, runner"):
+        aggregate_runs(*_two_runs(tmp_path, "hetzner", "runner"))
+
+
+def test_aggregate_treats_missing_target_as_hetzner_when_mixing(
+    tmp_path: Path,
+) -> None:
+    from eval.aggregate import MixedTargetsError, aggregate_runs
+
+    summary = aggregate_runs(*_two_runs(tmp_path / "legacy-hetzner", None, "hetzner"))
+    assert summary["target"] == "hetzner"
+    with pytest.raises(MixedTargetsError):
+        aggregate_runs(*_two_runs(tmp_path / "legacy-runner", None, "runner"))
+
+
+def test_aggregate_names_the_target_in_summary_and_report(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs, write_report
+
+    summary = aggregate_runs(*_two_runs(tmp_path, "runner", "runner"))
+    write_report(summary, tmp_path / "results")
+    assert (
+        json.loads((tmp_path / "results" / "summary.json").read_text())["target"]
+        == "runner"
+    )
+    assert "Target: runner." in (tmp_path / "results" / "REPORT.md").read_text()
+
+
+def test_aggregate_cmd_fails_on_mixed_targets(tmp_path: Path) -> None:
+    from eval.cli import cli
+
+    runs_dir, index_path, scenarios_dir = _two_runs(tmp_path, "lab", "runner")
+    result = CliRunner().invoke(
+        cli,
+        [
+            "aggregate",
+            "--runs-dir",
+            str(runs_dir),
+            "--index",
+            str(index_path),
+            "--scenarios-dir",
+            str(scenarios_dir),
+            "--output-dir",
+            str(tmp_path / "results"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "several targets" in result.output
