@@ -11,21 +11,24 @@
 
   outputs = { self, nixpkgs, disko, ... }:
   let
+    inherit (nixpkgs) lib;
     vigil = import ./lib { inherit nixpkgs self disko; };
     hetznerSystem = "x86_64-linux";
-    hetznerHost = host: nixpkgs.lib.nameValuePair host.name (vigil.mkHost {
-      inherit (host) name;
-      target = "hetzner";
-      system = hetznerSystem;
-    });
+    packageSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+    hostConfig = target: system: host:
+      let args = { inherit (host) name; inherit target system; };
+      in lib.nameValuePair (vigil.flakeAttr args) (vigil.mkHost args);
   in {
-    nixosConfigurations = nixpkgs.lib.listToAttrs (map hetznerHost vigil.inventory.hosts);
+    nixosConfigurations = lib.listToAttrs (
+      map (hostConfig "hetzner" hetznerSystem) vigil.inventory.hosts
+      ++ lib.concatMap (system: map (hostConfig "lab" system) vigil.labHosts) vigil.labSystems
+    );
 
-    packages.x86_64-linux = import ./pkgs/mcp-servers.nix {
-      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+    packages = lib.genAttrs packageSystems (system: import ./pkgs/mcp-servers.nix {
+      pkgs = nixpkgs.legacyPackages.${system};
       inherit self;
-    };
+    });
 
-    lib.addresses = vigil.addresses;
+    lib.addresses = vigil.labPlan;
   };
 }

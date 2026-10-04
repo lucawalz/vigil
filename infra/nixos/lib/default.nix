@@ -21,6 +21,15 @@ let
   };
   flakeAttr = { name, target, system }:
     if target == "hetzner" then name else "${name}-lab-${lib.head (lib.splitString "-" system)}";
+  labSystems = [ "x86_64-linux" "aarch64-linux" ];
+  labHosts = lib.filter (host: host.role != "agent") inventory.hosts;
+  labPlan = addresses // {
+    hosts = addresses.hosts // lib.listToAttrs (map
+      (host: lib.nameValuePair host.name (addresses.hosts.${host.name} // {
+        labFlakeAttrs = lib.genAttrs labSystems (system: flakeAttr { inherit (host) name; inherit system; target = "lab"; });
+      }))
+      labHosts);
+  };
   mkHost = { name, target, system }:
     nixpkgs.lib.nixosSystem {
       inherit system;
@@ -42,5 +51,5 @@ let
     };
 in
 {
-  inherit inventory addresses flakeAttr mkHost;
+  inherit inventory addresses flakeAttr mkHost labSystems labHosts labPlan;
 }
