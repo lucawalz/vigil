@@ -180,5 +180,6 @@ class LabContext:
     system: str
     accel: str
     flake: str
+    source: Path
     firmware_dir: Path
     plan: AddressPlan

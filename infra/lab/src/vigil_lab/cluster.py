@@ -37,6 +37,8 @@ FLUX_NAMESPACE = "flux-system"
 LAB_SETTINGS_CONFIGMAP = "vigil-lab-settings"
 WEBHOOK_URL_KEY = "VIGIL_WEBHOOK_URL"
 LAB_CLUSTER_PATH = "./infra/overlays/lab/kubernetes/clusters/lab"
+RBAC_DIR = Path("infra/kubernetes/rbac")
+FLUX_SYNC_SCRIPT = Path("infra/scripts/flux-sync.sh")
 SSH_READY_TIMEOUT_S = 600.0
 KUBECONFIG_READY_TIMEOUT_S = 300.0
 NODES_READY_TIMEOUT_S = 600.0
@@ -207,9 +209,7 @@ def refetch_kubeconfigs(ctx: LabContext) -> None:
         ctx.paths.kubeconfig(ADMIN), raw.replace(GUEST_API_URL, API_FORWARD_URL)
     )
     wait_until(lambda: _nodes_ready(ctx), NODES_READY_TIMEOUT_S, "all lab nodes Ready")
-    _kubectl(
-        ctx.paths, "apply", "-k", str(Path(ctx.flake).parent / "kubernetes" / "rbac")
-    )
+    _kubectl(ctx.paths, "apply", "-k", str(ctx.source / RBAC_DIR))
     ca_data = _kubectl(
         ctx.paths,
         "config",
@@ -268,7 +268,7 @@ def bootstrap(ctx: LabContext, settings: LabSettings) -> None:
     run(
         [
             "bash",
-            str(Path(ctx.flake).parent / "scripts" / "flux-sync.sh"),
+            str(ctx.source / FLUX_SYNC_SCRIPT),
             f"{GITHUB_URL}/{settings.repo}.git",
             settings.branch,
             LAB_CLUSTER_PATH,

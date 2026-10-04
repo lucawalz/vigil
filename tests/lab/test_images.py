@@ -68,7 +68,9 @@ def test_failed_start_leaves_no_partial_disk_or_token_directory(
     paths.lab_key.with_suffix(".pub").write_text("ssh-ed25519 AAAA vigil-lab\n")
     paths.k3s_token.write_text("token")
     plan = parse_address_plan(FIXTURE.read_text())
-    ctx = LabContext(paths, LINUX, X86_64_LINUX, "kvm", "flake", tmp_path, plan)
+    ctx = LabContext(
+        paths, LINUX, X86_64_LINUX, "kvm", "flake", tmp_path, tmp_path, plan
+    )
     worker = plan.workers[0]
     dst = paths.disk(worker.name)
     partial = dst.with_name(f"{dst.name}.part")

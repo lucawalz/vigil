@@ -1,18 +1,60 @@
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from vigil_lab import cluster
+from vigil_lab.addresses import parse_address_plan
 from vigil_lab.cluster import (
+    FLUX_SYNC_SCRIPT,
+    RBAC_DIR,
     ensure_branch,
     ensure_scratch_clone,
     parse_github_repo,
     worker_setup_command,
 )
 from vigil_lab.proc import LabError
-from vigil_lab.state import LabPaths
+from vigil_lab.qemu import X86_64_LINUX
+from vigil_lab.state import LabContext, LabPaths, LabSettings
 
 REPO = "example/vigil"
 ODD_BRANCH = "eval/odd branch"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXTURE = Path(__file__).parent / "fixtures" / "addresses.json"
+
+
+def test_cluster_files_resolve_from_the_repository_source() -> None:
+    assert (REPO_ROOT / FLUX_SYNC_SCRIPT).is_file()
+    assert (REPO_ROOT / RBAC_DIR / "kustomization.yaml").is_file()
+
+
+def test_bootstrap_runs_flux_sync_from_the_repository_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "source"
+    ctx = LabContext(
+        LabPaths(tmp_path / "state"),
+        "linux",
+        X86_64_LINUX,
+        "kvm",
+        "path:/flake?dir=infra/nixos",
+        source,
+        tmp_path,
+        parse_address_plan(FIXTURE.read_text()),
+    )
+    settings = LabSettings(REPO, "eval/lab", "lab", True, str(tmp_path))
+    commands: list[list[str]] = []
+
+    def fake_run(args: Sequence[str], **_: object) -> str:
+        commands.append(list(args))
+        return ""
+
+    monkeypatch.setattr(cluster, "wait_for_ssh", lambda *_: None)
+    monkeypatch.setattr(cluster, "refetch_kubeconfigs", lambda _: None)
+    monkeypatch.setattr(cluster, "_apply_generated", lambda *_: None)
+    monkeypatch.setattr(cluster, "run", fake_run)
+    cluster.bootstrap(ctx, settings)
+    assert ["bash", str(source / FLUX_SYNC_SCRIPT)] == commands[-1][:2]
 
 
 def _git(*args: str, cwd: Path) -> str:
