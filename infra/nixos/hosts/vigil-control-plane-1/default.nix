@@ -3,11 +3,6 @@
   imports = [
     ./disko-config.nix
     ../common
-    ../../modules/k3s/server.nix
-    ../../modules/k3s/hetzner.nix
-    ../../modules/services/monitoring.nix
-    ../../modules/services/storage.nix
-    ../../modules/services/rollback-gate.nix
   ];
 
   boot.initrd.availableKernelModules = [
@@ -19,7 +14,6 @@
     "virtio_blk"
   ];
 
-  networking.hostName = "hetzner-master";
   system.stateVersion = "25.05";
 
   environment.systemPackages = [ pkgs.fluxcd pkgs.sops ];

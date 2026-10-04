@@ -29,7 +29,6 @@ in
     "virtio_blk"
   ];
 
-  networking.hostName = "hetzner-agent";
   system.stateVersion = "25.05";
 
   networking.extraHosts = ''

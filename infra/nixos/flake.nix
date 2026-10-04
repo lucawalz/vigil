@@ -1,5 +1,5 @@
 {
-  description = "NixOS configuration for Hetzner cloud cluster";
+  description = "NixOS configuration for the vigil hosts";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -11,20 +11,21 @@
 
   outputs = { self, nixpkgs, disko, ... }:
   let
-    lib = import ./lib { inherit nixpkgs self disko; };
+    vigil = import ./lib { inherit nixpkgs self disko; };
+    hetznerSystem = "x86_64-linux";
+    hetznerHost = host: nixpkgs.lib.nameValuePair host.name (vigil.mkHost {
+      inherit (host) name;
+      target = "hetzner";
+      system = hetznerSystem;
+    });
   in {
-    nixosConfigurations = {
-      hetzner-master   = lib.mkHetznerMaster {};
-      hetzner-worker-1 = lib.mkHetznerWorker { workerId = 1; privateIp = "10.0.0.20"; };
-      hetzner-worker-2 = lib.mkHetznerWorker { workerId = 2; privateIp = "10.0.0.30"; };
-      hetzner-agent    = lib.mkHetznerAgent {};
-    };
+    nixosConfigurations = nixpkgs.lib.listToAttrs (map hetznerHost vigil.inventory.hosts);
 
     packages.x86_64-linux = import ./pkgs/mcp-servers.nix {
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
       inherit self;
     };
 
-    lib.addresses = lib.addresses;
+    lib.addresses = vigil.addresses;
   };
 }
