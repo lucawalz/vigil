@@ -2,8 +2,8 @@ resource "null_resource" "flux_bootstrap" {
   depends_on = [null_resource.kubeconfig]
 
   triggers = {
-    branch    = var.vigil_branch
-    master_id = hcloud_server.master.id
+    branch           = var.vigil_branch
+    control_plane_id = hcloud_server.control_plane.id
   }
 
   provisioner "local-exec" {

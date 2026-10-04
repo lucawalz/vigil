@@ -1,5 +1,5 @@
-data "hcloud_image" "master_snapshot" {
-  with_selector = "vigil-role=master"
+data "hcloud_image" "control_plane_snapshot" {
+  with_selector = "vigil-role=control-plane-1"
   most_recent   = true
 }
 
@@ -18,17 +18,17 @@ data "hcloud_image" "agent_snapshot" {
   most_recent   = true
 }
 
-resource "hcloud_server" "master" {
-  name        = "${var.group_name}-${var.run_id}-master"
+resource "hcloud_server" "control_plane" {
+  name        = "${var.group_name}-${var.run_id}-control-plane-1"
   server_type = "cpx22"
-  image       = data.hcloud_image.master_snapshot.id
+  image       = data.hcloud_image.control_plane_snapshot.id
   location    = var.location
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
   network {
     network_id = hcloud_network.vigil.id
-    ip         = "10.0.0.10"
+    ip         = local.control_plane_ip
     alias_ips  = []
   }
 
@@ -37,16 +37,16 @@ resource "hcloud_server" "master" {
   depends_on = [hcloud_network_subnet.vigil]
 }
 
-resource "null_resource" "k3s_token_master" {
-  depends_on = [hcloud_server.master]
+resource "null_resource" "k3s_token_control_plane" {
+  depends_on = [hcloud_server.control_plane]
 
   triggers = {
-    instance_id = tostring(hcloud_server.master.id)
+    instance_id = tostring(hcloud_server.control_plane.id)
   }
 
   connection {
     type        = "ssh"
-    host        = hcloud_server.master.ipv4_address
+    host        = hcloud_server.control_plane.ipv4_address
     user        = "root"
     private_key = file(pathexpand(var.ssh_private_key_path))
   }
@@ -56,7 +56,7 @@ resource "null_resource" "k3s_token_master" {
       "mkdir -p /etc/k3s /etc/rancher/k3s",
       "echo '${random_password.k3s_token.result}' > /etc/k3s/token",
       "chmod 400 /etc/k3s/token",
-      "printf 'tls-san:\\n  - ${hcloud_server.master.ipv4_address}\\n' > /etc/rancher/k3s/config.yaml",
+      "printf 'tls-san:\\n  - ${hcloud_server.control_plane.ipv4_address}\\n' > /etc/rancher/k3s/config.yaml",
       "systemctl stop k3s || true",
       "rm -f /var/lib/rancher/k3s/server/tls/dynamic-cert.json",
       "systemctl start k3s",
@@ -75,7 +75,7 @@ resource "hcloud_server" "worker_1" {
 
   network {
     network_id = hcloud_network.vigil.id
-    ip         = "10.0.0.20"
+    ip         = local.host_ips["vigil-worker-1"]
     alias_ips  = []
   }
 
@@ -118,7 +118,7 @@ resource "hcloud_server" "worker_2" {
 
   network {
     network_id = hcloud_network.vigil.id
-    ip         = "10.0.0.30"
+    ip         = local.host_ips["vigil-worker-2"]
     alias_ips  = []
   }
 
@@ -161,7 +161,7 @@ resource "hcloud_server" "agent" {
 
   network {
     network_id = hcloud_network.vigil.id
-    ip         = "10.0.0.40"
+    ip         = local.agent_ip
     alias_ips  = []
   }
 
@@ -171,22 +171,22 @@ resource "hcloud_server" "agent" {
 }
 
 resource "null_resource" "kubeconfig" {
-  depends_on = [null_resource.k3s_token_master]
+  depends_on = [null_resource.k3s_token_control_plane]
 
   triggers = {
-    master_id = hcloud_server.master.id
+    control_plane_id = hcloud_server.control_plane.id
   }
 
   provisioner "local-exec" {
     command = <<-EOF
       DEADLINE=$(($(date +%s) + 600))
       until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
-          root@${hcloud_server.master.ipv4_address} "kubectl get nodes" > /dev/null 2>&1; do
+          root@${hcloud_server.control_plane.ipv4_address} "kubectl get nodes" > /dev/null 2>&1; do
         if [ $(date +%s) -gt $DEADLINE ]; then echo "K3s API not ready after 10 minutes"; exit 1; fi
         sleep 5
       done
-      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
-        | sed 's|https://127.0.0.1:6443|https://${hcloud_server.master.ipv4_address}:6443|' \
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${hcloud_server.control_plane.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
+        | sed 's|https://127.0.0.1:6443|https://${hcloud_server.control_plane.ipv4_address}:6443|' \
         | sed 's/name: default/name: hetzner-vigil-${var.group_name}/g' \
         | sed 's/cluster: default/cluster: hetzner-vigil-${var.group_name}/g' \
         | sed 's/user: default/user: hetzner-vigil-${var.group_name}/g' \
@@ -201,8 +201,8 @@ resource "null_resource" "kubeconfig_agent" {
   depends_on = [null_resource.kubeconfig, hcloud_server.agent]
 
   triggers = {
-    master_id = hcloud_server.master.id
-    agent_id  = hcloud_server.agent.id
+    control_plane_id = hcloud_server.control_plane.id
+    agent_id         = hcloud_server.agent.id
   }
 
   provisioner "local-exec" {
@@ -214,8 +214,8 @@ resource "null_resource" "kubeconfig_agent" {
         sleep 5
       done
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        root@${hcloud_server.master.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
-        | sed 's|https://127.0.0.1:6443|https://10.0.0.10:6443|' \
+        root@${hcloud_server.control_plane.ipv4_address} "cat /etc/rancher/k3s/k3s.yaml" \
+        | sed 's|https://127.0.0.1:6443|${local.api_server_url}|' \
         | ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
           root@${hcloud_server.agent.ipv4_address} \
           "mkdir -p ~/.kube && cat > ~/.kube/config && chmod 600 ~/.kube/config"
@@ -236,7 +236,8 @@ resource "null_resource" "worker_nixos_config" {
     command = <<-EOF
       for IP in ${hcloud_server.worker_1.ipv4_address} ${hcloud_server.worker_2.ipv4_address}; do
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$IP \
-          "if [ ! -d /opt/vigil/.git ]; then
+          "mkdir -p /etc/vigil && echo '${var.vigil_branch}' > /etc/vigil/branch
+          if [ ! -d /opt/vigil/.git ]; then
             git clone --branch '${var.vigil_branch}' https://github.com/lucawalz/vigil /opt/vigil
           else
             cd /opt/vigil && git fetch origin && git checkout '${var.vigil_branch}' && git reset --hard origin/'${var.vigil_branch}'
@@ -299,15 +300,17 @@ resource "local_sensitive_file" "vigil_env" {
     DIAGNOSIS_TIMEOUT_S=600
     REMEDIATION_TIMEOUT_S=900
     ORCHESTRATOR_RUN_TIMEOUT_S=2400
-    VIGIL_ORCHESTRATOR_URL=http://10.0.0.40:9099
+    VIGIL_ORCHESTRATOR_URL=http://${local.agent_ip}:${local.orchestrator_port}
     EVAL_RUNS_DIR=/root/vigil/eval/runs
     VIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios
     VIGIL_REPO_ROOT=/root/vigil
-    SSH_HOSTS=hetzner-worker-1,hetzner-worker-2
+    SSH_HOSTS=${local.ssh_hosts}
     SSH_USER=root
     SSH_KEY_PATH=/root/.ssh/id_ed25519
     EVAL_RUNNER_KUBECONFIG=/etc/vigil/kubeconfig-eval-runner
     FAULT_INJECTION_KUBECONFIG=/etc/vigil/kubeconfig-fault-injection
+    VIGIL_EVAL_TARGET=${local.eval_target}
+    VIGIL_EVAL_BRANCH=${var.vigil_branch}
   ENV
 }
 

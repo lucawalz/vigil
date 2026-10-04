@@ -27,7 +27,7 @@ alertmanager:
       - name: 'null'
       - name: 'vigil-webhook'
         webhook_configs:
-          - url: 'http://10.0.0.40:9099/webhook'
+          - url: 'http://10.250.0.20:9099/webhook'
             send_resolved: true
             http_config:
               authorization:

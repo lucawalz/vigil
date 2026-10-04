@@ -13,7 +13,7 @@ from .models import FaultEvent
 
 log = logging.getLogger("vigil.orchestrator.poller")
 
-_DEFAULT_PROM_URL = "http://10.0.0.10:9090"
+_DEFAULT_PROM_URL = "http://10.250.0.10:9090"
 
 _AUTH_FAILURE_STATUSES = frozenset({401, 403})
 

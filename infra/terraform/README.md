@@ -1,12 +1,12 @@
 # infra/terraform
 
-Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` servers (master, two workers and the agent host) in `hel1` by default, a private network, a firewall and an SSH key. The servers boot from pre-built NixOS snapshots. Terraform then joins the K3s nodes, bootstraps Flux, applies the eval RBAC and starts the orchestrator on the agent host.
+Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` servers (control plane, two workers and the agent host) in `hel1` by default, a private network, a firewall and an SSH key. The servers boot from pre-built NixOS snapshots. Terraform then joins the K3s nodes, bootstraps Flux, applies the eval RBAC and starts the orchestrator on the agent host.
 
 ## Prerequisites
 
 - Terraform 1.14 or later, `ssh`, `kubectl`, and `nix` on `PATH` (Flux is bootstrapped through `nix shell`).
 - A Hetzner Cloud project and a read-write API token.
-- One NixOS snapshot per role in that project, labelled `vigil-role=master`, `worker-1`, `worker-2` and `agent`. The Build NixOS Snapshots workflow builds them with Packer from [`infra/packer/`](../packer/) when `infra/nixos/` or `mcp-servers/` change on `main`.
+- One NixOS snapshot per role in that project, labelled `vigil-role=control-plane-1`, `worker-1`, `worker-2` and `agent`. The Build NixOS Snapshots workflow builds them with Packer from [`infra/packer/`](../packer/) when `infra/nixos/` or `mcp-servers/` change on `main`.
 - The SOPS age private key for the recipient in [`infra/overlays/hetzner/.sops.yaml`](../overlays/hetzner/.sops.yaml), exported as `SOPS_AGE_KEY_FILE` or `SOPS_AGE_KEY`. Terraform decrypts the orchestrator webhook secret with it.
 - An SSH key pair, `~/.ssh/id_ed25519` by default (`ssh_public_key_path` and `ssh_private_key_path` override it), and an existing `~/.kube/` directory.
 - A GitHub token with write access to `lucawalz/vigil`, the repository that Flux, the hosts and the scenario scripts track.
