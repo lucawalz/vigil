@@ -2,7 +2,7 @@ name: Remediation Gate
 
 on:
   pull_request:
-    branches: [chore/eval-cluster-baseline]
+    branches: [chore/eval-cluster-baseline, 'eval/**']
 
 permissions:
   contents: read

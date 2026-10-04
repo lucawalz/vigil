@@ -45,6 +45,19 @@ on:
         type: boolean
         required: false
         default: false
+      target:
+        description: "Where the cells run: hetzner (Terraform cluster) or runner (lab VMs on the GitHub runner)"
+        type: choice
+        required: false
+        default: hetzner
+        options:
+          - hetzner
+          - runner
+      parallel:
+        description: "Run cells in parallel on target runner; Hetzner cells always run one after another."
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -59,12 +72,15 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.build.outputs.matrix }}
+      max_parallel: ${{ steps.build.outputs.max_parallel }}
     steps:
       - id: build
         env:
           SKIP_K8S: ${{ inputs.skip_k8s }}
           SKIP_OS: ${{ inputs.skip_os }}
           SEED_COUNT: ${{ inputs.seed_count }}
+          PARALLEL: ${{ inputs.parallel }}
+          TARGET: ${{ inputs.target }}
         run: |
           base='[]'
           if [ "$SKIP_K8S" != 'true' ]; then
@@ -77,6 +93,11 @@ jobs:
           include=$(jq -cn --argjson base "$base" --argjson seeds "$seeds" \
             '[ $seeds[] as $s | $base[] | . + {seed:$s} ]')
           echo "matrix=$(jq -cn --argjson inc "$include" '{include:$inc}')" >> "$GITHUB_OUTPUT"
+          if [ "$PARALLEL" = 'true' ] && [ "$TARGET" = 'runner' ]; then
+            echo "max_parallel=$(jq -n --argjson inc "$include" '[$inc | length, 1] | max')" >> "$GITHUB_OUTPUT"
+          else
+            echo "max_parallel=1" >> "$GITHUB_OUTPUT"
+          fi
 
   check-secrets:
     runs-on: ubuntu-latest
@@ -88,8 +109,9 @@ jobs:
       - name: Check required secrets
         env:
           MODEL: ${{ inputs.model }}
+          TARGET: ${{ inputs.target }}
+          VIGIL_GITHUB_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
           TF_VAR_HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-          TF_VAR_GITHUB_TOKEN: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
           TF_VAR_LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           OPERATOR_SSH_PUBKEY: ${{ secrets.OPERATOR_SSH_PUBKEY }}
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
@@ -97,7 +119,10 @@ jobs:
           TF_VAR_OLLAMA_API_KEY: ${{ secrets.TF_VAR_OLLAMA_API_KEY }}
           TF_VAR_OLLAMA_BASE_URL: ${{ secrets.TF_VAR_OLLAMA_BASE_URL }}
         run: |
-          required=(TF_VAR_HCLOUD_TOKEN TF_VAR_GITHUB_TOKEN TF_VAR_LLM_MODEL_NAME OPERATOR_SSH_PUBKEY SOPS_AGE_KEY)
+          required=(VIGIL_GITHUB_TOKEN TF_VAR_LLM_MODEL_NAME)
+          if [ "$TARGET" = hetzner ]; then
+            required+=(TF_VAR_HCLOUD_TOKEN OPERATOR_SSH_PUBKEY SOPS_AGE_KEY)
+          fi
           if [[ "$MODEL" == claude-* ]]; then
             required+=(TF_VAR_ANTHROPIC_API_KEY)
           else
@@ -111,7 +136,7 @@ jobs:
             echo "::error::Missing secrets in the eval environment: ${missing[*]}"
             exit 1
           fi
-          echo "All required secrets are set"
+          echo "All required secrets for target $TARGET are set"
 
   run-scenarios:
     needs: [setup, check-secrets]
@@ -123,13 +148,17 @@ jobs:
       deployment: false
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: ${{ fromJSON(needs.setup.outputs.max_parallel) }}
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     env:
       TF_VAR_group_name: ${{ matrix.group }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}-s${{ matrix.seed }}
-      TF_VAR_vigil_branch: chore/eval-cluster-baseline
+      TF_VAR_vigil_branch: eval/${{ github.run_id }}/${{ matrix.group }}-${{ matrix.seed }}
+      VIGIL_EVAL_BRANCH: eval/${{ github.run_id }}/${{ matrix.group }}-${{ matrix.seed }}
+      VIGIL_EVAL_TARGET: ${{ inputs.target }}
       TF_VAR_location: ${{ inputs.location }}
+      LAB_STATE: /home/runner/.local/state/vigil-lab
+      LAB_ENV: /home/runner/.local/state/vigil-lab/lab.env
       GROUP: ${{ matrix.group }}
       SEED: ${{ matrix.seed }}
     steps:
@@ -137,9 +166,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Create cell branch
+        env:
+          GH_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+        run: |
+          MAIN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/heads/$VIGIL_EVAL_BRANCH" -f sha="$MAIN_SHA" > /dev/null
+          echo "created $VIGIL_EVAL_BRANCH at $MAIN_SHA"
+
+      - name: Free runner disk
+        if: inputs.target == 'runner'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - uses: DeterminateSystems/nix-installer-action@v23
 
       - uses: hashicorp/setup-terraform@v4
+        if: inputs.target == 'hetzner'
         with:
           terraform_version: "~1.15"
 
@@ -149,22 +194,26 @@ jobs:
           prune-cache: true
 
       - name: Generate ephemeral SSH key
+        if: inputs.target == 'hetzner'
         run: |
           mkdir -p ~/.ssh
           ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
 
       - name: Prepare kube directory
+        if: inputs.target == 'hetzner'
         run: mkdir -p ~/.kube
 
       - name: Terraform init
+        if: inputs.target == 'hetzner'
         working-directory: infra/terraform
         run: terraform init -input=false
 
       - name: Terraform apply
+        if: inputs.target == 'hetzner'
         working-directory: infra/terraform
         env:
           TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-          TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.VIGIL_GITHUB_TOKEN }}
           TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
@@ -174,6 +223,7 @@ jobs:
         run: terraform apply -auto-approve -input=false
 
       - name: Wait for kubeconfig
+        if: inputs.target == 'hetzner'
         run: |
           KUBECONFIG="$HOME/.kube/hetzner-vigil-$GROUP"
           DEADLINE=$(($(date +%s) + 300))
@@ -189,6 +239,7 @@ jobs:
           echo "kubeconfig ready ($(wc -c < "$KUBECONFIG") bytes)"
 
       - name: Inject SOPS age key into Flux
+        if: inputs.target == 'hetzner'
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: |
@@ -210,14 +261,19 @@ jobs:
           done
 
       - name: Wait for Flux kustomizations ready
+        if: inputs.target == 'hetzner'
         run: eval/scripts/wait-flux-ready.sh "$HOME/.kube/hetzner-vigil-$GROUP"
 
       - name: Resolve agent host IP
         id: agent
+        if: inputs.target == 'hetzner'
         working-directory: infra/terraform
-        run: echo "ip=$(terraform output -raw agent_public_ip)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "ip=$(terraform output -raw agent_public_ip)" >> "$GITHUB_OUTPUT"
+          echo "private_ip=$(terraform output -raw agent_private_ip)" >> "$GITHUB_OUTPUT"
 
       - name: Wait for orchestrator to be reachable
+        if: inputs.target == 'hetzner'
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
@@ -255,47 +311,64 @@ jobs:
             sleep 10
           done
 
+      - name: Lab up
+        if: inputs.target == 'runner'
+        run: nix run ./infra/nixos#lab -- up --no-golden --repo "$GITHUB_REPOSITORY" --branch "$VIGIL_EVAL_BRANCH"
+
+      - name: Agent start
+        if: inputs.target == 'runner'
+        env:
+          GITHUB_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
+          ANTHROPIC_API_KEY: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
+          OLLAMA_API_KEY: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
+          OLLAMA_BASE_URL: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_BASE_URL || '' }}
+          LLM_REASONING_EFFORT: none
+          DIAGNOSIS_TIMEOUT_S: "600"
+          REMEDIATION_TIMEOUT_S: "900"
+          ORCHESTRATOR_RUN_TIMEOUT_S: "2400"
+        run: |
+          uv sync --locked --all-packages
+          nix run ./infra/nixos#lab -- agent start
+
       - name: Initialize eval baseline
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
-          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
-          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" \
-            "set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 bash /root/vigil/eval/scripts/reset-eval-baseline.sh"
-          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "systemctl restart vigil-orchestrator.service"
+          eval/scripts/agent-exec.sh 'bash eval/scripts/reset-eval-baseline.sh'
+          eval/scripts/agent-exec.sh "\${VIGIL_ORCHESTRATOR_RESTART_CMD:-systemctl restart vigil-orchestrator.service}"
           DEADLINE=$(($(date +%s) + 120))
-          until ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "curl -sf http://localhost:9099/healthz > /dev/null 2>&1"; do
+          until eval/scripts/agent-exec.sh "curl -sf \"\${VIGIL_ORCHESTRATOR_URL:-http://localhost:9099}/healthz\" > /dev/null"; do
             [ "$(date +%s)" -gt "$DEADLINE" ] && { echo "orchestrator did not recover after baseline reset"; exit 1; }
             sleep 5
           done
-          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" \
-            "set -a; . /etc/vigil/env; set +a; bash /root/vigil/eval/scripts/health-gate.sh /etc/vigil/kubeconfig-eval-runner"
+          eval/scripts/agent-exec.sh "bash eval/scripts/health-gate.sh \"\$EVAL_RUNNER_KUBECONFIG\""
 
       - name: Run scenarios in group
         env:
           SCENARIOS: ${{ matrix.scenarios }}
           MODEL: ${{ inputs.model }}
           AGENT_IP: ${{ steps.agent.outputs.ip }}
+          AGENT_PRIVATE_IP: ${{ steps.agent.outputs.private_ip }}
         run: |
-          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
           PREV=""
           for S in $SCENARIOS; do
             if [ -n "$PREV" ]; then
-              SHA7=$(ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" "git -C /root/vigil rev-parse --short=7 HEAD")
+              SHA7=$(eval/scripts/agent-exec.sh 'git rev-parse --short=7 HEAD')
               SAFE_MODEL=$(printf '%s' "$MODEL" | tr -c 'a-zA-Z0-9_-' '-')
               PREV_RUN_ID="${PREV}_${SEED}_${SAFE_MODEL}_${SHA7}"
               echo "::group::between-scenarios prev=$PREV next=$S"
-              printf -v REMOTE 'set -a; . /etc/vigil/env; set +a; AGENT_HOST=10.0.0.40 PREV_RUN_ID=%q bash /root/vigil/eval/scripts/between-scenarios.sh %q %q' \
-                "$PREV_RUN_ID" "$PREV" "$GROUP"
-              ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" -- "$REMOTE" \
+              printf -v REMOTE 'AGENT_HOST=%q PREV_RUN_ID=%q bash eval/scripts/between-scenarios.sh %q %q' \
+                "$AGENT_PRIVATE_IP" "$PREV_RUN_ID" "$PREV" "$GROUP"
+              eval/scripts/agent-exec.sh "$REMOTE" \
                 || echo "between-scenarios returned non-zero"
               echo "::endgroup::"
             fi
             echo "::group::scenario $S"
             VIGIL_EVAL_STATUS=0
-            printf -v REMOTE 'set -a; . /etc/vigil/env; set +a; cd /root/vigil && vigil-eval run --scenario %q --seed %q --model %q' \
+            printf -v REMOTE 'vigil-eval run --scenario %q --seed %q --model %q' \
               "$S" "$SEED" "$MODEL"
-            ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" -- "$REMOTE" \
+            eval/scripts/agent-exec.sh "$REMOTE" \
               || VIGIL_EVAL_STATUS=$?
             echo "::endgroup::"
             if [ "$VIGIL_EVAL_STATUS" -eq 10 ]; then
@@ -311,7 +384,7 @@ jobs:
           done
 
       - name: Rsync run files from agent
-        if: always()
+        if: always() && inputs.target == 'hetzner'
         env:
           AGENT_IP: ${{ steps.agent.outputs.ip }}
         run: |
@@ -338,6 +411,14 @@ jobs:
               "./eval/runs/runs_index_$GROUP-s$SEED.jsonl" || true
           fi
 
+      - name: Collect run files from the lab
+        if: always() && inputs.target == 'runner'
+        run: |
+          mkdir -p eval/runs "eval/runs/_lab-logs-$GROUP-s$SEED"
+          cp -R "$LAB_STATE/runs/." eval/runs/ 2>/dev/null || true
+          cp "$LAB_STATE/runs_index.jsonl" "eval/runs/runs_index_$GROUP-s$SEED.jsonl" 2>/dev/null || true
+          cp -R "$LAB_STATE/logs/." "eval/runs/_lab-logs-$GROUP-s$SEED/" 2>/dev/null || true
+
       - name: Upload run artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -347,22 +428,12 @@ jobs:
             eval/runs/
           if-no-files-found: warn
 
-      - name: Reset eval-cluster-baseline to main
-        if: always()
-        env:
-          AGENT_IP: ${{ steps.agent.outputs.ip }}
-        run: |
-          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
-          ssh "${SSH_OPTS[@]}" "root@$AGENT_IP" \
-            "set -a; . /etc/vigil/env; set +a; bash /root/vigil/eval/scripts/reset-eval-baseline.sh" \
-            || echo "reset-eval-baseline returned non-zero; branch may need manual cleanup"
-
       - name: Terraform destroy
-        if: always() && !inputs.skip_destroy
+        if: always() && !inputs.skip_destroy && inputs.target == 'hetzner'
         working-directory: infra/terraform
         env:
           TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-          TF_VAR_github_token: ${{ secrets.TF_VAR_GITHUB_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.VIGIL_GITHUB_TOKEN }}
           TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
@@ -371,11 +442,18 @@ jobs:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: terraform destroy -auto-approve -input=false
 
+      - name: Lab destroy
+        if: always() && inputs.target == 'runner'
+        run: nix run ./infra/nixos#lab -- destroy
+
   aggregate:
     needs: run-scenarios
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: always()
+    environment:
+      name: eval
+      deployment: false
     permissions:
       contents: write
     steps:
@@ -442,3 +520,14 @@ jobs:
             git commit -m "docs(eval): record campaign ${RUN_ID} (${TIMESTAMP})"
             git push origin "${RESULTS_BRANCH}"
           fi
+
+      - name: Delete cell branches
+        if: always() && !(inputs.skip_destroy && inputs.target == 'hetzner')
+        env:
+          GH_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/eval/$RUN_ID/" --jq '.[].ref' \
+            | while read -r ref; do
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/$ref" && echo "deleted $ref"
+              done

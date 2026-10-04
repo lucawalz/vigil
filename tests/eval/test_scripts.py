@@ -177,3 +177,32 @@ def test_os_scripts_rebuild_the_configured_flake_attribute(scenarios_dir: Path) 
         body = (scenarios_dir / script).read_text()
         assert "/opt/nixos-config#\\$(cat /etc/vigil/flake-attr)" in body, script
         assert "hetzner-" not in body, script
+
+
+def test_agent_exec_runs_locally_in_the_lab_environment(tmp_path: Path) -> None:
+    lab_env = tmp_path / "lab.env"
+    lab_env.write_text(f"VIGIL_EVAL_BRANCH='{CELL_BRANCH}'\n")
+    result = subprocess.run(
+        [
+            "bash",
+            str(REPO / "eval/scripts/agent-exec.sh"),
+            'printf %s "$VIGIL_EVAL_BRANCH"',
+        ],
+        env={**os.environ, "VIGIL_EVAL_TARGET": "runner", "LAB_ENV": str(lab_env)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout == CELL_BRANCH
+
+
+def test_agent_exec_rejects_an_unknown_target() -> None:
+    result = subprocess.run(
+        ["bash", str(REPO / "eval/scripts/agent-exec.sh"), "true"],
+        env={**os.environ, "VIGIL_EVAL_TARGET": "laptop"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "laptop" in result.stderr
