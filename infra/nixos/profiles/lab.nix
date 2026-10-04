@@ -4,6 +4,8 @@ let
   isServer = config.services.k3s.role == "server";
 in
 {
+  _module.args.diskDevice = "/dev/vda";
+
   networking.interfaces.${hubInterface} = {
     useDHCP = false;
     ipv4.addresses = [

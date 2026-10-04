@@ -1,8 +1,8 @@
-{ ... }:
+{ diskDevice, pkgs, ... }:
 {
   boot.loader.grub = {
     enable = true;
-    device = "/dev/sda";
+    device = if pkgs.stdenv.hostPlatform.isx86 then diskDevice else "nodev";
     efiSupport = true;
     efiInstallAsRemovable = true;
   };

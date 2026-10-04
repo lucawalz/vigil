@@ -16,7 +16,6 @@ let
 in
 {
   imports = [
-    ./disko-config.nix
     ../common
   ];
 

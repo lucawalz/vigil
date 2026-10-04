@@ -1,6 +1,7 @@
 { ... }:
 {
   imports = [
+    ./disko.nix
     ./boot.nix
     ./locale.nix
     ./networking.nix
