@@ -138,9 +138,16 @@ jobs:
           fi
           echo "All required secrets for target $TARGET are set"
 
+  snapshots:
+    needs: check-secrets
+    if: inputs.target == 'hetzner'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-nixos-snapshots.yml
+
   run-scenarios:
-    needs: [setup, check-secrets]
-    if: ${{ needs.setup.outputs.matrix != '{"include":[]}' }}
+    needs: [setup, check-secrets, snapshots]
+    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.check-secrets.result == 'success' && needs.snapshots.result != 'failure' && needs.setup.outputs.matrix != '{"include":[]}' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     environment:
@@ -153,6 +160,7 @@ jobs:
     env:
       TF_VAR_group_name: ${{ matrix.group }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}-s${{ matrix.seed }}
+      TF_VAR_campaign_run_id: ${{ github.run_id }}
       TF_VAR_vigil_branch: eval/${{ github.run_id }}/${{ matrix.group }}-${{ matrix.seed }}
       VIGIL_EVAL_BRANCH: eval/${{ github.run_id }}/${{ matrix.group }}-${{ matrix.seed }}
       VIGIL_EVAL_TARGET: ${{ inputs.target }}
@@ -445,6 +453,25 @@ jobs:
       - name: Lab destroy
         if: always() && inputs.target == 'runner'
         run: nix run ./infra/nixos#lab -- destroy
+
+  hetzner-cleanup:
+    needs: [check-secrets, snapshots, run-scenarios]
+    if: always() && inputs.target == 'hetzner' && !inputs.skip_destroy && needs.check-secrets.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: eval
+      deployment: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Delete every resource and snapshot of this campaign
+        env:
+          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: python3 scripts/hcloud_sweep.py --run "$RUN_ID"
 
   aggregate:
     needs: run-scenarios

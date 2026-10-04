@@ -1,0 +1,53 @@
+{
+  "servers": [
+    {
+      "servers": [
+        {"id": 4711, "name": "k8s-101-k8s-s1-control-plane-1", "created": "2026-10-03T08:00:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "101"}},
+        {"id": 4712, "name": "os-202-os-s1-worker-1", "created": "2026-10-03T23:30:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "202"}},
+        {"id": 4721, "name": "k8s-303-k8s-s3-agent", "created": "2026-10-03T20:00:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "303"}}
+      ],
+      "meta": {"pagination": {"page": 1, "per_page": 3, "previous_page": null, "next_page": 2, "last_page": 2, "total_entries": 4}}
+    },
+    {
+      "servers": [
+        {"id": 4713, "name": "k8s-101-k8s-s1-worker-1", "created": "2026-10-03T08:00:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "101"}}
+      ],
+      "meta": {"pagination": {"page": 2, "per_page": 3, "previous_page": 1, "next_page": null, "last_page": 2, "total_entries": 4}}
+    }
+  ],
+  "images": [
+    {
+      "images": [
+        {"id": 9001, "name": null, "description": "vigil-nixos-control-plane-1-abc", "type": "snapshot", "created": "2026-10-02T08:00:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "101", "vigil-role": "control-plane-1"}},
+        {"id": 9002, "name": null, "description": "vigil-nixos-agent-def", "type": "snapshot", "created": "2026-10-01T08:00:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "303", "vigil-role": "agent"}}
+      ],
+      "meta": {"pagination": {"page": 1, "per_page": 50, "previous_page": null, "next_page": null, "last_page": 1, "total_entries": 2}}
+    }
+  ],
+  "networks": [
+    {
+      "networks": [
+        {"id": 31, "name": "vigil-eval-k8s-101-k8s-s1", "created": "2026-10-03T08:00:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "101"}}
+      ],
+      "meta": {"pagination": {"page": 1, "per_page": 50, "previous_page": null, "next_page": null, "last_page": 1, "total_entries": 1}}
+    }
+  ],
+  "ssh_keys": [
+    {
+      "ssh_keys": [
+        {"id": 51, "name": "vigil-operator-k8s-101-k8s-s1", "created": "2026-10-03T08:00:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "101"}},
+        {"id": 52, "name": "vigil-unlabelled-old", "created": "2026-10-02T08:00:00+00:00", "labels": {"vigil-managed": "true"}},
+        {"id": 53, "name": "vigil-unlabelled-young", "created": "2026-10-03T22:00:00+00:00", "labels": {"vigil-managed": "true"}}
+      ],
+      "meta": {"pagination": {"page": 1, "per_page": 50, "previous_page": null, "next_page": null, "last_page": 1, "total_entries": 3}}
+    }
+  ],
+  "firewalls": [
+    {
+      "firewalls": [
+        {"id": 71, "name": "vigil-eval-os-202-os-s1", "created": "2026-10-03T23:30:00+00:00", "labels": {"vigil-managed": "true", "vigil-run": "202"}}
+      ],
+      "meta": {"pagination": {"page": 1, "per_page": 50, "previous_page": null, "next_page": null, "last_page": 1, "total_entries": 1}}
+    }
+  ]
+}

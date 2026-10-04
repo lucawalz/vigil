@@ -7,6 +7,13 @@ packer {
   }
 }
 
+locals {
+  vigil_labels = {
+    "vigil-managed" = "true"
+    "vigil-run"     = var.campaign_run_id
+  }
+}
+
 source "hcloud" "nixos" {
   token                = var.hcloud_token
   image                = "debian-12"
@@ -16,11 +23,12 @@ source "hcloud" "nixos" {
   ssh_private_key_file = var.ssh_private_key_file
 
   snapshot_name = "vigil-nixos-${var.role}-${var.nixos_hash}"
-  snapshot_labels = {
+  snapshot_labels = merge(local.vigil_labels, {
     "vigil-role"       = var.role
     "vigil-nixos-hash" = var.nixos_hash
-    "vigil-managed"    = "true"
-  }
+  })
+  server_labels   = local.vigil_labels
+  ssh_keys_labels = local.vigil_labels
 
   ssh_handshake_attempts = 60
   ssh_timeout            = "15m"

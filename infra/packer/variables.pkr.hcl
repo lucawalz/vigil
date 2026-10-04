@@ -27,3 +27,8 @@ variable "ssh_private_key_file" {
   type        = string
   description = "Path to the ED25519 private key file used for both Packer SSH and nixos-anywhere"
 }
+
+variable "campaign_run_id" {
+  type        = string
+  description = "Run whose vigil-run label the snapshot and the build server carry"
+}

@@ -1,0 +1,60 @@
+name: Hetzner Sweep
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List the resources the sweep would delete without deleting them"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    environment:
+      name: eval
+      deployment: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Delete vigil resources older than the threshold
+        env:
+          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ -z "$HCLOUD_TOKEN" ]; then
+            echo "::notice::TF_VAR_HCLOUD_TOKEN is not set; sweep skipped"
+            exit 0
+          fi
+          args=()
+          for workflow in eval-campaign.yml build-nixos-snapshots.yml; do
+            for status in in_progress queued; do
+              ids=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" \
+                --status "$status" --json databaseId --jq '.[].databaseId')
+              for id in $ids; do
+                echo "keeping run $id ($workflow, $status)"
+                args+=(--keep-run "$id")
+              done
+            done
+          done
+          if [ "$DRY_RUN" = true ]; then
+            args+=(--dry-run)
+          fi
+          python3 scripts/hcloud_sweep.py "${args[@]}"

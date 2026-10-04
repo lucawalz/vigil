@@ -1,17 +1,11 @@
 name: Build NixOS Snapshots
 
 on:
-  push:
-    branches: [main]
-    paths: ['infra/nixos/**', 'mcp-servers/**']
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
 
 jobs:
   check-token:
@@ -66,33 +60,15 @@ jobs:
             "$(git rev-parse HEAD:mcp-servers)" \
             | sha256sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
 
-      - name: Check for existing snapshot
-        id: check
-        env:
-          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-          ROLE: ${{ matrix.role }}
-          NIXOS_HASH: ${{ steps.hash.outputs.nixos_hash }}
-        run: |
-          COUNT=$(curl -sf -G \
-            -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            --data-urlencode "type=snapshot" \
-            --data-urlencode "label_selector=vigil-role=$ROLE,vigil-nixos-hash=$NIXOS_HASH" \
-            "https://api.hetzner.cloud/v1/images" \
-            | jq '.images | length')
-          echo "exists=$([ "$COUNT" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-
       - name: Generate ephemeral SSH key
-        if: steps.check.outputs.exists != 'true'
         run: ssh-keygen -t ed25519 -f /tmp/packer_key -N ""
 
       - name: Packer init
-        if: steps.check.outputs.exists != 'true'
         working-directory: infra/packer
         run: packer init .
 
       - name: Build snapshot
         id: build
-        if: steps.check.outputs.exists != 'true'
         working-directory: infra/packer
         env:
           PKR_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
@@ -100,6 +76,7 @@ jobs:
           PKR_VAR_nixos_commit_sha: ${{ github.sha }}
           PKR_VAR_nixos_hash: ${{ steps.hash.outputs.nixos_hash }}
           PKR_VAR_ssh_private_key_file: /tmp/packer_key
+          PKR_VAR_campaign_run_id: ${{ github.run_id }}
         run: packer build .
 
   cleanup:
@@ -111,16 +88,16 @@ jobs:
     needs: [check-token, build]
     if: always() && needs.check-token.outputs.available == 'true'
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: Cleanup leaked Packer SSH keys
         env:
           HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          IDS=$(curl -sf -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            "https://api.hetzner.cloud/v1/ssh_keys?per_page=50" \
+          set -o pipefail
+          IDS=$(curl -sf -G -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            --data-urlencode "label_selector=vigil-managed=true,vigil-run=$RUN_ID" \
+            --data-urlencode "per_page=50" \
+            "https://api.hetzner.cloud/v1/ssh_keys" \
             | jq -r '.ssh_keys[] | select(.name | startswith("packer-")) | .id')
           for ID in $IDS; do
             echo "Deleting leaked Packer SSH key $ID"
@@ -131,35 +108,16 @@ jobs:
       - name: Cleanup leaked Packer servers
         env:
           HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          IDS=$(curl -sf -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            "https://api.hetzner.cloud/v1/servers?per_page=50" \
+          set -o pipefail
+          IDS=$(curl -sf -G -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            --data-urlencode "label_selector=vigil-managed=true,vigil-run=$RUN_ID" \
+            --data-urlencode "per_page=50" \
+            "https://api.hetzner.cloud/v1/servers" \
             | jq -r '.servers[] | select(.name | startswith("packer-")) | .id')
           for ID in $IDS; do
             echo "Deleting leaked Packer server $ID"
             curl -sf -X DELETE -H "Authorization: Bearer $HCLOUD_TOKEN" \
               "https://api.hetzner.cloud/v1/servers/$ID"
-          done
-
-      - name: Delete stale snapshots
-        env:
-          HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-        run: |
-          CURRENT_HASH=$(printf '%s\n' \
-            "$(git rev-parse HEAD:infra/nixos)" \
-            "$(git rev-parse HEAD:mcp-servers)" \
-            | sha256sum | cut -c1-40)
-          for ROLE in control-plane-1 worker-1 worker-2 agent; do
-            OLD_IDS=$(curl -sf -G \
-              -H "Authorization: Bearer $HCLOUD_TOKEN" \
-              --data-urlencode "type=snapshot" \
-              --data-urlencode "label_selector=vigil-role=$ROLE,vigil-managed=true" \
-              "https://api.hetzner.cloud/v1/images?per_page=50" \
-              | jq -r --arg hash "$CURRENT_HASH" \
-                '.images[] | select(.labels["vigil-nixos-hash"] != $hash) | .id')
-            for ID in $OLD_IDS; do
-              echo "Deleting stale snapshot $ID (role=$ROLE)"
-              curl -sf -X DELETE -H "Authorization: Bearer $HCLOUD_TOKEN" \
-                "https://api.hetzner.cloud/v1/images/$ID"
-            done
           done

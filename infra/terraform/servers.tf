@@ -1,20 +1,20 @@
 data "hcloud_image" "control_plane_snapshot" {
-  with_selector = "vigil-role=control-plane-1"
+  with_selector = "vigil-role=control-plane-1,vigil-run=${var.campaign_run_id}"
   most_recent   = true
 }
 
 data "hcloud_image" "worker_1_snapshot" {
-  with_selector = "vigil-role=worker-1"
+  with_selector = "vigil-role=worker-1,vigil-run=${var.campaign_run_id}"
   most_recent   = true
 }
 
 data "hcloud_image" "worker_2_snapshot" {
-  with_selector = "vigil-role=worker-2"
+  with_selector = "vigil-role=worker-2,vigil-run=${var.campaign_run_id}"
   most_recent   = true
 }
 
 data "hcloud_image" "agent_snapshot" {
-  with_selector = "vigil-role=agent"
+  with_selector = "vigil-role=agent,vigil-run=${var.campaign_run_id}"
   most_recent   = true
 }
 
@@ -23,6 +23,7 @@ resource "hcloud_server" "control_plane" {
   server_type = "cpx22"
   image       = data.hcloud_image.control_plane_snapshot.id
   location    = var.location
+  labels      = local.hcloud_labels
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -70,6 +71,7 @@ resource "hcloud_server" "worker_1" {
   server_type = "cpx22"
   image       = data.hcloud_image.worker_1_snapshot.id
   location    = var.location
+  labels      = local.hcloud_labels
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -113,6 +115,7 @@ resource "hcloud_server" "worker_2" {
   server_type = "cpx22"
   image       = data.hcloud_image.worker_2_snapshot.id
   location    = var.location
+  labels      = local.hcloud_labels
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
@@ -156,6 +159,7 @@ resource "hcloud_server" "agent" {
   server_type = "cpx22"
   image       = data.hcloud_image.agent_snapshot.id
   location    = var.location
+  labels      = local.hcloud_labels
 
   ssh_keys = [hcloud_ssh_key.operator.id]
 
