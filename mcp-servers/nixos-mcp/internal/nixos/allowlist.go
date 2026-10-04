@@ -6,7 +6,10 @@ import (
 	"strings"
 )
 
+const catTokenCount = 2
+
 var allowList = map[string]map[string]bool{
+	"cat":                     {flakeAttrPath: true},
 	"nix-env":                 {},
 	"nixos-rebuild":           {"test": true, "dry-activate": true},
 	"switch-to-configuration": {"test": true, "boot": true},
@@ -71,6 +74,9 @@ func validateCommand(cmd string) error {
 		sub, found := firstSubCommand(tokens[1:])
 		if !found || !permitted[sub] {
 			return fmt.Errorf("sub-command not in allow-list: %s %s", binary, sub)
+		}
+		if binary == "cat" && len(tokens) != catTokenCount {
+			return fmt.Errorf("cat accepts exactly one argument")
 		}
 		if binary == "systemctl" && sub == "restart" {
 			if err := validateRestartUnit(tokens); err != nil {

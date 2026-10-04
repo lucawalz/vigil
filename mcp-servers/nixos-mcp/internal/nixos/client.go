@@ -74,6 +74,7 @@ type realNixOSClient struct {
 	dialRetries int
 	dialBackoff time.Duration
 	dialFunc    dialFunc
+	runCommand  func(ctx context.Context, host, cmd string) (string, error)
 }
 
 func NewRealNixOSClient(user, keyPath string, hosts []config.SSHHost, dialTimeout time.Duration, dialRetries int, dialBackoff time.Duration) (NixOSClient, error) {
@@ -102,7 +103,7 @@ func NewRealNixOSClient(user, keyPath string, hosts []config.SSHHost, dialTimeou
 	for _, h := range hosts {
 		hostAddrs[h.Name] = h.Addr
 	}
-	return &realNixOSClient{
+	client := &realNixOSClient{
 		user:        user,
 		signer:      signer,
 		hostAddrs:   hostAddrs,
@@ -110,7 +111,9 @@ func NewRealNixOSClient(user, keyPath string, hosts []config.SSHHost, dialTimeou
 		dialRetries: dialRetries,
 		dialBackoff: dialBackoff,
 		dialFunc:    (&net.Dialer{Timeout: dialTimeout}).DialContext,
-	}, nil
+	}
+	client.runCommand = client.runSSH
+	return client, nil
 }
 
 func (c *realNixOSClient) dialAddress(host string) (string, error) {
@@ -217,16 +220,20 @@ func (c *realNixOSClient) CommitGeneration(ctx context.Context, host string) (st
 }
 
 func (c *realNixOSClient) RebuildTest(ctx context.Context, host string) (string, error) {
-	_, rebuildErr := c.runSSH(ctx, host, fmt.Sprintf("sudo nixos-rebuild test --flake /opt/vigil/infra/nixos#%s", host))
+	cmd, err := c.flakeRebuildCommand(ctx, host, "test")
+	if err != nil {
+		return "", err
+	}
+	_, rebuildErr := c.runCommand(ctx, host, cmd)
 	exitCode := 0
 	if rebuildErr != nil {
 		exitCode = 1
 	}
 
-	healthGate, _ := c.runSSH(ctx, host, "systemctl is-active rollback-gate.service")
+	healthGate, _ := c.runCommand(ctx, host, "systemctl is-active rollback-gate.service")
 	healthGate = strings.TrimSpace(healthGate)
 
-	k8sReady, _ := c.runSSH(ctx, host, `kubectl get node $(hostname) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`)
+	k8sReady, _ := c.runCommand(ctx, host, `kubectl get node $(hostname) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`)
 	k8sReady = strings.TrimSpace(k8sReady)
 
 	result := fmt.Sprintf("nixos-rebuild exit: %d\nhealth-gate: %s\nk8s-node-ready: %s", exitCode, healthGate, k8sReady)
@@ -280,7 +287,11 @@ func (c *realNixOSClient) GetNixPath(_ context.Context, hostname string) (string
 }
 
 func (c *realNixOSClient) DryBuild(ctx context.Context, host string) (string, error) {
-	return c.runSSH(ctx, host, fmt.Sprintf("sudo nixos-rebuild dry-activate --flake /opt/vigil/infra/nixos#%s", host))
+	cmd, err := c.flakeRebuildCommand(ctx, host, "dry-activate")
+	if err != nil {
+		return "", err
+	}
+	return c.runCommand(ctx, host, cmd)
 }
 
 func (c *realNixOSClient) TriggerReconcile(ctx context.Context, host string) (string, error) {
