@@ -1,0 +1,41 @@
+{
+    "apiServerUrl": "https://10.250.0.10:6443",
+    "base": "10.250.0.0/16",
+    "hosts": {
+        "vigil-agent": {
+            "index": 20,
+            "ip": "10.250.0.20",
+            "role": "agent"
+        },
+        "vigil-control-plane-1": {
+            "index": 10,
+            "ip": "10.250.0.10",
+            "labFlakeAttrs": {
+                "aarch64-linux": "vigil-control-plane-1-lab-aarch64",
+                "x86_64-linux": "vigil-control-plane-1-lab-x86_64"
+            },
+            "role": "control-plane"
+        },
+        "vigil-worker-1": {
+            "index": 11,
+            "ip": "10.250.0.11",
+            "labFlakeAttrs": {
+                "aarch64-linux": "vigil-worker-1-lab-aarch64",
+                "x86_64-linux": "vigil-worker-1-lab-x86_64"
+            },
+            "role": "worker"
+        },
+        "vigil-worker-2": {
+            "index": 12,
+            "ip": "10.250.0.12",
+            "labFlakeAttrs": {
+                "aarch64-linux": "vigil-worker-2-lab-aarch64",
+                "x86_64-linux": "vigil-worker-2-lab-x86_64"
+            },
+            "role": "worker"
+        }
+    },
+    "nodePrefixLength": 24,
+    "podCidr": "10.250.128.0/17",
+    "serviceCidr": "10.250.64.0/18"
+}

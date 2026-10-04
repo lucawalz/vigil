@@ -4,7 +4,7 @@ version = "1.1.0"
 requires-python = ">=3.12"
 
 [tool.uv.workspace]
-members = ["agents/*", "eval/"]
+members = ["agents/*", "eval/", "infra/lab"]
 
 [tool.uv.sources]
 vigil-common = { workspace = true }
@@ -39,6 +39,6 @@ markers = [
 ]
 
 [tool.basedpyright]
-include = ["agents", "eval/src"]
+include = ["agents", "eval/src", "infra/lab/src"]
 typeCheckingMode = "basic"
 pythonVersion = "3.12"

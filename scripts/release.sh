@@ -3,7 +3,7 @@ set -euo pipefail
 
 GIT_CLIFF="git-cliff==2.14.2"
 VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'
-PACKAGES=(vigil-common vigil-diagnosis vigil-eval vigil-orchestrator vigil-remediation vigil-watchdog)
+PACKAGES=(vigil-common vigil-diagnosis vigil-eval vigil-lab vigil-orchestrator vigil-remediation vigil-watchdog)
 GIT_MCP_SERVER=mcp-servers/git-mcp/internal/server/server.go
 LITERAL_MCP_SERVERS=(
   mcp-servers/flux-mcp/internal/server/server.go
