@@ -1,0 +1,24 @@
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+kubeStateMetrics:
+  enabled: false
+nodeExporter:
+  enabled: false
+defaultRules:
+  create: false
+alertmanager:
+  config:
+    route:
+      receiver: vigil-webhook
+      routes: []
+    receivers:
+      - name: vigil-webhook
+        webhook_configs:
+          - url: ${VIGIL_WEBHOOK_URL}
+            send_resolved: true
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/secrets/vigil-webhook-secret/token
