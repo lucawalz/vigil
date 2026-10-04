@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import contextlib
+import socket
+import subprocess
+import time
 from pathlib import Path
 
 from vigil_lab.addresses import CONTROL_PLANE_ROLE, LabHost
-from vigil_lab.state import LabPaths
+from vigil_lab.proc import LabError, pid_alive, spawn, terminate
+from vigil_lab.state import LabContext, LabPaths
 
 AARCH64_LINUX = "aarch64-linux"
 X86_64_LINUX = "x86_64-linux"
@@ -25,6 +30,11 @@ GUEST_SSH_PORT = 22
 GUEST_API_PORT = 6443
 API_FORWARD_PORT = 16443
 HUB_RECONNECT_MS = 1000
+BUILDER = "builder"
+VM = "vm"
+VM_PID_GLOB = "vm-*.pid"
+SHUTDOWN_TIMEOUT_S = 90.0
+SHUTDOWN_POLL_S = 1.0
 
 
 def _user_netdev(host: LabHost) -> str:
@@ -107,3 +117,61 @@ def qemu_args(
         "none",
     ]
     return args
+
+
+def exclusive_start(paths: LabPaths, kind: str) -> None:
+    if kind == BUILDER:
+        running = sorted(p.name for p in paths.run.glob(VM_PID_GLOB) if pid_alive(p))
+        if running:
+            raise LabError(
+                f"lab VMs are running ({', '.join(running)}); "
+                "run `lab down` before building images"
+            )
+        if pid_alive(paths.pid(BUILDER)):
+            raise LabError("the image builder is already running; run `lab down`")
+    elif pid_alive(paths.pid(BUILDER)):
+        raise LabError(
+            "the image builder is running; let the image build finish or run `lab down`"
+        )
+
+
+def start(
+    ctx: LabContext,
+    host: LabHost,
+    *,
+    disk: Path | None = None,
+    iso: Path | None = None,
+) -> subprocess.Popen[bytes]:
+    exclusive_start(ctx.paths, VM)
+    args = qemu_args(
+        host,
+        ctx.system,
+        ctx.accel,
+        ctx.paths,
+        ctx.firmware_dir,
+        disk or ctx.paths.disk(host.name),
+        iso,
+    )
+    return spawn(
+        args,
+        pid_file=ctx.paths.vm_pid(host.name),
+        log_file=ctx.paths.log(f"{host.name}-qemu"),
+    )
+
+
+def vm_names(paths: LabPaths) -> list[str]:
+    return sorted(p.stem.removeprefix("vm-") for p in paths.run.glob(VM_PID_GLOB))
+
+
+def shutdown(paths: LabPaths, name: str, timeout_s: float = SHUTDOWN_TIMEOUT_S) -> None:
+    pid_file = paths.vm_pid(name)
+    if not pid_alive(pid_file):
+        return
+    with contextlib.suppress(OSError):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as monitor:
+            monitor.connect(str(paths.monitor(name)))
+            monitor.sendall(b"system_powerdown\n")
+    deadline = time.monotonic() + timeout_s
+    while pid_alive(pid_file) and time.monotonic() < deadline:
+        time.sleep(SHUTDOWN_POLL_S)
+    terminate(pid_file)
