@@ -1,4 +1,4 @@
-{ pkgs, meta, ... }:
+{ addresses, ... }:
 {
   imports = [ ./common.nix ];
 
@@ -9,6 +9,8 @@
       "--write-kubeconfig-mode=0644"
       "--disable=servicelb"
       "--disable=traefik"
+      "--cluster-cidr=${addresses.podCidr}"
+      "--service-cidr=${addresses.serviceCidr}"
     ];
     tokenFile = "/etc/k3s/token";
     clusterInit = true;

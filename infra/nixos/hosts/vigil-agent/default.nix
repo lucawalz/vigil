@@ -1,4 +1,4 @@
-{ config, lib, pkgs, meta, self, ... }:
+{ config, lib, pkgs, meta, self, addresses, ... }:
 let
   vigilGitCredentialHelper = pkgs.writeShellScript "vigil-git-credentials" ''
     set -eu
@@ -30,11 +30,9 @@ in
 
   system.stateVersion = "25.05";
 
-  networking.extraHosts = ''
-    10.0.0.10 hetzner-master
-    10.0.0.20 hetzner-worker-1
-    10.0.0.30 hetzner-worker-2
-  '';
+  networking.extraHosts = lib.concatStringsSep "\n" (lib.mapAttrsToList
+    (name: host: "${host.ip} ${name}")
+    (lib.filterAttrs (name: _: name != meta.hostname) addresses.hosts));
 
   networking.firewall.allowedTCPPorts = [ 22 9099 ];
 
