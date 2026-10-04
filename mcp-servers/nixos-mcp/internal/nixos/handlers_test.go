@@ -467,16 +467,16 @@ func TestEtcdSnapshotSaveHandler_Success(t *testing.T) {
 }
 
 func TestGetNixPathHandler_Success(t *testing.T) {
-	fake := &fakeNixOSClient{nixPathOut: "infra/nixos/hosts/hetzner-worker-1/default.nix"}
+	fake := &fakeNixOSClient{nixPathOut: "infra/nixos/hosts/vigil-worker-1/default.nix"}
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	result := callTool(t, srv, "get_nix_path", map[string]any{"hostname": "hetzner-worker-1"})
+	result := callTool(t, srv, "get_nix_path", map[string]any{"hostname": "vigil-worker-1"})
 
 	if result.IsError {
 		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
 	}
-	if !strings.Contains(resultText(result), "infra/nixos/hosts/hetzner-worker-1/default.nix") {
+	if !strings.Contains(resultText(result), "infra/nixos/hosts/vigil-worker-1/default.nix") {
 		t.Errorf("expected path in response, got: %s", resultText(result))
 	}
 }
@@ -516,7 +516,7 @@ func TestDryBuildHandler(t *testing.T) {
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	result := callTool(t, srv, "dry_build", map[string]any{"host": "hetzner-worker-1"})
+	result := callTool(t, srv, "dry_build", map[string]any{"host": "vigil-worker-1"})
 
 	if result.IsError {
 		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
@@ -531,7 +531,7 @@ func TestDryBuildHandler_WithDiff(t *testing.T) {
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	result := callTool(t, srv, "dry_build", map[string]any{"host": "hetzner-worker-1"})
+	result := callTool(t, srv, "dry_build", map[string]any{"host": "vigil-worker-1"})
 
 	if result.IsError {
 		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
@@ -546,7 +546,7 @@ func TestDryBuildHandler_DomainError(t *testing.T) {
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	result := callTool(t, srv, "dry_build", map[string]any{"host": "hetzner-worker-1"})
+	result := callTool(t, srv, "dry_build", map[string]any{"host": "vigil-worker-1"})
 
 	if !result.IsError {
 		t.Error("expected IsError=true for domain error")
@@ -561,7 +561,7 @@ func TestTriggerReconcileHandler(t *testing.T) {
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	result := callTool(t, srv, "trigger_reconcile", map[string]any{"host": "hetzner-worker-1"})
+	result := callTool(t, srv, "trigger_reconcile", map[string]any{"host": "vigil-worker-1"})
 
 	if result.IsError {
 		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
@@ -576,7 +576,7 @@ func TestTriggerReconcileHandler_UnitNotFound(t *testing.T) {
 	srv := newTestServer(t, fake)
 	defer srv.Close()
 
-	result := callTool(t, srv, "trigger_reconcile", map[string]any{"host": "hetzner-worker-1"})
+	result := callTool(t, srv, "trigger_reconcile", map[string]any{"host": "vigil-worker-1"})
 
 	if !result.IsError {
 		t.Error("expected IsError=true for unit not found")

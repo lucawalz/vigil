@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -13,10 +15,19 @@ const (
 	SSHDialTimeoutSeconds  = 15
 	SSHDialRetries         = 3
 	SSHDialBackoffMs       = 500
+	defaultSSHPort         = "22"
+	forwardHost            = "127.0.0.1"
+	minPort                = 1
+	maxPort                = 65535
 )
 
+type SSHHost struct {
+	Name string
+	Addr string
+}
+
 type Config struct {
-	SSHHosts               []string
+	SSHHosts               []SSHHost
 	SSHUser                string
 	SSHKeyPath             string
 	MaxOutputBytesDescribe int
@@ -26,10 +37,39 @@ type Config struct {
 	SSHDialBackoff         time.Duration
 }
 
-func Load() *Config {
-	hosts := strings.Split(os.Getenv("SSH_HOSTS"), ",")
-	if len(hosts) == 1 && hosts[0] == "" {
-		hosts = nil
+func ParseSSHHosts(raw string) ([]SSHHost, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var hosts []SSHHost
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		name, port, hasPort := strings.Cut(entry, ":")
+		if name == "" {
+			return nil, fmt.Errorf("SSH_HOSTS entry %q has no host name", entry)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("SSH_HOSTS lists %q more than once", name)
+		}
+		seen[name] = true
+		addr := net.JoinHostPort(name, defaultSSHPort)
+		if hasPort {
+			n, err := strconv.Atoi(port)
+			if err != nil || n < minPort || n > maxPort {
+				return nil, fmt.Errorf("SSH_HOSTS entry %q has an invalid port", entry)
+			}
+			addr = net.JoinHostPort(forwardHost, port)
+		}
+		hosts = append(hosts, SSHHost{Name: name, Addr: addr})
+	}
+	return hosts, nil
+}
+
+func Load() (*Config, error) {
+	hosts, err := ParseSSHHosts(os.Getenv("SSH_HOSTS"))
+	if err != nil {
+		return nil, err
 	}
 	user := os.Getenv("SSH_USER")
 	if user == "" {
@@ -48,7 +88,7 @@ func Load() *Config {
 		SSHDialTimeout:         time.Duration(envInt("SSH_DIAL_TIMEOUT_SECONDS", SSHDialTimeoutSeconds)) * time.Second,
 		SSHDialRetries:         envInt("SSH_DIAL_RETRIES", SSHDialRetries),
 		SSHDialBackoff:         time.Duration(envInt("SSH_DIAL_BACKOFF_MS", SSHDialBackoffMs)) * time.Millisecond,
-	}
+	}, nil
 }
 
 func envInt(key string, fallback int) int {

@@ -15,7 +15,10 @@ import (
 func main() {
 	log.SetOutput(os.Stderr)
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("nixos-mcp: %v", err)
+	}
 	if len(cfg.SSHHosts) == 0 {
 		log.Fatal("nixos-mcp: SSH_HOSTS is required; refusing to start without an allow-list")
 	}

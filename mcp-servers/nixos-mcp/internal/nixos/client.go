@@ -14,6 +14,8 @@ import (
 	"time"
 
 	gossh "golang.org/x/crypto/ssh"
+
+	"github.com/lucawalz/vigil/mcp-servers/nixos-mcp/internal/config"
 )
 
 const (
@@ -65,16 +67,16 @@ type NixOSClient interface {
 }
 
 type realNixOSClient struct {
-	user         string
-	signer       gossh.Signer
-	allowedHosts []string
-	dialTimeout  time.Duration
-	dialRetries  int
-	dialBackoff  time.Duration
-	dialFunc     dialFunc
+	user        string
+	signer      gossh.Signer
+	hostAddrs   map[string]string
+	dialTimeout time.Duration
+	dialRetries int
+	dialBackoff time.Duration
+	dialFunc    dialFunc
 }
 
-func NewRealNixOSClient(user, keyPath string, allowedHosts []string, dialTimeout time.Duration, dialRetries int, dialBackoff time.Duration) (NixOSClient, error) {
+func NewRealNixOSClient(user, keyPath string, hosts []config.SSHHost, dialTimeout time.Duration, dialRetries int, dialBackoff time.Duration) (NixOSClient, error) {
 	expanded, err := expandTilde(keyPath)
 	if err != nil {
 		return nil, err
@@ -96,34 +98,38 @@ func NewRealNixOSClient(user, keyPath string, allowedHosts []string, dialTimeout
 	if dialBackoff <= 0 {
 		dialBackoff = defaultSSHDialBackoff
 	}
+	hostAddrs := make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		hostAddrs[h.Name] = h.Addr
+	}
 	return &realNixOSClient{
-		user:         user,
-		signer:       signer,
-		allowedHosts: allowedHosts,
-		dialTimeout:  dialTimeout,
-		dialRetries:  dialRetries,
-		dialBackoff:  dialBackoff,
-		dialFunc:     (&net.Dialer{Timeout: dialTimeout}).DialContext,
+		user:        user,
+		signer:      signer,
+		hostAddrs:   hostAddrs,
+		dialTimeout: dialTimeout,
+		dialRetries: dialRetries,
+		dialBackoff: dialBackoff,
+		dialFunc:    (&net.Dialer{Timeout: dialTimeout}).DialContext,
 	}, nil
 }
 
-func validateHost(host string, allowed []string) error {
-	if len(allowed) == 0 {
-		return fmt.Errorf("SSH_HOSTS is not configured; refusing to connect")
+func (c *realNixOSClient) dialAddress(host string) (string, error) {
+	if len(c.hostAddrs) == 0 {
+		return "", fmt.Errorf("SSH_HOSTS is not configured; refusing to connect")
 	}
-	for _, h := range allowed {
-		if h == host {
-			return nil
-		}
+	addr, ok := c.hostAddrs[host]
+	if !ok {
+		return "", fmt.Errorf("host %q is not in SSH_HOSTS allow-list", host)
 	}
-	return fmt.Errorf("host %q is not in SSH_HOSTS allow-list", host)
+	return addr, nil
 }
 
 func (c *realNixOSClient) runSSH(ctx context.Context, host, cmd string) (string, error) {
 	if strings.ContainsAny(host, ":/ \t\n\r") {
 		return "", fmt.Errorf("host contains invalid character")
 	}
-	if err := validateHost(host, c.allowedHosts); err != nil {
+	addr, err := c.dialAddress(host)
+	if err != nil {
 		return "", err
 	}
 	if err := validateCommand(cmd); err != nil {
@@ -136,7 +142,6 @@ func (c *realNixOSClient) runSSH(ctx context.Context, host, cmd string) (string,
 		Timeout:         c.dialTimeout,
 	}
 
-	addr := host + ":22"
 	netConn, err := c.dialWithRetry(ctx, addr)
 	if err != nil {
 		return "", fmt.Errorf("ssh dial %s: %w", host, err)
@@ -264,18 +269,11 @@ func (c *realNixOSClient) EtcdSnapshotSave(ctx context.Context, host, destPath s
 	return c.runSSH(ctx, host, fmt.Sprintf("sudo etcdctl snapshot save %s", destPath))
 }
 
-var knownNixOSHosts = map[string]bool{
-	"hetzner-master":   true,
-	"hetzner-worker-1": true,
-	"hetzner-worker-2": true,
-	"hetzner-agent":    true,
-}
-
 func (c *realNixOSClient) GetNixPath(_ context.Context, hostname string) (string, error) {
 	if err := validateArg("hostname", hostname); err != nil {
 		return "", err
 	}
-	if !knownNixOSHosts[hostname] {
+	if _, ok := c.hostAddrs[hostname]; !ok {
 		return "", fmt.Errorf("unknown hostname: %q", hostname)
 	}
 	return fmt.Sprintf("infra/nixos/hosts/%s/default.nix", hostname), nil

@@ -17,11 +17,11 @@ func (timeoutError) Temporary() bool { return true }
 
 func newTestClient(dial dialFunc) *realNixOSClient {
 	return &realNixOSClient{
-		allowedHosts: []string{"hetzner-master"},
-		dialTimeout:  time.Second,
-		dialRetries:  3,
-		dialBackoff:  time.Millisecond,
-		dialFunc:     dial,
+		hostAddrs:   map[string]string{"vigil-control-plane-1": "vigil-control-plane-1:22"},
+		dialTimeout: time.Second,
+		dialRetries: 3,
+		dialBackoff: time.Millisecond,
+		dialFunc:    dial,
 	}
 }
 
@@ -36,7 +36,7 @@ func TestDialWithRetrySucceedsAfterTransientTimeouts(t *testing.T) {
 	}
 
 	c := newTestClient(dial)
-	if _, err := c.dialWithRetry(context.Background(), "hetzner-master:22"); err != nil {
+	if _, err := c.dialWithRetry(context.Background(), "vigil-control-plane-1:22"); err != nil {
 		t.Fatalf("expected success after transient timeouts, got: %v", err)
 	}
 	if attempts != 3 {
@@ -55,7 +55,7 @@ func TestDialWithRetryRetriesConnectionRefused(t *testing.T) {
 	}
 
 	c := newTestClient(dial)
-	if _, err := c.dialWithRetry(context.Background(), "hetzner-master:22"); err != nil {
+	if _, err := c.dialWithRetry(context.Background(), "vigil-control-plane-1:22"); err != nil {
 		t.Fatalf("expected success after connection refused, got: %v", err)
 	}
 	if attempts != 2 {
@@ -72,7 +72,7 @@ func TestDialWithRetryDoesNotRetryNonTransientError(t *testing.T) {
 	}
 
 	c := newTestClient(dial)
-	_, err := c.dialWithRetry(context.Background(), "hetzner-master:22")
+	_, err := c.dialWithRetry(context.Background(), "vigil-control-plane-1:22")
 	if !errors.Is(err, nonTransient) {
 		t.Fatalf("expected non-transient error returned immediately, got: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestDialWithRetryExhaustsBudget(t *testing.T) {
 	}
 
 	c := newTestClient(dial)
-	_, err := c.dialWithRetry(context.Background(), "hetzner-master:22")
+	_, err := c.dialWithRetry(context.Background(), "vigil-control-plane-1:22")
 	if err == nil {
 		t.Fatal("expected error after exhausting retry budget")
 	}
@@ -109,7 +109,7 @@ func TestDialWithRetryHonorsContextCancellation(t *testing.T) {
 	cancel()
 
 	c := newTestClient(dial)
-	_, err := c.dialWithRetry(ctx, "hetzner-master:22")
+	_, err := c.dialWithRetry(ctx, "vigil-control-plane-1:22")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got: %v", err)
 	}

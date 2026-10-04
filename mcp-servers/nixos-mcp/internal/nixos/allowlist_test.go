@@ -14,14 +14,14 @@ func TestValidateCommandAllowsEnumeratedCommands(t *testing.T) {
 		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration test",
 		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration boot",
 		"sudo systemctl stop rollback-gate.timer",
-		"sudo nixos-rebuild test --flake /opt/vigil/infra/nixos#hetzner-master",
+		"sudo nixos-rebuild test --flake /opt/vigil/infra/nixos#vigil-control-plane-1",
 		"systemctl is-active rollback-gate.service",
 		`kubectl get node $(hostname) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`,
 		"journalctl -u kubelet.service -n 50 --no-pager",
 		"journalctl -n 100 --no-pager",
 		"systemctl status kubelet.service --no-pager",
 		"sudo etcdctl snapshot save /var/backups/etcd.db",
-		"sudo nixos-rebuild dry-activate --flake /opt/vigil/infra/nixos#hetzner-worker-1",
+		"sudo nixos-rebuild dry-activate --flake /opt/vigil/infra/nixos#vigil-worker-1",
 		"systemctl start --no-block vigil-auto-reconcile.service",
 	}
 	for _, cmd := range legitimate {
@@ -38,7 +38,7 @@ func TestValidateCommandRejectsInjection(t *testing.T) {
 		"systemctl restart sshd.service",
 		"sudo systemctl restart kubelet.service",
 		"sudo systemctl restart",
-		"kubectl delete node hetzner-master",
+		"kubectl delete node vigil-control-plane-1",
 		"sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
 		"curl http://evil",
 	}
@@ -84,7 +84,7 @@ func TestGetSysctlHandler_InvalidKey(t *testing.T) {
 }
 
 func TestValidateArgAllowsPlainValues(t *testing.T) {
-	for _, value := range []string{"kubelet.service", "/var/backups/etcd.db", "hetzner-master"} {
+	for _, value := range []string{"kubelet.service", "/var/backups/etcd.db", "vigil-control-plane-1"} {
 		if err := validateArg("unit", value); err != nil {
 			t.Errorf("plain value rejected: %q: %v", value, err)
 		}
