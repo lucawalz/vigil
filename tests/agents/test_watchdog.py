@@ -587,7 +587,7 @@ async def test_run_watchdog_os_path_does_not_call_kubectl(
 
 def _describe_node(conditions: dict[str, str]) -> str:
     body = "".join(f"  {k}: {v}\n" for k, v in conditions.items())
-    return f"Name: hetzner-worker-2\nConditions:\n{body}"
+    return f"Name: vigil-worker-2\nConditions:\n{body}"
 
 
 async def test_run_watchdog_os_node_disk_pressure_present_degrades(
@@ -607,7 +607,7 @@ async def test_run_watchdog_os_node_disk_pressure_present_degrades(
         kubectl_mcp=kubectl,
         flux_mcp=AsyncMock(),
         nixos_mcp=AsyncMock(),
-        target_host="hetzner-worker-2",
+        target_host="vigil-worker-2",
         os_check_kind=OS_CHECK_NODE_CONDITION,
         os_check_key="DiskPressure",
         os_check_expected="False",
@@ -618,7 +618,7 @@ async def test_run_watchdog_os_node_disk_pressure_present_degrades(
     assert result.degraded is True
     assert result.reason == "deadline_reached"
     kubectl.direct_call_tool.assert_awaited_with(
-        "describe_node", {"name": "hetzner-worker-2"}
+        "describe_node", {"name": "vigil-worker-2"}
     )
 
 
@@ -639,7 +639,7 @@ async def test_run_watchdog_os_node_disk_pressure_cleared_healthy(
         kubectl_mcp=kubectl,
         flux_mcp=AsyncMock(),
         nixos_mcp=AsyncMock(),
-        target_host="hetzner-worker-2",
+        target_host="vigil-worker-2",
         os_check_kind=OS_CHECK_NODE_CONDITION,
         os_check_key="DiskPressure",
         os_check_expected="False",
@@ -666,7 +666,7 @@ async def test_run_watchdog_os_node_not_ready_degrades(
         kubectl_mcp=kubectl,
         flux_mcp=AsyncMock(),
         nixos_mcp=AsyncMock(),
-        target_host="hetzner-worker-2",
+        target_host="vigil-worker-2",
         os_check_kind=OS_CHECK_NODE_CONDITION,
         os_check_key="Ready",
         os_check_expected="True",
@@ -693,7 +693,7 @@ async def test_run_watchdog_os_node_ready_healthy(
         kubectl_mcp=kubectl,
         flux_mcp=AsyncMock(),
         nixos_mcp=AsyncMock(),
-        target_host="hetzner-worker-2",
+        target_host="vigil-worker-2",
         os_check_kind=OS_CHECK_NODE_CONDITION,
         os_check_key="Ready",
         os_check_expected="True",
@@ -724,7 +724,7 @@ async def test_run_watchdog_os_node_condition_does_not_call_nixos(
         kubectl_mcp=kubectl,
         flux_mcp=AsyncMock(),
         nixos_mcp=nixos,
-        target_host="hetzner-worker-2",
+        target_host="vigil-worker-2",
         os_check_kind=OS_CHECK_NODE_CONDITION,
         os_check_key="DiskPressure",
         os_check_expected="False",

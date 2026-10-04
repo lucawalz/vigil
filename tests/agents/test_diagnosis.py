@@ -836,7 +836,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
                 "status": "firing",
                 "labels": {
                     "alertname": "NodeExporterDown",
-                    "node": "hetzner-worker-1",
+                    "node": "vigil-worker-1",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -844,7 +844,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
             }
         ],
         groupLabels={"alertname": "NodeExporterDown"},
-        commonLabels={"node": "hetzner-worker-1"},
+        commonLabels={"node": "vigil-worker-1"},
         commonAnnotations={},
         externalURL="http://alertmanager:9093",
         version="4",
@@ -867,7 +867,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
 
     async def nixos_side_effect(tool_name, args=None):
         if tool_name == "get_nix_path":
-            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+            return {"content": "infra/nixos/hosts/vigil-worker-1.nix"}
         return {"content": "nixos-state"}
 
     mock_nixos = AsyncMock()
@@ -887,7 +887,7 @@ def test_build_diagnosis_context_os_uses_hostname_convention() -> None:
     )
 
     ctx = asyncio.run(build_diagnosis_context(deps, fault))
-    assert ctx.manifest_path == "infra/nixos/hosts/hetzner-worker-1.nix"
+    assert ctx.manifest_path == "infra/nixos/hosts/vigil-worker-1.nix"
 
 
 def test_build_diagnosis_context_os_happy_path() -> None:
@@ -905,7 +905,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
                 "status": "firing",
                 "labels": {
                     "alertname": "NodeExporterDown",
-                    "node": "hetzner-worker-1",
+                    "node": "vigil-worker-1",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -913,7 +913,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
             }
         ],
         groupLabels={"alertname": "NodeExporterDown"},
-        commonLabels={"node": "hetzner-worker-1"},
+        commonLabels={"node": "vigil-worker-1"},
         commonAnnotations={},
         externalURL="http://alertmanager:9093",
         version="4",
@@ -936,7 +936,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
     mock_nixos = AsyncMock()
     mock_nixos.direct_call_tool = AsyncMock(
         side_effect=[
-            {"content": "infra/nixos/hosts/hetzner-worker-1.nix"},
+            {"content": "infra/nixos/hosts/vigil-worker-1.nix"},
             {"content": "live-systemd-status"},
         ]
     )
@@ -959,7 +959,7 @@ def test_build_diagnosis_context_os_happy_path() -> None:
     ctx = asyncio.run(build_diagnosis_context(deps, fault))
     assert ctx.live_yaml == "live-systemd-status"
     assert ctx.declared_yaml == "declared-dry-build"
-    assert ctx.manifest_path == "infra/nixos/hosts/hetzner-worker-1.nix"
+    assert ctx.manifest_path == "infra/nixos/hosts/vigil-worker-1.nix"
 
 
 def _os_fault(labels: dict[str, str]) -> "object":
@@ -1023,7 +1023,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
                 "status": "firing",
                 "labels": {
                     "alertname": "NodeExporterDown",
-                    "node": "hetzner-worker-1",
+                    "node": "vigil-worker-1",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -1031,7 +1031,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
             }
         ],
         groupLabels={"alertname": "NodeExporterDown"},
-        commonLabels={"node": "hetzner-worker-1"},
+        commonLabels={"node": "vigil-worker-1"},
         commonAnnotations={},
         externalURL="http://alertmanager:9093",
         version="4",
@@ -1076,7 +1076,7 @@ def test_build_diagnosis_context_os_systemd_unit_fallback() -> None:
     asyncio.run(build_diagnosis_context(deps, fault))
     journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
     assert journal_call is not None
-    assert journal_call[1].get("host") == "hetzner-worker-1"
+    assert journal_call[1].get("host") == "vigil-worker-1"
     assert "unit" not in journal_call[1], (
         "unit must not be passed when no systemd_unit label"
     )
@@ -1097,7 +1097,7 @@ def test_build_diagnosis_context_os_does_not_prefetch_sysctl() -> None:
                 "status": "firing",
                 "labels": {
                     "alertname": "KernelParameterDrift",
-                    "node": "hetzner-worker-1",
+                    "node": "vigil-worker-1",
                     "sysctl_key": "net.ipv4.ip_forward",
                 },
                 "annotations": {},
@@ -1106,7 +1106,7 @@ def test_build_diagnosis_context_os_does_not_prefetch_sysctl() -> None:
             }
         ],
         groupLabels={"alertname": "KernelParameterDrift"},
-        commonLabels={"node": "hetzner-worker-1"},
+        commonLabels={"node": "vigil-worker-1"},
         commonAnnotations={},
         externalURL="http://alertmanager:9093",
         version="4",
@@ -1133,7 +1133,7 @@ def test_build_diagnosis_context_os_does_not_prefetch_sysctl() -> None:
     async def nixos_side_effect(tool, args):
         captured_calls.append((tool, args))
         if tool == "get_nix_path":
-            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+            return {"content": "infra/nixos/hosts/vigil-worker-1.nix"}
         if tool == "get_journal":
             return {"content": live_journal}
         return {"content": "state"}
@@ -1165,7 +1165,7 @@ def test_build_diagnosis_context_os_does_not_prefetch_sysctl() -> None:
 
     journal_call = next((c for c in captured_calls if c[0] == "get_journal"), None)
     assert journal_call is not None, "non-systemd OS faults route through get_journal"
-    assert journal_call[1].get("host") == "hetzner-worker-1"
+    assert journal_call[1].get("host") == "vigil-worker-1"
 
     assert ctx.live_yaml == live_journal
 
@@ -1185,7 +1185,7 @@ def test_build_diagnosis_context_os_degrades_on_node_ssh_failure() -> None:
                 "status": "firing",
                 "labels": {
                     "alertname": "NodeExporterDown",
-                    "node": "hetzner-worker-1",
+                    "node": "vigil-worker-1",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -1193,7 +1193,7 @@ def test_build_diagnosis_context_os_degrades_on_node_ssh_failure() -> None:
             }
         ],
         groupLabels={"alertname": "NodeExporterDown"},
-        commonLabels={"node": "hetzner-worker-1"},
+        commonLabels={"node": "vigil-worker-1"},
         commonAnnotations={},
         externalURL="http://alertmanager:9093",
         version="4",
@@ -1211,14 +1211,14 @@ def test_build_diagnosis_context_os_degrades_on_node_ssh_failure() -> None:
         "    branch: main\n"
     )
 
-    ssh_error_text = "ssh: connect to host hetzner-worker-1 port 22: Connection refused"
+    ssh_error_text = "ssh: connect to host vigil-worker-1 port 22: Connection refused"
 
     mock_kubectl = AsyncMock()
     mock_kubectl.direct_call_tool = AsyncMock(return_value={"content": git_repo_yaml})
 
     async def nixos_side_effect(tool, args):
         if tool == "get_nix_path":
-            return {"content": "infra/nixos/hosts/hetzner-worker-1.nix"}
+            return {"content": "infra/nixos/hosts/vigil-worker-1.nix"}
         if tool == "get_journal":
             raise RuntimeError(ssh_error_text)
         return {"content": "state"}
@@ -1285,7 +1285,7 @@ def test_build_diagnosis_context_os_surfaces_declared_sysctl_in_config() -> None
                 "status": "firing",
                 "labels": {
                     "alertname": "KernelParameterDrift",
-                    "node": "hetzner-worker-1",
+                    "node": "vigil-worker-1",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -1293,7 +1293,7 @@ def test_build_diagnosis_context_os_surfaces_declared_sysctl_in_config() -> None
             }
         ],
         groupLabels={"alertname": "KernelParameterDrift"},
-        commonLabels={"node": "hetzner-worker-1"},
+        commonLabels={"node": "vigil-worker-1"},
         commonAnnotations={},
         externalURL="http://alertmanager:9093",
         version="4",
@@ -1323,7 +1323,7 @@ def test_build_diagnosis_context_os_surfaces_declared_sysctl_in_config() -> None
 
     async def nixos_side_effect(tool, args):
         if tool == "get_nix_path":
-            return {"content": "infra/nixos/hosts/hetzner-worker-1/default.nix"}
+            return {"content": "infra/nixos/hosts/vigil-worker-1/default.nix"}
         return {"content": "state"}
 
     mock_nixos = AsyncMock()
@@ -1363,7 +1363,7 @@ def test_resolve_nix_imports_walks_transitive_modules() -> None:
     from diagnosis.context import _resolve_nix_imports
     from diagnosis.models import DiagnosisDeps
 
-    host_path = "infra/nixos/hosts/hetzner-worker-1/default.nix"
+    host_path = "infra/nixos/hosts/vigil-worker-1/default.nix"
     host_nix = "{ ... }:\n{\n  imports = [ ../../modules/k3s/agent.nix ];\n}\n"
     agent_nix = (
         "{ lib, ... }:\n"

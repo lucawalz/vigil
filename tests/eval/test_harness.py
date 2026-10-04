@@ -854,7 +854,7 @@ def _write_sysctl_scenario(scenarios_dir: Path, key: str = _SYSCTL_KEY) -> None:
                 "alert_name": "KubePodNotReady",
                 "verify_broken": {
                     "symptom": "sysctl_modified",
-                    "host": "hetzner-worker-1",
+                    "host": "vigil-worker-1",
                     "key": key,
                     "expected_value": "0",
                     "timeout_s": 30,

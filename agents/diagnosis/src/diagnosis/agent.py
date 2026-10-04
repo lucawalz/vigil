@@ -137,7 +137,7 @@ recommended_action=git_commit_k8s when the declared manifest contains the wrong 
 
 OS-level fault rules:
 - The alert labels include a "node" field with the exact hostname (e.g.,
-  "hetzner-worker-1"). Use this value verbatim as the hostname argument for ALL
+  "vigil-worker-1"). Use this value verbatim as the hostname argument for ALL
   nixos-mcp and lookup_os_manifest_path calls. Never use the scenario ID as a host.
 - When the recommended action is nixos_rebuild or git_commit_nix, set target_host to
   the hostname from the "node" label.

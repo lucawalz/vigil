@@ -1195,7 +1195,7 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
         _dispatch_remediation_and_watchdog,
     )
 
-    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+    report = _canned_report_with_action("nixos_rebuild", target_host="vigil-worker-1")
     report = report.model_copy(update={"discovered_sysctl_key": "net.ipv4.ip_forward"})
 
     event = FaultEvent(
@@ -1206,7 +1206,7 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
                 "status": "firing",
                 "labels": {
                     "alertname": "KernelParameterDrift",
-                    "node": "hetzner-worker-1",
+                    "node": "vigil-worker-1",
                 },
                 "annotations": {},
                 "startsAt": "2026-05-01T00:00:00Z",
@@ -1214,7 +1214,7 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
             }
         ],
         groupLabels={"alertname": "KernelParameterDrift"},
-        commonLabels={"node": "hetzner-worker-1"},
+        commonLabels={"node": "vigil-worker-1"},
         commonAnnotations={},
         externalURL="http://alertmanager:9093",
         version="4",
@@ -1265,12 +1265,12 @@ def test_sysctl_recovery_expected_derives_from_declared_config() -> None:
     )
     ctx = DiagnosisContext(
         source_branch="main",
-        manifest_path="infra/nixos/hosts/hetzner-worker-1/default.nix",
+        manifest_path="infra/nixos/hosts/vigil-worker-1/default.nix",
         live_yaml="net.ipv4.ip_forward = 0",
         declared_yaml=declared,
         diff="",
     )
-    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+    report = _canned_report_with_action("nixos_rebuild", target_host="vigil-worker-1")
     report = report.model_copy(update={"discovered_sysctl_key": "net.ipv4.ip_forward"})
 
     assert _sysctl_recovery_expected(report, ctx) == "1"
@@ -1287,13 +1287,13 @@ def test_sysctl_recovery_expected_none_without_discovered_key() -> None:
         declared_yaml='boot.kernel.sysctl."net.ipv4.ip_forward" = 1;',
         diff="",
     )
-    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+    report = _canned_report_with_action("nixos_rebuild", target_host="vigil-worker-1")
 
     assert _sysctl_recovery_expected(report, ctx) is None
 
 
 def test_diagnosis_report_accepts_discovered_sysctl_key() -> None:
-    report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-worker-1")
+    report = _canned_report_with_action("nixos_rebuild", target_host="vigil-worker-1")
     report = report.model_copy(update={"discovered_sysctl_key": "net.ipv4.ip_forward"})
     assert report.discovered_sysctl_key == "net.ipv4.ip_forward"
 
@@ -1884,7 +1884,9 @@ async def test_nixos_rebuild_action_routes_to_remediation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    nixos_report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-1")
+    nixos_report = _canned_report_with_action(
+        "nixos_rebuild", target_host="vigil-worker-1"
+    )
     diag_rv = (nixos_report, RunUsage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     run_remediation_mock = AsyncMock(return_value=rem_rv)
@@ -1920,7 +1922,7 @@ async def test_nixos_rebuild_action_routes_to_remediation(
         if c.args and c.args[0] == "commit_generation"
     ]
     assert len(commit_calls) == 1
-    assert commit_calls[0].args[1] == {"host": "hetzner-1"}
+    assert commit_calls[0].args[1] == {"host": "vigil-worker-1"}
 
 
 async def test_os_report_yields_watchdog_deps_with_nixos_target(
@@ -2000,7 +2002,9 @@ async def test_nixos_rebuild_success_commit_generation_failure_surfaced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    nixos_report = _canned_report_with_action("nixos_rebuild", target_host="hetzner-1")
+    nixos_report = _canned_report_with_action(
+        "nixos_rebuild", target_host="vigil-worker-1"
+    )
     diag_rv = (nixos_report, RunUsage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
@@ -2076,7 +2080,9 @@ async def test_git_commit_nix_action_routes_to_remediation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    nix_report = _canned_report_with_action("git_commit_nix", target_host="hetzner-1")
+    nix_report = _canned_report_with_action(
+        "git_commit_nix", target_host="vigil-worker-1"
+    )
     diag_rv = (nix_report, RunUsage(input_tokens=100, output_tokens=50), [])
     rem_rv = (_canned_remediation(), RunUsage(input_tokens=200, output_tokens=80), [])
     run_remediation_mock = AsyncMock(return_value=rem_rv)
@@ -2195,7 +2201,7 @@ async def test_rollback_nixos_rebuild_issues_no_durable_call() -> None:
     nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
 
     result = await _issue_rollback(
-        "nixos_rebuild", git_mcp, flux_mcp, nixos_mcp, None, "hetzner-1"
+        "nixos_rebuild", git_mcp, flux_mcp, nixos_mcp, None, "vigil-worker-1"
     )
 
     assert result is True
@@ -2213,7 +2219,7 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
     nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "triggered"})
 
     result = await _issue_rollback(
-        "git_commit_nix", git_mcp, flux_mcp, nixos_mcp, "abc123", "hetzner-1"
+        "git_commit_nix", git_mcp, flux_mcp, nixos_mcp, "abc123", "vigil-worker-1"
     )
 
     assert result is True
@@ -2230,7 +2236,7 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
         if c.args and c.args[0] == "trigger_reconcile"
     ]
     assert len(trigger_calls) == 1
-    assert trigger_calls[0].args[1] == {"host": "hetzner-1"}
+    assert trigger_calls[0].args[1] == {"host": "vigil-worker-1"}
     flux_mcp.direct_call_tool.assert_not_called()
 
 
