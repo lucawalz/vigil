@@ -100,7 +100,7 @@ Run the full check suite, the same one CI runs:
 make ci
 ```
 
-Plain `make` runs the same target. Live runs need the Hetzner Cloud eval cluster, provisioned as described in [`infra/terraform/README.md`](infra/terraform/README.md). Scenarios and evaluation campaigns are covered in [`eval/README.md`](eval/README.md), and running the orchestrator locally in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-orchestrator-locally).
+Plain `make` runs the same target. Live runs need the Hetzner Cloud eval cluster, provisioned as described in [`infra/terraform/README.md`](infra/terraform/README.md). The local lab in [`infra/lab/`](infra/lab/README.md) runs the cluster hosts as qemu VMs on a laptop or a GitHub runner. Scenarios and evaluation campaigns are covered in [`eval/README.md`](eval/README.md), and running the orchestrator locally in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-orchestrator-locally).
 
 ## Repository layout
 

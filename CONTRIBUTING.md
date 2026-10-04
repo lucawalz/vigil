@@ -10,7 +10,7 @@ Participation in this project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Terraform 1.14
 - shellcheck
 
-The Nix development shell (`nix develop`) provides this toolchain. Nix is optional for local checks, where only `make nix-check` and `make vendor-hash` use it, and required for provisioning the eval cluster, which bootstraps Flux through it. Packer builds the NixOS host snapshots and is only needed for work on [`infra/packer/`](infra/packer/).
+The Nix development shell (`nix develop`) provides this toolchain. Nix is optional for local checks, where only `make nix-check` and `make vendor-hash` use it, and required for provisioning the eval cluster, which installs Flux through it, and for the local lab (`nix run ./infra/nixos#lab`). Packer builds the NixOS host snapshots and is only needed for work on [`infra/packer/`](infra/packer/).
 
 ## Setup and checks
 
@@ -49,7 +49,7 @@ uv run --package vigil-orchestrator uvicorn orchestrator.main:app --port 9099
 curl -s http://localhost:9099/healthz
 ```
 
-Real runs need a reachable cluster and NixOS hosts. The eval cluster under [`infra/terraform/`](infra/terraform/README.md) provides both.
+Real runs need a reachable cluster and NixOS hosts. The eval cluster under [`infra/terraform/`](infra/terraform/README.md) provides both. The local lab under [`infra/lab/`](infra/lab/README.md) provides both on one machine.
 
 ## Branch naming
 

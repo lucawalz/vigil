@@ -4,7 +4,7 @@ The harness drives one run as inject, then webhook, then orchestration, then a R
 
 ## Where it runs
 
-Runs execute on the agent host of the eval cluster provisioned by [`infra/terraform/`](../infra/terraform/README.md). The repository is checked out at `/root/vigil`, and the login shell loads `/etc/vigil/env` with the orchestrator URL, kubeconfigs and paths the scenario scripts need. The orchestrator listens on `http://localhost:9099`.
+Runs execute on the agent host of the eval cluster provisioned by [`infra/terraform/`](../infra/terraform/README.md). The repository is checked out at `/root/vigil`, and the login shell loads `/etc/vigil/env` with the orchestrator URL, kubeconfigs and paths the scenario scripts need. The orchestrator listens on `http://localhost:9099`. The same scripts run against the local lab described in [`infra/lab/`](../infra/lab/README.md), where `lab.env` provides the variables.
 
 ## Scenarios
 
@@ -45,4 +45,4 @@ uv run vigil-eval aggregate --seed-count 3
 
 ## Campaign workflow
 
-The Eval Campaign workflow (`.github/workflows/eval-campaign.yml`) is started manually with a model, seed count and location. It provisions a fresh cluster for each scenario group at each seed, one after another, runs the scenarios on the agent host, aggregates the results and destroys the clusters. [`scripts/local-eval.sh`](../scripts/local-eval.sh) runs the same workflow locally with `act`.
+The Eval Campaign workflow (`.github/workflows/eval-campaign.yml`) is started manually with a model, seed count, location and target. `target: hetzner` builds the NixOS snapshots for the campaign and provisions a fresh Terraform cluster for each scenario group at each seed, one after another, runs the scenarios on the agent host and destroys the clusters; `target: runner` boots the lab VMs on the GitHub runner, and `parallel` runs those cells side by side. The workflow then aggregates the results. Each cell works on its own branch `eval/<run_id>/<group>-<seed>`, created from `main` and deleted after aggregation. The run records carry their target, and aggregation covers one target at a time. The secrets come from the `eval` environment: `VIGIL_GITHUB_TOKEN` and `TF_VAR_LLM_MODEL_NAME` for every target, `TF_VAR_HCLOUD_TOKEN`, `OPERATOR_SSH_PUBKEY` and `SOPS_AGE_KEY` for `target: hetzner`, and the provider key for the chosen model. [`scripts/local-eval.sh`](../scripts/local-eval.sh) runs the same workflow locally with `act`.
