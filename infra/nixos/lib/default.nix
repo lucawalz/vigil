@@ -1,5 +1,10 @@
 { nixpkgs, self, disko, ... }:
 {
+  addresses = import ./addresses.nix {
+    inherit (nixpkgs) lib;
+    inventory = nixpkgs.lib.importJSON ../../inventory.json;
+  };
+
   mkHetznerMaster = { privateIp ? "10.0.0.10", system ? "x86_64-linux" }:
     nixpkgs.lib.nixosSystem {
       inherit system;

@@ -1,0 +1,11 @@
+{
+  "network": {
+    "base": "10.250.0.0/16"
+  },
+  "hosts": [
+    { "name": "vigil-control-plane-1", "role": "control-plane", "index": 10 },
+    { "name": "vigil-worker-1", "role": "worker", "index": 11 },
+    { "name": "vigil-worker-2", "role": "worker", "index": 12 },
+    { "name": "vigil-agent", "role": "agent", "index": 20 }
+  ]
+}

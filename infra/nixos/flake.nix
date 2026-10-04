@@ -24,5 +24,7 @@
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
       inherit self;
     };
+
+    lib.addresses = lib.addresses;
   };
 }
