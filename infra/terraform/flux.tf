@@ -8,18 +8,13 @@ resource "null_resource" "flux_bootstrap" {
 
   provisioner "local-exec" {
     command = <<-EOF
-      nix shell nixpkgs#fluxcd nixpkgs#bash --command flux bootstrap github \
-        --owner=lucawalz \
-        --repository=vigil \
-        --branch=${var.vigil_branch} \
-        --path=infra/overlays/hetzner/kubernetes/clusters/hetzner \
-        --personal \
-        --token-auth \
-        --timeout=10m
+      nix shell nixpkgs#fluxcd nixpkgs#kubectl nixpkgs#bash --command bash ${path.module}/../scripts/flux-sync.sh \
+        https://github.com/lucawalz/vigil.git \
+        '${var.vigil_branch}' \
+        ./infra/overlays/hetzner/kubernetes/clusters/hetzner
     EOF
     environment = {
-      KUBECONFIG   = pathexpand("~/.kube/hetzner-vigil-${var.group_name}")
-      GITHUB_TOKEN = var.github_token
+      KUBECONFIG = pathexpand("~/.kube/hetzner-vigil-${var.group_name}")
     }
   }
 }

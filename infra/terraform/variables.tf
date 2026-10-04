@@ -22,7 +22,7 @@ variable "vigil_branch" {
 variable "github_token" {
   type        = string
   sensitive   = true
-  description = "GitHub PAT with repo scope - used by flux bootstrap to create deploy key (set via TF_VAR_github_token)"
+  description = "GitHub token for the orchestrator's pull requests and pushes (set via TF_VAR_github_token)"
 }
 
 variable "ollama_api_key" {
