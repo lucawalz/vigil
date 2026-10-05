@@ -8,6 +8,7 @@
             "role": "agent"
         },
         "vigil-control-plane-1": {
+            "hubMac": "52:54:00:fa:00:10",
             "index": 10,
             "ip": "10.250.0.10",
             "labFlakeAttrs": {
@@ -17,6 +18,7 @@
             "role": "control-plane"
         },
         "vigil-worker-1": {
+            "hubMac": "52:54:00:fa:00:11",
             "index": 11,
             "ip": "10.250.0.11",
             "labFlakeAttrs": {
@@ -26,6 +28,7 @@
             "role": "worker"
         },
         "vigil-worker-2": {
+            "hubMac": "52:54:00:fa:00:12",
             "index": 12,
             "ip": "10.250.0.12",
             "labFlakeAttrs": {

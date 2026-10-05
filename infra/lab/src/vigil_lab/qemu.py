@@ -24,7 +24,6 @@ WORKER_MEMORY_MIB = 2048
 VCPUS = 2
 USER_NIC_PCI_ADDR = "0x8"
 HUB_NIC_PCI_ADDR = "0x9"
-LAB_MAC_PREFIX = "52:54:00:fa:00"
 LOOPBACK = "127.0.0.1"
 GUEST_SSH_PORT = 22
 GUEST_API_PORT = 6443
@@ -85,7 +84,7 @@ def qemu_args(
             f"stream,id=hub0,server=off,reconnect-ms={HUB_RECONNECT_MS},"
             f"addr.type=unix,addr.path={paths.hub_socket}",
             "-device",
-            f"virtio-net-pci,netdev=hub0,addr={HUB_NIC_PCI_ADDR},mac={LAB_MAC_PREFIX}:{host.index:02d}",
+            f"virtio-net-pci,netdev=hub0,addr={HUB_NIC_PCI_ADDR},mac={host.hub_mac}",
         ]
     else:
         args += [

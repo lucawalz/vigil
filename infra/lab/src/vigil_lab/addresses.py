@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from vigil_lab.proc import LabError, run
 
@@ -15,6 +16,7 @@ class LabHost:
     name: str
     role: str
     index: int
+    hub_mac: str
     flake_attrs: dict[str, str]
 
     @property
@@ -43,14 +45,21 @@ class AddressPlan:
         return tuple(h for h in self.hosts if h.role == WORKER_ROLE)
 
 
+def _lab_host(name: str, entry: dict[str, Any]) -> LabHost:
+    if "hubMac" not in entry:
+        raise LabError(f"{name} has no hub MAC address in the address plan")
+    return LabHost(
+        name=name,
+        role=entry["role"],
+        index=entry["index"],
+        hub_mac=entry["hubMac"],
+        flake_attrs=entry["labFlakeAttrs"],
+    )
+
+
 def parse_address_plan(raw: str) -> AddressPlan:
     hosts = (
-        LabHost(
-            name=name,
-            role=entry["role"],
-            index=entry["index"],
-            flake_attrs=entry["labFlakeAttrs"],
-        )
+        _lab_host(name, entry)
         for name, entry in json.loads(raw)["hosts"].items()
         if "labFlakeAttrs" in entry
     )

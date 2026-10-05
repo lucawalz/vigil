@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,21 @@ def test_hosts_carry_the_ssh_forward_and_flake_attributes() -> None:
     assert (worker.name, worker.ssh_port) == ("vigil-worker-1", WORKER_1_SSH_PORT)
     assert worker.flake_attr("aarch64-linux") == "vigil-worker-1-lab-aarch64"
     assert _plan().control_plane.ssh_port == CONTROL_PLANE_SSH_PORT
+
+
+def test_hosts_carry_the_hub_mac_from_the_plan() -> None:
+    assert [h.hub_mac for h in _plan().hosts] == [
+        "52:54:00:fa:00:10",
+        "52:54:00:fa:00:11",
+        "52:54:00:fa:00:12",
+    ]
+
+
+def test_lab_host_without_a_hub_mac_names_the_host() -> None:
+    raw = json.loads(FIXTURE.read_text())
+    del raw["hosts"]["vigil-worker-2"]["hubMac"]
+    with pytest.raises(LabError, match="vigil-worker-2"):
+        parse_address_plan(json.dumps(raw))
 
 
 def test_unknown_system_names_the_host() -> None:

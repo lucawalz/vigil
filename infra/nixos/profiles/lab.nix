@@ -1,10 +1,15 @@
-{ config, lib, privateIp, addresses, ... }:
+{ config, lib, privateIp, addresses, hubMac, ... }:
 let
-  hubInterface = "enp0s9";
+  hubInterface = "hub0";
   isServer = config.services.k3s.role == "server";
 in
 {
   _module.args.diskDevice = "/dev/vda";
+
+  systemd.network.links."10-vigil-hub" = {
+    matchConfig.MACAddress = hubMac;
+    linkConfig.Name = hubInterface;
+  };
 
   networking.interfaces.${hubInterface} = {
     useDHCP = false;

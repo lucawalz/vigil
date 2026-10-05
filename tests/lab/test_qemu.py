@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ PATHS = LabPaths(Path("/s"))
 FIRMWARE = Path("/fw")
 ISO = Path("/nix/store/x-installer.iso")
 OVERLONG_ROOT = Path("/" + "a" * 120)
+PLANNED_HUB_MAC = "02:00:00:00:00:01"
 
 
 def _hosts() -> tuple[LabHost, LabHost]:
@@ -75,7 +77,7 @@ def test_aarch64_worker_boots_edk2_on_hvf_with_the_hub_nic() -> None:
         "-netdev",
         "stream,id=hub0,server=off,reconnect-ms=1000,addr.type=unix,addr.path=/s/run/hub.sock",
         "-device",
-        "virtio-net-pci,netdev=hub0,addr=0x9,mac=52:54:00:fa:00:11",
+        f"virtio-net-pci,netdev=hub0,addr=0x9,mac={worker.hub_mac}",
         "-chardev",
         "socket,id=ser0,path=/s/run/vigil-worker-1.serial,server=on,wait=off,logfile=/s/logs/vigil-worker-1-serial.log,logappend=on",
         "-serial",
@@ -111,7 +113,18 @@ def test_x86_64_control_plane_boots_seabios_on_kvm_and_forwards_the_api() -> Non
         "user,id=user0,hostfwd=tcp:127.0.0.1:2210-:22,hostfwd=tcp:127.0.0.1:16443-:6443"
         in args
     )
-    assert "virtio-net-pci,netdev=hub0,addr=0x9,mac=52:54:00:fa:00:10" in args
+    assert f"virtio-net-pci,netdev=hub0,addr=0x9,mac={control_plane.hub_mac}" in args
+
+
+def test_hub_nic_carries_exactly_the_planned_mac() -> None:
+    _, worker = _hosts()
+    host = replace(worker, hub_mac=PLANNED_HUB_MAC)
+    args = qemu_args(
+        host, "x86_64-linux", "kvm", PATHS, FIRMWARE, PATHS.disk(host.name)
+    )
+    assert [a for a in args if "netdev=hub0" in a] == [
+        f"virtio-net-pci,netdev=hub0,addr=0x9,mac={PLANNED_HUB_MAC}"
+    ]
 
 
 def test_x86_64_install_attaches_the_iso_and_uses_the_virtio_console() -> None:

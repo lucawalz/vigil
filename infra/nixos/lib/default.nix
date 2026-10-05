@@ -23,9 +23,13 @@ let
     if target == "hetzner" then name else "${name}-lab-${lib.head (lib.splitString "-" system)}";
   labSystems = [ "x86_64-linux" "aarch64-linux" ];
   labHosts = lib.filter (host: host.role != "agent") inventory.hosts;
+  labMacPrefix = "52:54:00:fa:00";
+  macOctetDigits = 2;
+  hubMac = index: "${labMacPrefix}:${lib.fixedWidthNumber macOctetDigits index}";
   labPlan = addresses // {
     hosts = addresses.hosts // lib.listToAttrs (map
       (host: lib.nameValuePair host.name (addresses.hosts.${host.name} // {
+        hubMac = hubMac host.index;
         labFlakeAttrs = lib.genAttrs labSystems (system: flakeAttr { inherit (host) name; inherit system; target = "lab"; });
       }))
       labHosts);
@@ -37,6 +41,8 @@ let
         meta.hostname = name;
         privateIp = addresses.hosts.${name}.ip;
         inherit addresses self;
+      } // lib.optionalAttrs (target == "lab") {
+        inherit (labPlan.hosts.${name}) hubMac;
       };
       modules = [
         disko.nixosModules.disko
