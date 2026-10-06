@@ -20,6 +20,15 @@ def test_ensure_creates_a_private_state_directory(tmp_path: Path) -> None:
     assert paths.run.is_dir()
 
 
+def test_ensure_creates_the_state_directory_private_before_any_chmod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(Path, "chmod", lambda self, mode: None)
+    paths = LabPaths(tmp_path / "lab")
+    paths.ensure()
+    assert _mode(paths.root) == PRIVATE_DIR
+
+
 def test_write_private_uses_owner_only_mode(tmp_path: Path) -> None:
     target = tmp_path / "secret"
     write_private(target, "s")

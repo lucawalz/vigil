@@ -109,7 +109,7 @@ class LabPaths:
         return self.root / "logs" / f"{name}.log"
 
     def ensure(self) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root.mkdir(mode=PRIVATE_DIR_MODE, parents=True, exist_ok=True)
         self.root.chmod(PRIVATE_DIR_MODE)
         for directory in (
             self.keys,
