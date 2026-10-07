@@ -22,7 +22,8 @@ from vigil_lab.state import (
 )
 
 DEFAULT_LAB_BRANCH = "eval/lab"
-GITHUB_REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+GITHUB_REPO_NAME_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+DOT_SEGMENTS = frozenset({".", ".."})
 LAB_TARGET = "lab"
 RUNNER_TARGET = "runner"
 HUB = "hub"
@@ -61,7 +62,7 @@ def _validate_branch(branch: str) -> None:
 
 
 def _validate_repo(repo: str) -> None:
-    if not GITHUB_REPO_NAME_RE.match(repo):
+    if not GITHUB_REPO_NAME_RE.fullmatch(repo) or DOT_SEGMENTS & set(repo.split("/")):
         raise LabError(
             f"--repo {repo!r} is not a GitHub OWNER/NAME of letters, digits, "
             "'_', '.' and '-'"

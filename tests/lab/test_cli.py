@@ -23,6 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
         (["--branch", "eval/odd branch"], "'eval/odd branch'"),
         (["--branch=-lab"], "'-lab'"),
         (["--repo", "vigil"], "'vigil'"),
+        (["--repo", "lucawalz/vigil\n"], "not a GitHub OWNER/NAME"),
+        (["--repo", "lucawalz/.."], "'lucawalz/..'"),
+        (["--repo", "./vigil"], "'./vigil'"),
     ],
 )
 def test_up_rejects_invalid_settings_before_persisting_them(
