@@ -9,8 +9,22 @@ from unittest.mock import MagicMock
 import eval.harness as harness_mod
 import httpx
 import pytest
-from eval.harness import run_one, trigger_and_wait
+from eval.harness import DEFAULT_EVAL_BRANCH, eval_branch, run_one, trigger_and_wait
 from orchestrator.models import RunRecord
+
+
+@pytest.mark.parametrize(
+    ("environ", "expected"),
+    [
+        ({"VIGIL_EVAL_BRANCH": "eval/123/k8s-1"}, "eval/123/k8s-1"),
+        ({"VIGIL_EVAL_BRANCH": ""}, DEFAULT_EVAL_BRANCH),
+        ({}, DEFAULT_EVAL_BRANCH),
+    ],
+)
+def test_eval_branch_falls_back_like_the_reset_script(
+    environ: dict[str, str], expected: str
+) -> None:
+    assert eval_branch(environ) == expected
 
 
 def _make_run_record(run_id: str = "k8s-3_1_test-model_abc1234") -> dict:

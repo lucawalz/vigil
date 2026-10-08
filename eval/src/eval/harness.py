@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,10 @@ _INJECT_ASSERT_POLL_INTERVAL_S = 5
 
 class InjectAssertionFailed(RuntimeError):
     """Raised when the cluster does not show the expected failure within the timeout."""
+
+
+def eval_branch(environ: Mapping[str, str]) -> str:
+    return environ.get("VIGIL_EVAL_BRANCH") or DEFAULT_EVAL_BRANCH
 
 
 def _kubectl(
@@ -681,7 +686,7 @@ async def run_one(
     if reset_baseline_sh.is_file():
         log.info(
             "resetting %s before %s",
-            os.environ.get("VIGIL_EVAL_BRANCH", DEFAULT_EVAL_BRANCH),
+            eval_branch(os.environ),
             scenario_id,
         )
         _run_script(reset_baseline_sh, seed, verbose=verbose)
