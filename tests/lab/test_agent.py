@@ -1,12 +1,20 @@
 import os
 import stat
 import subprocess
+import time
+from dataclasses import replace
 from pathlib import Path
 
+import pytest
+from vigil_lab import agent
 from vigil_lab.addresses import parse_address_plan
 from vigil_lab.agent import lab_env, write_lab_env, write_ssh_tools
+from vigil_lab.proc import LabError, pid_alive
 from vigil_lab.state import LabPaths, LabSettings
 
+BOUNDED_TIMEOUT_S = 20.0
+EXITING_COMMAND = ("/bin/sh", "-c", "echo token required; exit 1")
+RUNNING_COMMAND = ("/bin/sleep", "30")
 FIXTURE = Path(__file__).parent / "fixtures" / "addresses.json"
 SETTINGS = LabSettings(
     repo="example/vigil",
@@ -114,6 +122,48 @@ def test_lab_env_file_is_private_and_sources_in_bash(tmp_path: Path) -> None:
         check=True,
     ).stdout
     assert out == "/x/lab agent restart|it's"
+
+
+def _start(
+    paths: LabPaths, tmp_path: Path, command: tuple[str, ...], monkeypatch
+) -> None:
+    paths.ensure()
+    paths.webhook_secret.write_text("s3cret")
+    plan = parse_address_plan(FIXTURE.read_text())
+    settings = replace(SETTINGS, checkout=str(tmp_path))
+    monkeypatch.setattr(agent, "HEALTHZ_TIMEOUT_S", BOUNDED_TIMEOUT_S)
+    agent.start(
+        paths,
+        plan,
+        settings,
+        lab_command=LAB_COMMAND,
+        ssh_binary="/usr/bin/ssh",
+        environ=CALLER_ENV,
+        command=command,
+    )
+
+
+def test_start_reports_an_agent_that_exits_with_its_log(
+    tmp_path: Path, monkeypatch
+) -> None:
+    paths = LabPaths(tmp_path)
+    monkeypatch.setattr(agent, "_healthy", lambda: False)
+    started = time.monotonic()
+    with pytest.raises(LabError) as raised:
+        _start(paths, tmp_path, EXITING_COMMAND, monkeypatch)
+    assert time.monotonic() - started < BOUNDED_TIMEOUT_S
+    assert "token required" in str(raised.value)
+    assert str(paths.log(agent.AGENT)) in str(raised.value)
+
+
+def test_start_returns_once_the_agent_is_healthy(tmp_path: Path, monkeypatch) -> None:
+    paths = LabPaths(tmp_path)
+    monkeypatch.setattr(agent, "_healthy", lambda: True)
+    try:
+        _start(paths, tmp_path, RUNNING_COMMAND, monkeypatch)
+        assert pid_alive(paths.pid(agent.AGENT))
+    finally:
+        agent.stop(paths)
 
 
 def test_ssh_config_never_asks_for_a_password(tmp_path: Path) -> None:

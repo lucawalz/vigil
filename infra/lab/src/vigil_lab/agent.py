@@ -4,7 +4,7 @@ import os
 import shlex
 import urllib.error
 import urllib.request
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from vigil_lab.addresses import AddressPlan, LabHost
@@ -16,13 +16,14 @@ from vigil_lab.cluster import (
     ORCHESTRATOR_URL,
 )
 from vigil_lab.guest import GUEST_USER, SSH_OPTIONS
-from vigil_lab.proc import pid_alive, spawn, terminate, wait_until
+from vigil_lab.proc import LabError, pid_alive, spawn, terminate, wait_until
 from vigil_lab.qemu import LOOPBACK
 from vigil_lab.state import LabPaths, LabSettings, write_private
 
 AGENT = "agent"
 HEALTHZ_TIMEOUT_S = 180.0
 HEALTHZ_PROBE_TIMEOUT_S = 5.0
+LOG_TAIL_LINES = 20
 HTTP_OK = 200
 EXECUTABLE_MODE = 0o755
 PASSTHROUGH_PREFIXES = ("OLLAMA_", "LLM_", "ANTHROPIC_")
@@ -135,6 +136,7 @@ def start(
     lab_command: str,
     ssh_binary: str,
     environ: Mapping[str, str],
+    command: Sequence[str] = ORCHESTRATOR_COMMAND,
 ) -> None:
     write_ssh_tools(paths, plan.hosts, ssh_binary)
     (paths.root / "runs").mkdir(exist_ok=True)
@@ -149,13 +151,24 @@ def start(
     write_lab_env(paths.root / "lab.env", env)
     if not pid_alive(paths.pid(AGENT)):
         spawn(
-            ORCHESTRATOR_COMMAND,
+            command,
             pid_file=paths.pid(AGENT),
             log_file=paths.log(AGENT),
             cwd=Path(settings.checkout),
             env={**environ, **env},
         )
-    wait_until(_healthy, HEALTHZ_TIMEOUT_S, "the orchestrator /healthz")
+    pid_file = paths.pid(AGENT)
+    wait_until(
+        lambda: _healthy() or not pid_alive(pid_file),
+        HEALTHZ_TIMEOUT_S,
+        "the orchestrator /healthz",
+    )
+    if not pid_alive(pid_file):
+        log = paths.log(AGENT)
+        tail = log.read_text(errors="replace").splitlines()[-LOG_TAIL_LINES:]
+        raise LabError(
+            f"the orchestrator exited while starting, see {log}:\n" + "\n".join(tail)
+        )
 
 
 def stop(paths: LabPaths) -> None:
