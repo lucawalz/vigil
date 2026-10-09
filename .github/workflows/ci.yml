@@ -121,6 +121,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: false
       - name: Install dependencies
         run: make setup
@@ -155,6 +156,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
       - name: golangci-lint (${{ matrix.module }})
         uses: golangci/golangci-lint-action@v9
@@ -177,6 +179,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
       - name: go build and test (${{ matrix.module }})
         env:
@@ -198,6 +201,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
       - name: govulncheck (${{ matrix.module }})
         env:
