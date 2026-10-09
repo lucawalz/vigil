@@ -194,6 +194,8 @@ def install(
                 "UserKnownHostsFile=/dev/null",
                 "--ssh-option",
                 "StrictHostKeyChecking=no",
+                "--ssh-option",
+                "BatchMode=yes",
                 f"root@{qemu.LOOPBACK}",
             ],
             log_file=paths.log(f"{host.name}-install"),

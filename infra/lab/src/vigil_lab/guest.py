@@ -8,6 +8,7 @@ from vigil_lab.state import LabPaths
 GUEST_USER = "root"
 CONNECT_TIMEOUT_S = 10
 SSH_OPTIONS = (
+    "BatchMode=yes",
     "UserKnownHostsFile=/dev/null",
     "StrictHostKeyChecking=no",
     "IdentitiesOnly=yes",

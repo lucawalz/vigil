@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from vigil_lab.addresses import parse_address_plan
-from vigil_lab.agent import lab_env, write_lab_env
+from vigil_lab.agent import lab_env, write_lab_env, write_ssh_tools
 from vigil_lab.state import LabPaths, LabSettings
 
 FIXTURE = Path(__file__).parent / "fixtures" / "addresses.json"
@@ -114,3 +114,11 @@ def test_lab_env_file_is_private_and_sources_in_bash(tmp_path: Path) -> None:
         check=True,
     ).stdout
     assert out == "/x/lab agent restart|it's"
+
+
+def test_ssh_config_never_asks_for_a_password(tmp_path: Path) -> None:
+    paths = LabPaths(tmp_path)
+    paths.ensure()
+    plan = parse_address_plan(FIXTURE.read_text())
+    write_ssh_tools(paths, plan.hosts, "/usr/bin/ssh")
+    assert "  BatchMode yes\n" in (paths.root / "ssh_config").read_text()

@@ -90,6 +90,48 @@ def test_failed_start_leaves_no_partial_disk_or_token_directory(
     assert not (paths.run / f"{worker.name}-extra").exists()
 
 
+def test_install_keeps_nixos_anywhere_ssh_from_asking_for_a_password(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths = LabPaths(tmp_path)
+    paths.ensure()
+    paths.lab_key.with_suffix(".pub").write_text("ssh-ed25519 AAAA vigil-lab\n")
+    paths.k3s_token.write_text("token")
+    plan = parse_address_plan(FIXTURE.read_text())
+    ctx = LabContext(
+        paths, LINUX, X86_64_LINUX, "kvm", "flake", tmp_path, tmp_path, plan
+    )
+    worker = plan.workers[0]
+    dst = paths.disk(worker.name)
+    partial = dst.with_name(f"{dst.name}.part")
+    calls: list[list[str]] = []
+
+    def fake_run(args: Sequence[str], **_: object) -> str:
+        calls.append(list(args))
+        partial.write_bytes(b"disk")
+        return ""
+
+    class FakeProcess:
+        def wait(self, timeout: float) -> int:
+            return 0
+
+    monkeypatch.setattr(images, "run", fake_run)
+    monkeypatch.setattr(LabPaths, "serial", lambda self, name: self.run / name)
+    monkeypatch.setattr(images, "fresh_vars", lambda *_: None)
+    monkeypatch.setattr(images.qemu, "start", lambda *_, **__: FakeProcess())
+    monkeypatch.setattr(images, "wait_until", lambda *_: None)
+    monkeypatch.setattr(images.time, "sleep", lambda _: None)
+    monkeypatch.setattr(images, "_send_console", lambda *_: None)
+    monkeypatch.setattr(images, "wait_for_ssh", lambda *_: None)
+    monkeypatch.setattr(images, "probe", lambda *_: True)
+    images.install(ctx, worker, CLOSURE, dst, tmp_path / "installer.iso")
+    anywhere = next(args for args in calls if args[0] == "nixos-anywhere")
+    options = [
+        anywhere[i + 1] for i, arg in enumerate(anywhere) if arg == "--ssh-option"
+    ]
+    assert "BatchMode=yes" in options
+
+
 @pytest.mark.parametrize(
     ("platform", "expected"),
     [(DARWIN, ["/bin/cp", "-c"]), (LINUX, ["cp", "--reflink=auto"])],
@@ -124,3 +166,10 @@ def test_guest_ssh_ignores_user_config_and_targets_the_forwarded_port(
     assert args[:3] == ["ssh", "-F", "/dev/null"]
     assert args[args.index("-p") + 1] == str(worker.ssh_port)
     assert args[-2:] == ["root@127.0.0.1", "true"]
+
+
+def test_guest_ssh_never_asks_for_a_password(tmp_path: Path) -> None:
+    paths = LabPaths(tmp_path)
+    worker = parse_address_plan(FIXTURE.read_text()).workers[0]
+    args = guest_ssh_args(paths, worker, "true")
+    assert args[args.index("BatchMode=yes") - 1] == "-o"
