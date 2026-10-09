@@ -9,7 +9,7 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vigil-app-typo
+      app: vigil-app
   template:
     metadata:
       labels:
@@ -42,12 +42,12 @@ spec:
         command:
         - stress-ng
         - --vm
-        - '1'
+        - "1"
         - --vm-bytes
         - 50M
         - --vm-keep
         - --timeout
-        - '0'
+        - "0"
         resources:
           requests:
             memory: 8Mi
