@@ -547,7 +547,7 @@ jobs:
             git push origin "${RESULTS_BRANCH}"
           fi
 
-      - name: Delete cell branches
+      - name: Delete cell and agent branches
         if: always() && !(inputs.skip_destroy && inputs.target == 'hetzner')
         env:
           GH_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
@@ -555,5 +555,15 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/eval/$RUN_ID/" --jq '.[].ref' \
             | while read -r ref; do
+                gh pr list --repo "$GITHUB_REPOSITORY" --base "${ref#refs/heads/}" --state all --limit 100 \
+                  --json headRefName,isCrossRepository \
+                  --jq '.[] | select(.isCrossRepository | not) | .headRefName | select(startswith("remediation/run-"))' \
+                  | while read -r head; do
+                      if gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$head" >/dev/null; then
+                        echo "deleted refs/heads/$head"
+                      else
+                        echo "kept refs/heads/$head"
+                      fi
+                    done
                 gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/$ref" && echo "deleted $ref"
               done
