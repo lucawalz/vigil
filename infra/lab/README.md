@@ -10,7 +10,7 @@ Run from a vigil checkout:
 nix run ./infra/nixos#lab -- up                 # golden disks, VMs, k3s, Flux on branch eval/lab
 nix run ./infra/nixos#lab -- agent start        # orchestrator on http://127.0.0.1:9099
 set -a; . ${XDG_STATE_HOME:-~/.local/state}/vigil-lab/lab.env; set +a
-uv run vigil-eval run --scenario k8s-1g --seed 1 --model qwen3.5:cloud
+uv run vigil-eval run --scenario k8s-1g --seed 1 --model gpt-oss:120b
 nix run ./infra/nixos#lab -- reset              # fresh cluster from the golden disks
 nix run ./infra/nixos#lab -- down               # stop every lab process, keep the state
 nix run ./infra/nixos#lab -- destroy            # stop every lab process, delete the state

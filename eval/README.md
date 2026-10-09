@@ -19,13 +19,13 @@ Runs execute on the agent host of the eval cluster provisioned by [`infra/terraf
 Run one scenario, seed and model:
 
 ```bash
-uv run vigil-eval run --scenario k8s-1g --seed 1 --model qwen3.5:cloud
+uv run vigil-eval run --scenario k8s-1g --seed 1 --model gpt-oss:120b
 ```
 
 Sweep every scenario for the given models and seeds; the campaign pauses on provider quota exhaustion, and `--retry-failed` re-runs only failed combinations:
 
 ```bash
-uv run vigil-eval campaign --models claude-sonnet-4-6 --models deepseek-v3.2:cloud --seeds 1 --seeds 2 --seeds 3
+uv run vigil-eval campaign --models claude-sonnet-4-6 --models gpt-oss:120b --seeds 1 --seeds 2 --seeds 3
 ```
 
 Aggregate completed runs:

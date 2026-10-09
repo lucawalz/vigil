@@ -33,7 +33,7 @@ for m in mcp-servers/*/; do (cd "$m" && go install .); done
 
 | Variable | Purpose |
 |----------|---------|
-| `LLM_MODEL_NAME` | Model name, for example `qwen3.5:cloud` or `claude-sonnet-4-6` |
+| `LLM_MODEL_NAME` | Model name, for example `gpt-oss:120b` or `claude-sonnet-4-6` |
 | `ANTHROPIC_API_KEY` | API key for `claude-*` models |
 | `OLLAMA_BASE_URL`, `OLLAMA_API_KEY` | OpenAI-compatible endpoint for every other model |
 | `VIGIL_WEBHOOK_SECRET` | Bearer token required on `/webhook` |

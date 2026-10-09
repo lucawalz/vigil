@@ -20,7 +20,7 @@ Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` se
 | `TF_VAR_hcloud_token` | required | Hetzner Cloud API token |
 | `TF_VAR_github_token` | required | GitHub token for the orchestrator's pull requests and pushes; the Eval Campaign workflow maps the `VIGIL_GITHUB_TOKEN` secret to it |
 | `TF_VAR_group_name` | required | Scenario group (`k8s`, `os`, `cross`, `misc`); prefixes every resource name |
-| `TF_VAR_llm_model_name` | required | Orchestrator model, for example `qwen3.5:cloud` or `claude-sonnet-4-6` |
+| `TF_VAR_llm_model_name` | required | Orchestrator model, for example `gpt-oss:120b` or `claude-sonnet-4-6` |
 | `TF_VAR_anthropic_api_key` | empty | Required for `claude-*` models |
 | `TF_VAR_ollama_api_key`, `TF_VAR_ollama_base_url` | empty | Required for every other model (OpenAI-compatible endpoint) |
 | `TF_VAR_location` | `hel1` | `hel1`, `fsn1` or `nbg1` |
