@@ -27,5 +27,6 @@
   };
 
   services.vigilAutoReconciler.enable = true;
-  services.k3s.enable = lib.mkForce false;
+  # Enable k3s on this worker node so it can join the cluster
+  services.k3s.enable = true;
 }
