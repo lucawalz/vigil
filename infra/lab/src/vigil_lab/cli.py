@@ -132,6 +132,8 @@ def cmd_up(args: argparse.Namespace) -> None:
     cluster.ensure_scratch_clone(paths, repo, checkout)
     cluster.ensure_branch(paths.repo, settings.branch, os.environ)
     hosts = list(ctx.plan.hosts)
+    if not all(pid_alive(paths.vm_pid(host.name)) for host in hosts):
+        preflight.run_memory_preflight(ctx.platform)
     if settings.golden:
         images.ensure_golden(ctx, hosts)
     missing = [
@@ -157,6 +159,8 @@ def cmd_reset(args: argparse.Namespace) -> None:
     ctx = _context(paths)
     for host in ctx.plan.hosts:
         terminate(paths.vm_pid(host.name))
+    preflight.run_memory_preflight(ctx.platform)
+    for host in ctx.plan.hosts:
         images.clone_golden(ctx, host)
     _boot(ctx, settings)
 

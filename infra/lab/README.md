@@ -23,7 +23,7 @@ nix run ./infra/nixos#lab -- destroy            # stop every lab process, delete
 ## Requirements
 
 - Nix with flakes. The lab ignores the `builders` setting of the Nix configuration; on macOS the aarch64-linux closures build on a local `darwin.linux-builder` VM that starts and stops around each image build and needs no sudo.
-- On macOS, at least 45 percent free memory as reported by `memory_pressure` when `up` or `reset` starts (both check it), and free disk for three 10 GB sparse qcow2 working disks plus their golden copies in the state directory, the pinned installer ISO and the Nix store.
+- On macOS, at least 45 percent free memory as reported by `memory_pressure` before `up` or `reset` starts lab VMs, with the lab's own VMs stopped, and free disk for three 10 GB sparse qcow2 working disks plus their golden copies in the state directory, the pinned installer ISO and the Nix store.
 
 ## State
 

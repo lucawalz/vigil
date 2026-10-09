@@ -6,6 +6,7 @@ from vigil_lab.preflight import (
     accelerator,
     check_memory,
     guest_system,
+    run_memory_preflight,
 )
 from vigil_lab.proc import LabError
 
@@ -48,3 +49,22 @@ def test_check_memory_needs_the_named_free_percentage() -> None:
         check_memory(_memory_pressure(MIN_FREE_MEMORY_PERCENT - 1))
     with pytest.raises(LabError, match="memory_pressure"):
         check_memory("unexpected output\n")
+
+
+def test_memory_preflight_is_a_no_op_off_macos(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(command: list[str]) -> str:
+        raise AssertionError(command)
+
+    monkeypatch.setattr("vigil_lab.preflight.run", refuse)
+    run_memory_preflight("linux")
+
+
+def test_memory_preflight_on_macos_reads_memory_pressure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "vigil_lab.preflight.run",
+        lambda command: _memory_pressure(MIN_FREE_MEMORY_PERCENT - 1),
+    )
+    with pytest.raises(LabError, match=f"{MIN_FREE_MEMORY_PERCENT}%"):
+        run_memory_preflight("darwin")

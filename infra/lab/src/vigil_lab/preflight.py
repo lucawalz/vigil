@@ -61,6 +61,9 @@ def check_memory(memory_pressure_output: str) -> None:
 def run_preflight(platform: str) -> str:
     if platform != DARWIN:
         return accelerator(platform)
-    accel = accelerator(platform, hv_support=run(["sysctl", "-n", "kern.hv_support"]))
-    check_memory(run(["memory_pressure"]))
-    return accel
+    return accelerator(platform, hv_support=run(["sysctl", "-n", "kern.hv_support"]))
+
+
+def run_memory_preflight(platform: str) -> None:
+    if platform == DARWIN:
+        check_memory(run(["memory_pressure"]))
