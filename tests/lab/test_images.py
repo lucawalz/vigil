@@ -1,12 +1,15 @@
+import hashlib
 import json
+import re
 import stat
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
+from typing import Self
 
 import pytest
 from vigil_lab import images
-from vigil_lab.addresses import parse_address_plan
+from vigil_lab.addresses import LabHost, parse_address_plan
 from vigil_lab.guest import guest_ssh_args
 from vigil_lab.images import HostClosure, golden_is_current, write_extra_files
 from vigil_lab.preflight import DARWIN, LINUX
@@ -105,6 +108,7 @@ def test_install_keeps_nixos_anywhere_ssh_from_asking_for_a_password(
     dst = paths.disk(worker.name)
     partial = dst.with_name(f"{dst.name}.part")
     calls: list[list[str]] = []
+    order: list[str] = []
 
     def fake_run(args: Sequence[str], **_: object) -> str:
         calls.append(list(args))
@@ -121,15 +125,122 @@ def test_install_keeps_nixos_anywhere_ssh_from_asking_for_a_password(
     monkeypatch.setattr(images.qemu, "start", lambda *_, **__: FakeProcess())
     monkeypatch.setattr(images, "wait_until", lambda *_: None)
     monkeypatch.setattr(images.time, "sleep", lambda _: None)
-    monkeypatch.setattr(images, "_send_console", lambda *_: None)
-    monkeypatch.setattr(images, "wait_for_ssh", lambda *_: None)
+    monkeypatch.setattr(images, "_inject_key", lambda *_: order.append("key"))
+    monkeypatch.setattr(images, "wait_for_ssh", lambda *_: order.append("ssh"))
     monkeypatch.setattr(images, "probe", lambda *_: True)
     images.install(ctx, worker, CLOSURE, dst, tmp_path / "installer.iso")
+    assert order == ["key", "ssh"]
     anywhere = next(args for args in calls if args[0] == "nixos-anywhere")
     options = [
         anywhere[i + 1] for i, arg in enumerate(anywhere) if arg == "--ssh-option"
     ]
     assert "BatchMode=yes" in options
+
+
+PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIvigil vigil-lab"
+DROPPED_WRITE = 5
+KEY_FILE = "/root/.ssh/authorized_keys"
+QUOTED_KEY = re.compile(r"echo '([^']*)'")
+
+
+class FakeConsole:
+    def __init__(self, log: Path, dropping_attempts: int) -> None:
+        self.log = log
+        self.dropping_attempts = dropping_attempts
+        self.attempts = 0
+        self.attempt_chunks: list[list[bytes]] = []
+        self.received = ""
+
+    def __call__(self, *_: object) -> Self:
+        return self
+
+    def __enter__(self) -> Self:
+        self.attempts += 1
+        self.attempt_chunks.append([])
+        self.received = ""
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def connect(self, _: str) -> None:
+        return None
+
+    def sendall(self, data: bytes) -> None:
+        writes = self.attempt_chunks[-1]
+        writes.append(data)
+        lossy = self.attempts <= self.dropping_attempts
+        if lossy and len(writes) == DROPPED_WRITE:
+            return
+        self.received += data.decode()
+        with self.log.open("a") as log:
+            log.write(data.decode())
+            if self.received.endswith("\r"):
+                log.write(self.run_shell())
+
+    def run_shell(self) -> str:
+        line = self.received.rpartition(images.CLEAR_LINE)[2]
+        if images.CLEAR_LINE not in self.received:
+            return ""
+        match = QUOTED_KEY.search(line)
+        if match is None or line != images.INJECT_KEY_COMMAND.format(key=match[1]):
+            return ""
+        digest = hashlib.sha256(f"{match[1]}\n".encode()).hexdigest()
+        return f"\n{digest}  {KEY_FILE}\n"
+
+
+def _console_lab(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, dropping_attempts: int
+) -> tuple[LabPaths, FakeConsole, LabHost]:
+    paths = LabPaths(tmp_path)
+    paths.ensure()
+    monkeypatch.setattr(LabPaths, "serial", lambda self, name: self.run / name)
+    worker = parse_address_plan(FIXTURE.read_text()).workers[0]
+    console = FakeConsole(paths.serial_log(worker.name), dropping_attempts)
+    monkeypatch.setattr(images.socket, "socket", console)
+    monkeypatch.setattr(images, "CONSOLE_CHUNK_PAUSE_S", 0.0)
+    monkeypatch.setattr(images, "KEY_CONFIRM_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(images, "KEY_POLL_INTERVAL_S", 0.01)
+    return paths, console, worker
+
+
+def test_key_command_is_confirmed_on_a_lossless_console(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths, console, worker = _console_lab(monkeypatch, tmp_path, 0)
+    images._inject_key(paths, worker, PUBLIC_KEY)
+    assert console.attempts == 1
+
+
+def test_key_command_is_resent_after_loss_inside_the_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths, console, worker = _console_lab(monkeypatch, tmp_path, 1)
+    images._inject_key(paths, worker, PUBLIC_KEY)
+    assert console.attempts == 2
+
+
+def test_key_command_fails_naming_host_and_serial_log_when_always_lossy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths, console, worker = _console_lab(monkeypatch, tmp_path, 99)
+    with pytest.raises(LabError) as caught:
+        images._inject_key(paths, worker, PUBLIC_KEY)
+    assert console.attempts == images.KEY_ATTEMPTS
+    assert worker.name in str(caught.value)
+    assert str(paths.serial_log(worker.name)) in str(caught.value)
+
+
+def test_every_attempt_interrupts_then_clears_the_line_in_small_chunks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths, console, worker = _console_lab(monkeypatch, tmp_path, 1)
+    images._inject_key(paths, worker, PUBLIC_KEY)
+    assert len(console.attempt_chunks) == 2
+    for writes in console.attempt_chunks:
+        assert writes[0] == images.INTERRUPT.encode()
+        assert writes[1][:1] == images.CLEAR_LINE.encode()
+        assert all(len(chunk) <= images.CONSOLE_CHUNK_BYTES for chunk in writes)
 
 
 @pytest.mark.parametrize(

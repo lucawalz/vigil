@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import socket
@@ -43,8 +44,16 @@ INSTALLER_POWEROFF_TIMEOUT_S = 120.0
 CONSOLE_SETTLE_S = 3.0
 INJECT_KEY_COMMAND = (
     "sudo install -d -m700 /root/.ssh"
-    " && echo '{key}' | sudo tee /root/.ssh/authorized_keys > /dev/null\r"
+    " && echo '{key}' | sudo tee /root/.ssh/authorized_keys > /dev/null"
+    " && sudo sha256sum /root/.ssh/authorized_keys\r"
 )
+INTERRUPT = "\x03"
+CLEAR_LINE = "\x15"
+CONSOLE_CHUNK_BYTES = 16
+CONSOLE_CHUNK_PAUSE_S = 0.05
+KEY_ATTEMPTS = 3
+KEY_CONFIRM_TIMEOUT_S = 20.0
+KEY_POLL_INTERVAL_S = 0.5
 TOPLEVEL = "toplevel"
 DISKO_SCRIPT = "diskoScript"
 READ_ONLY_MODE = 0o444
@@ -141,11 +150,52 @@ def write_extra_files(directory: Path, token: str, authorized_key: str) -> None:
 def _send_console(path: Path, line: str) -> None:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.connect(str(path))
-        client.sendall(line.encode())
+        client.sendall(INTERRUPT.encode())
+        time.sleep(CONSOLE_CHUNK_PAUSE_S)
+        data = (CLEAR_LINE + line).encode()
+        for start in range(0, len(data), CONSOLE_CHUNK_BYTES):
+            client.sendall(data[start : start + CONSOLE_CHUNK_BYTES])
+            time.sleep(CONSOLE_CHUNK_PAUSE_S)
 
 
 def _read(path: Path) -> str:
     return path.read_text(errors="replace") if path.exists() else ""
+
+
+def _log_size(path: Path) -> int:
+    return path.stat().st_size if path.exists() else 0
+
+
+def _logged_after(path: Path, offset: int) -> bytes:
+    return path.read_bytes()[offset:] if path.exists() else b""
+
+
+def _key_confirmed(console_log: Path, offset: int, digest: str) -> bool:
+    try:
+        wait_until(
+            lambda: digest.encode() in _logged_after(console_log, offset),
+            KEY_CONFIRM_TIMEOUT_S,
+            "the installer key confirmation",
+            KEY_POLL_INTERVAL_S,
+        )
+    except LabError:
+        return False
+    return True
+
+
+def _inject_key(paths: LabPaths, host: LabHost, public_key: str) -> None:
+    console_log = paths.serial_log(host.name)
+    line = INJECT_KEY_COMMAND.format(key=public_key)
+    digest = hashlib.sha256(f"{public_key}\n".encode()).hexdigest()
+    for _ in range(KEY_ATTEMPTS):
+        offset = _log_size(console_log)
+        _send_console(paths.serial(host.name), line)
+        if _key_confirmed(console_log, offset, digest):
+            return
+    raise LabError(
+        f"the {host.name} installer console did not confirm the key command"
+        f" after {KEY_ATTEMPTS} attempts; see {console_log}"
+    )
 
 
 def install(
@@ -169,10 +219,7 @@ def install(
             f"the {host.name} installer shell",
         )
         time.sleep(CONSOLE_SETTLE_S)
-        _send_console(
-            paths.serial(host.name),
-            INJECT_KEY_COMMAND.format(key=public_key),
-        )
+        _inject_key(paths, host, public_key)
         wait_for_ssh(paths, host, INSTALLER_SSH_TIMEOUT_S)
         run(
             [
