@@ -27,6 +27,7 @@ lint-py:
 	uv run ruff format --check .
 
 lint-go:
+	golangci-lint config verify
 	@set -e; for m in $(GO_MODULES); do echo "golangci-lint $$m"; (cd $$m && golangci-lint run ./...); done
 
 lock-check:
