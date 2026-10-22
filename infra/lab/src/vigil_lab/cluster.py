@@ -48,10 +48,10 @@ CREDENTIAL_HELPER = (
     '!f() { test "$1" = get && test -n "$GITHUB_TOKEN" && '
     'printf "username=x-access-token\\npassword=%s\\n" "$GITHUB_TOKEN"; }; f'
 )
+HELPER_KEY = "credential.https://github.com.helper"
 SCRATCH_GIT_CONFIG = {
     "user.name": "eval-harness",
     "user.email": "eval@vigil.local",
-    "credential.https://github.com.helper": CREDENTIAL_HELPER,
 }
 
 
@@ -125,8 +125,15 @@ def ensure_scratch_clone(paths: LabPaths, repo: str, checkout: Path | None) -> N
         run(["git", "-C", str(paths.repo), "fetch", "--quiet", "origin"])
     else:
         run(["git", "clone", "--quiet", url, str(paths.repo)])
+    apply_scratch_git_config(paths.repo)
+
+
+def apply_scratch_git_config(repo_dir: Path) -> None:
+    config = ["git", "-C", str(repo_dir), "config"]
     for key, value in SCRATCH_GIT_CONFIG.items():
-        run(["git", "-C", str(paths.repo), "config", key, value])
+        run([*config, key, value])
+    run([*config, "--replace-all", HELPER_KEY, ""])
+    run([*config, "--add", HELPER_KEY, CREDENTIAL_HELPER])
 
 
 def ensure_branch(repo_dir: Path, branch: str, environ: Mapping[str, str]) -> None:

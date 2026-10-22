@@ -6,8 +6,11 @@ import pytest
 from vigil_lab import cluster
 from vigil_lab.addresses import parse_address_plan
 from vigil_lab.cluster import (
+    CREDENTIAL_HELPER,
     FLUX_SYNC_SCRIPT,
+    HELPER_KEY,
     RBAC_DIR,
+    apply_scratch_git_config,
     ensure_branch,
     ensure_scratch_clone,
     parse_github_repo,
@@ -112,6 +115,64 @@ def test_scratch_clone_points_an_existing_clone_at_the_requested_repo(
     set_url = ["git", "-C", str(paths.repo), "remote", "set-url", "origin"]
     assert commands[0] == [*set_url, f"https://github.com/{REPO}.git"]
     assert commands[1][3] == "fetch"
+
+
+def test_scratch_clone_resets_the_credential_helper_list_before_adding_its_own(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths = LabPaths(tmp_path)
+    (paths.repo / ".git").mkdir(parents=True)
+    commands: list[list[str]] = []
+
+    def fake_run(args: Sequence[str], **_: object) -> str:
+        commands.append(list(args))
+        return ""
+
+    monkeypatch.setattr(cluster, "run", fake_run)
+    ensure_scratch_clone(paths, REPO, None)
+    config = ["git", "-C", str(paths.repo), "config"]
+    assert [*config, "--replace-all", HELPER_KEY, ""] in commands
+    assert [*config, "--add", HELPER_KEY, CREDENTIAL_HELPER] in commands
+    assert commands.index([*config, "--replace-all", HELPER_KEY, ""]) < commands.index(
+        [*config, "--add", HELPER_KEY, CREDENTIAL_HELPER]
+    )
+
+
+def test_scratch_clone_authenticates_with_the_lab_token_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    system_helper = tmp_path / "system-helper"
+    system_helper.write_text('#!/bin/sh\nprintf "password=system-helper\\n"\n')
+    system_helper.chmod(0o755)
+    system_config = tmp_path / "system.gitconfig"
+    system_config.write_text(f"[credential]\n\thelper = {system_helper}\n")
+    global_config = tmp_path / "global.gitconfig"
+    global_config.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(system_config))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    monkeypatch.setenv("GITHUB_TOKEN", "lab-token")
+    repo = tmp_path / "scratch"
+    _git("init", "--quiet", str(repo), cwd=tmp_path)
+    apply_scratch_git_config(repo)
+    apply_scratch_git_config(repo)
+    values = subprocess.run(
+        ["git", "config", "--local", "--get-all", HELPER_KEY],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert values == f"\n{CREDENTIAL_HELPER}\n"
+    filled = subprocess.run(
+        ["git", "credential", "fill"],
+        cwd=repo,
+        input="protocol=https\nhost=github.com\n\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "password=lab-token\n" in filled
+    assert "system-helper" not in filled
 
 
 @pytest.fixture
