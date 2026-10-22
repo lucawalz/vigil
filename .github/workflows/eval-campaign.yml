@@ -111,6 +111,8 @@ jobs:
           TARGET: ${{ inputs.target }}
           VIGIL_APP_CLIENT_ID: ${{ secrets.VIGIL_APP_CLIENT_ID }}
           VIGIL_APP_PRIVATE_KEY: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          VIGIL_HARNESS_APP_CLIENT_ID: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
+          VIGIL_HARNESS_APP_PRIVATE_KEY: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
           TF_VAR_HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
           TF_VAR_LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           OPERATOR_SSH_PUBKEY: ${{ secrets.OPERATOR_SSH_PUBKEY }}
@@ -118,7 +120,7 @@ jobs:
           TF_VAR_OLLAMA_API_KEY: ${{ secrets.TF_VAR_OLLAMA_API_KEY }}
           TF_VAR_OLLAMA_BASE_URL: ${{ secrets.TF_VAR_OLLAMA_BASE_URL }}
         run: |
-          required=(VIGIL_APP_CLIENT_ID VIGIL_APP_PRIVATE_KEY TF_VAR_LLM_MODEL_NAME)
+          required=(VIGIL_APP_CLIENT_ID VIGIL_APP_PRIVATE_KEY VIGIL_HARNESS_APP_CLIENT_ID VIGIL_HARNESS_APP_PRIVATE_KEY TF_VAR_LLM_MODEL_NAME)
           if [ "$TARGET" = hetzner ]; then
             required+=(TF_VAR_HCLOUD_TOKEN OPERATOR_SSH_PUBKEY)
           fi
@@ -146,6 +148,15 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-checks: read
+
+      - name: Check the eval harness App grants
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: read
 
       - name: Check repository settings
         env:
@@ -207,18 +218,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Mint a GitHub App token
-        id: app-token
+      - name: Mint an eval harness App token
+        id: harness-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
-          private-key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
 
       - name: Create cell branch
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.harness-token.outputs.token }}
         run: |
           MAIN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
@@ -265,6 +276,8 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
           TF_VAR_github_app_client_id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          TF_VAR_harness_app_client_id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
+          TF_VAR_harness_app_private_key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
           TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
@@ -348,6 +361,8 @@ jobs:
         env:
           GITHUB_APP_CLIENT_ID: ${{ secrets.VIGIL_APP_CLIENT_ID }}
           VIGIL_APP_PRIVATE_KEY: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          VIGIL_HARNESS_APP_CLIENT_ID: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
+          VIGIL_HARNESS_APP_PRIVATE_KEY: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
           LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           ANTHROPIC_API_KEY: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
           OLLAMA_API_KEY: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
@@ -356,6 +371,9 @@ jobs:
           export GITHUB_APP_PRIVATE_KEY_FILE="$RUNNER_TEMP/github-app.pem"
           (umask 077 && printf '%s\n' "$VIGIL_APP_PRIVATE_KEY" > "$GITHUB_APP_PRIVATE_KEY_FILE")
           unset VIGIL_APP_PRIVATE_KEY
+          export VIGIL_HARNESS_APP_PRIVATE_KEY_FILE="$RUNNER_TEMP/github-harness-app.pem"
+          (umask 077 && printf '%s\n' "$VIGIL_HARNESS_APP_PRIVATE_KEY" > "$VIGIL_HARNESS_APP_PRIVATE_KEY_FILE")
+          unset VIGIL_HARNESS_APP_PRIVATE_KEY
           uv sync --locked --all-packages
           nix run ./infra/nixos#lab -- agent start
 
@@ -463,6 +481,8 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
           TF_VAR_github_app_client_id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
           TF_VAR_github_app_private_key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          TF_VAR_harness_app_client_id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
+          TF_VAR_harness_app_private_key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
           TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
@@ -568,13 +588,13 @@ jobs:
             git push origin "${RESULTS_BRANCH}"
           fi
 
-      - name: Mint a GitHub App token
-        id: app-token
+      - name: Mint an eval harness App token
+        id: harness-token
         if: always() && !(inputs.skip_destroy && inputs.target == 'hetzner')
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
-          private-key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: read
@@ -582,14 +602,14 @@ jobs:
       - name: Delete cell and agent branches
         if: always() && !(inputs.skip_destroy && inputs.target == 'hetzner')
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.harness-token.outputs.token }}
           RUN_ID: ${{ github.run_id }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/eval/$RUN_ID/" --jq '.[].ref' \
             | while read -r ref; do
                 gh pr list --repo "$GITHUB_REPOSITORY" --base "${ref#refs/heads/}" --state all --limit 100 \
                   --json headRefName,isCrossRepository \
-                  --jq '.[] | select(.isCrossRepository | not) | .headRefName | select(startswith("remediation/run-"))' \
+                  --jq '.[] | select(.isCrossRepository | not) | .headRefName | select(startswith("remediation/"))' \
                   | while read -r head; do
                       if gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$head" >/dev/null; then
                         echo "deleted refs/heads/$head"
