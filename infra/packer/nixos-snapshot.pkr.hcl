@@ -12,6 +12,7 @@ locals {
     "vigil-managed" = "true"
     "vigil-run"     = var.campaign_run_id
   }
+  build_ssh = "ssh -i ${var.ssh_private_key_file} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes"
 }
 
 source "hcloud" "nixos" {
@@ -51,7 +52,13 @@ build {
   provisioner "shell-local" {
     inline = [
       "sleep 120",
-      "until ssh -i ${var.ssh_private_key_file} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes root@${build.Host} 'systemctl is-system-running --wait || true && sync'; do sleep 15; done"
+      "until ${local.build_ssh} root@${build.Host} 'systemctl is-system-running --wait || true && sync'; do sleep 15; done"
+    ]
+  }
+
+  provisioner "shell-local" {
+    inline = [
+      "${local.build_ssh} root@${build.Host} 'systemctl stop k3s 2>/dev/null; rm -rf /var/lib/rancher/k3s/server /etc/rancher/k3s/k3s.yaml /etc/ssh/ssh_host_* /root/.ssh/id_ed25519 /root/.ssh/id_ed25519.pub && sync'"
     ]
   }
 
