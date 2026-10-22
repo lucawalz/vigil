@@ -98,10 +98,22 @@ def test_remediation_prompt_no_suspend_or_apply() -> None:
 
 
 def test_remediation_prompt_gate_failure_cleanup() -> None:
-    """Gate-failure cleanup path must reference close_pr and delete_branch."""
-    mod_source = inspect.getsource(_rem_agent_mod)
-    assert "close_pr" in mod_source
-    assert "delete_branch" in mod_source
+    """Every unsuccessful gate wait on each git path takes the cleanup path."""
+    prompt = _rem_agent_mod._SYSTEM_PROMPT
+    assert "close_pr" in prompt
+    assert "delete_branch" in prompt
+    git_commit_actions = ("git_commit_k8s", "git_commit_nix")
+    assert prompt.count("on any wait_for_gate error") == len(git_commit_actions)
+    assert prompt.count("gate_status='closed' and merge_commit_sha=None") == len(
+        git_commit_actions
+    )
+    for unsuccessful_wait in (
+        "PR closed without merge",
+        "gate check failed",
+        "PR unmergeable",
+        "gate wait ended without merge",
+    ):
+        assert unsuccessful_wait in prompt
 
 
 def test_remediation_prompt_references_affected_resources() -> None:

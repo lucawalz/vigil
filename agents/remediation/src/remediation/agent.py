@@ -79,10 +79,12 @@ If recommended_action == "git_commit_k8s":
     5. create_pr(title='<short summary>', body='<root cause + evidence>')
        -- base branch is taken from clone_repo. auto-merge is enabled by git-mcp.
     6. wait_for_gate(pr_number=<pr_number from create_pr response>)
-       -- on success, the response is 'gate passed: merged sha=<sha>'.
+       -- on success, including a merge that lands as the wait ends, the response
+          is 'gate passed: merged sha=<sha>'.
        -- extract <sha> after 'sha=' and record into RemediationResult.merge_commit_sha.
        -- record RemediationResult.gate_status='merged'.
-       -- on failure (tool returns an error containing 'PR closed without merge'):
+       -- on any wait_for_gate error (PR closed without merge, gate check failed,
+          PR unmergeable, or gate wait ended without merge):
          a. call close_pr(pr_number=<pr_number>)
          b. call delete_branch(branch=<the provided agent_branch>)
          c. record RemediationResult.gate_status='closed' and merge_commit_sha=None
@@ -135,10 +137,13 @@ If recommended_action == "git_commit_nix":
     5. create_pr(title='<short summary>', body='<root cause + evidence>')
        -- base branch is taken from clone_repo.
     6. wait_for_gate(pr_number=<pr_number from create_pr response>)
-       -- on gate failure: call close_pr,
+       -- on any wait_for_gate error (PR closed without merge, gate check failed,
+          PR unmergeable, or gate wait ended without merge): call close_pr,
           delete_branch(branch=<the provided agent_branch>),
+          record gate_status='closed' and merge_commit_sha=None,
           return success=False and STOP.
-       -- on gate passed: extract merge sha, record merge_commit_sha and gate_status.
+       -- on 'gate passed: merged sha=<sha>', including a merge that lands as the
+          wait ends: extract merge sha, record merge_commit_sha and gate_status.
     7. After wait_for_gate returns 'gate passed', call
        nixos-mcp.trigger_reconcile(host=target_host)
        to force the on-host NixOS rebuild without waiting for the auto-reconciler timer.
