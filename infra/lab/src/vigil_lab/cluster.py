@@ -44,15 +44,24 @@ KUBECONFIG_READY_TIMEOUT_S = 300.0
 NODES_READY_TIMEOUT_S = 600.0
 READY = "True"
 GIT_LS_REMOTE_NO_MATCH = 2
-CREDENTIAL_HELPER = (
-    '!f() { test "$1" = get && test -n "$GITHUB_TOKEN" && '
-    'printf "username=x-access-token\\npassword=%s\\n" "$GITHUB_TOKEN"; }; f'
-)
+CREDENTIAL_HELPER = "!git-mcp credential"
+APP_CREDENTIAL_KEYS = ("GITHUB_APP_CLIENT_ID", "GITHUB_APP_PRIVATE_KEY_FILE")
+TOKEN_CREDENTIAL_KEY = "GITHUB_TOKEN"
 HELPER_KEY = "credential.https://github.com.helper"
 SCRATCH_GIT_CONFIG = {
     "user.name": "eval-harness",
     "user.email": "eval@vigil.local",
 }
+
+
+def github_repo_url(repo: str) -> str:
+    return f"{GITHUB_URL}/{repo}.git"
+
+
+def has_github_credentials(environ: Mapping[str, str]) -> bool:
+    return bool(environ.get(TOKEN_CREDENTIAL_KEY)) or all(
+        environ.get(key) for key in APP_CREDENTIAL_KEYS
+    )
 
 
 def parse_github_repo(url: str) -> str:
@@ -119,7 +128,7 @@ def ensure_scratch_clone(paths: LabPaths, repo: str, checkout: Path | None) -> N
                 f"the lab scratch clone {scratch} lies inside the checkout {resolved}; "
                 "set XDG_STATE_HOME to a directory outside the checkout"
             )
-    url = f"{GITHUB_URL}/{repo}.git"
+    url = github_repo_url(repo)
     if (paths.repo / ".git").is_dir():
         run(["git", "-C", str(paths.repo), "remote", "set-url", "origin", url])
         run(["git", "-C", str(paths.repo), "fetch", "--quiet", "origin"])
@@ -136,7 +145,9 @@ def apply_scratch_git_config(repo_dir: Path) -> None:
     run([*config, "--add", HELPER_KEY, CREDENTIAL_HELPER])
 
 
-def ensure_branch(repo_dir: Path, branch: str, environ: Mapping[str, str]) -> None:
+def ensure_branch(
+    repo_dir: Path, branch: str, repo: str, environ: Mapping[str, str]
+) -> None:
     probe_result = subprocess.run(
         [
             "git",
@@ -158,10 +169,12 @@ def ensure_branch(repo_dir: Path, branch: str, environ: Mapping[str, str]) -> No
         raise LabError(
             f"git ls-remote for {branch} failed: {probe_result.stderr.strip()}"
         )
-    if not environ.get("GITHUB_TOKEN"):
+    if not has_github_credentials(environ):
         raise LabError(
-            f"branch {branch} does not exist on origin; export GITHUB_TOKEN with "
-            "contents write access so the lab can create it from main"
+            f"branch {branch} does not exist on origin; export "
+            f"{' and '.join(APP_CREDENTIAL_KEYS)} for a GitHub App, or "
+            f"{TOKEN_CREDENTIAL_KEY}, with contents write access so the lab "
+            "can create it from main"
         )
     run(
         [
@@ -172,7 +185,8 @@ def ensure_branch(repo_dir: Path, branch: str, environ: Mapping[str, str]) -> No
             "--quiet",
             "origin",
             f"origin/main:refs/heads/{branch}",
-        ]
+        ],
+        env={**environ, "REPO_URL": github_repo_url(repo)},
     )
 
 
@@ -276,7 +290,7 @@ def bootstrap(ctx: LabContext, settings: LabSettings) -> None:
         [
             "bash",
             str(ctx.source / FLUX_SYNC_SCRIPT),
-            f"{GITHUB_URL}/{settings.repo}.git",
+            github_repo_url(settings.repo),
             settings.branch,
             LAB_CLUSTER_PATH,
         ],

@@ -131,7 +131,7 @@ def cmd_up(args: argparse.Namespace) -> None:
     save_settings(paths, settings)
     ensure_secrets(paths)
     cluster.ensure_scratch_clone(paths, repo, checkout)
-    cluster.ensure_branch(paths.repo, settings.branch, os.environ)
+    cluster.ensure_branch(paths.repo, settings.branch, repo, os.environ)
     hosts = list(ctx.plan.hosts)
     if not all(pid_alive(paths.vm_pid(host.name)) for host in hosts):
         preflight.run_memory_preflight(ctx.platform)

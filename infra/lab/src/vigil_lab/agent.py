@@ -12,9 +12,9 @@ from vigil_lab.addresses import AddressPlan, LabHost
 from vigil_lab.cluster import (
     EVAL_RUNNER,
     FAULT_INJECTION,
-    GITHUB_URL,
     ORCHESTRATOR_PORT,
     ORCHESTRATOR_URL,
+    github_repo_url,
 )
 from vigil_lab.guest import GUEST_USER, SSH_OPTIONS
 from vigil_lab.proc import LabError, pid_alive, spawn, terminate, wait_until
@@ -32,6 +32,8 @@ PASSTHROUGH_PREFIXES = ("OLLAMA_", "LLM_", "ANTHROPIC_")
 PASSTHROUGH_KEYS = frozenset(
     {
         "GITHUB_TOKEN",
+        "GITHUB_APP_CLIENT_ID",
+        "GITHUB_APP_PRIVATE_KEY_FILE",
         "DIAGNOSIS_TIMEOUT_S",
         "REMEDIATION_TIMEOUT_S",
         "ORCHESTRATOR_RUN_TIMEOUT_S",
@@ -96,7 +98,7 @@ def lab_env(
         "VIGIL_ORCHESTRATOR_RESTART_CMD": f"{lab_command} agent restart",
         "PROM_POLLER_ENABLED": "false",
         "VIGIL_EVAL_TARGET": settings.target,
-        "REPO_URL": f"{GITHUB_URL}/{settings.repo}.git",
+        "REPO_URL": github_repo_url(settings.repo),
         "VIGIL_WEBHOOK_SECRET": webhook_secret,
         "EVAL_RUNS_DIR": str(paths.root / "runs"),
         "VIGIL_SCENARIOS_DIR": str(Path(settings.checkout) / "eval" / "scenarios"),

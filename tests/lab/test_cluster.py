@@ -1,6 +1,8 @@
+import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 from vigil_lab import cluster
@@ -138,9 +140,18 @@ def test_scratch_clone_resets_the_credential_helper_list_before_adding_its_own(
     )
 
 
-def test_scratch_clone_authenticates_with_the_lab_token_only(
+def test_scratch_clone_authenticates_through_the_git_mcp_credential_helper_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_git_mcp = fake_bin / "git-mcp"
+    fake_git_mcp.write_text(
+        '#!/bin/sh\n[ "$1 $2" = "credential get" ] || exit 0\n'
+        'printf "username=x-access-token\\npassword=%s\\n" "$GITHUB_TOKEN"\n'
+    )
+    fake_git_mcp.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
     system_helper = tmp_path / "system-helper"
     system_helper.write_text('#!/bin/sh\nprintf "password=system-helper\\n"\n')
     system_helper.chmod(0o755)
@@ -200,16 +211,51 @@ def clone_of_remote(tmp_path: Path) -> Path:
     return clone
 
 
-def test_ensure_branch_needs_a_token_to_create_a_missing_branch(
+APP_SETTINGS = {
+    "GITHUB_APP_CLIENT_ID": "Iv1.abc",
+    "GITHUB_APP_PRIVATE_KEY_FILE": "/keys/app.pem",
+}
+
+
+def test_ensure_branch_needs_credentials_to_create_a_missing_branch(
+    clone_of_remote: Path,
+) -> None:
+    with pytest.raises(LabError, match="GITHUB_APP_CLIENT_ID.*GITHUB_TOKEN"):
+        ensure_branch(clone_of_remote, "eval/lab", REPO, {})
+
+
+def test_ensure_branch_rejects_incomplete_app_settings(
     clone_of_remote: Path,
 ) -> None:
     with pytest.raises(LabError, match="GITHUB_TOKEN"):
-        ensure_branch(clone_of_remote, "eval/lab", {})
+        ensure_branch(
+            clone_of_remote,
+            "eval/lab",
+            REPO,
+            {"GITHUB_APP_CLIENT_ID": APP_SETTINGS["GITHUB_APP_CLIENT_ID"]},
+        )
 
 
+@pytest.mark.parametrize("credentials", [{"GITHUB_TOKEN": "t"}, APP_SETTINGS])
 def test_ensure_branch_creates_a_missing_branch_from_main(
-    clone_of_remote: Path,
+    clone_of_remote: Path, credentials: dict[str, str]
 ) -> None:
-    ensure_branch(clone_of_remote, "eval/lab", {"GITHUB_TOKEN": "t"})
+    ensure_branch(clone_of_remote, "eval/lab", REPO, credentials)
     assert _git("ls-remote", "--heads", "origin", "eval/lab", cwd=clone_of_remote)
-    ensure_branch(clone_of_remote, "eval/lab", {})
+    ensure_branch(clone_of_remote, "eval/lab", REPO, {})
+
+
+def test_ensure_branch_gives_the_credential_helper_the_repository_url(
+    monkeypatch: pytest.MonkeyPatch, clone_of_remote: Path
+) -> None:
+    pushes: list[Mapping[str, str] | None] = []
+
+    def fake_run(args: Sequence[str], **kwargs: Any) -> str:
+        pushes.append(kwargs.get("env"))
+        return ""
+
+    monkeypatch.setattr(cluster, "run", fake_run)
+    ensure_branch(clone_of_remote, "eval/lab", REPO, {"GITHUB_TOKEN": "t"})
+    assert pushes == [
+        {"GITHUB_TOKEN": "t", "REPO_URL": f"https://github.com/{REPO}.git"}
+    ]
