@@ -17,6 +17,7 @@ Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` se
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `TF_VAR_hcloud_token` | required | Hetzner Cloud API token |
+| `TF_VAR_operator_cidrs` | required | CIDR ranges allowed to reach SSH and the Kubernetes API, as a list such as `["203.0.113.7/32"]`; the Eval Campaign workflow passes the public address of its runner, and a local run passes the operator's address |
 | `TF_VAR_github_repository` | required | GitHub repository as `owner/name`; the Eval Campaign workflow passes the repository it runs in |
 | `TF_VAR_github_app_client_id` | required | Client ID of the GitHub App the orchestrator acts as; the Eval Campaign workflow maps the `VIGIL_APP_CLIENT_ID` secret to it |
 | `TF_VAR_github_app_private_key` | required | Private key of that App in PEM form; the Eval Campaign workflow maps the `VIGIL_APP_PRIVATE_KEY` secret to it |

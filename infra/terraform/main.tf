@@ -54,13 +54,13 @@ resource "hcloud_firewall" "vigil" {
     direction  = "in"
     protocol   = "tcp"
     port       = "22"
-    source_ips = ["0.0.0.0/0", "::/0"]
+    source_ips = var.operator_cidrs
   }
 
   rule {
     direction  = "in"
     protocol   = "tcp"
     port       = "6443"
-    source_ips = ["0.0.0.0/0", "::/0"]
+    source_ips = var.operator_cidrs
   }
 }

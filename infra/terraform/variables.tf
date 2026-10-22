@@ -4,6 +4,16 @@ variable "hcloud_token" {
   description = "Hetzner Cloud API token (set via TF_VAR_hcloud_token)"
 }
 
+variable "operator_cidrs" {
+  type        = list(string)
+  description = "CIDR ranges allowed to reach SSH and the Kubernetes API of every server (set via TF_VAR_operator_cidrs)"
+
+  validation {
+    condition     = length(var.operator_cidrs) > 0 && alltrue([for cidr in var.operator_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "operator_cidrs must list at least one valid CIDR range."
+  }
+}
+
 variable "ssh_public_key_path" {
   type    = string
   default = "~/.ssh/id_ed25519.pub"

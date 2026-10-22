@@ -264,6 +264,16 @@ jobs:
         if: inputs.target == 'hetzner'
         run: mkdir -p ~/.kube
 
+      - name: Allow the runner address through the firewall
+        if: inputs.target == 'hetzner'
+        run: |
+          RUNNER_ADDRESS=$(curl -fsS --max-time 10 --retry 3 --retry-all-errors https://api.ipify.org)
+          if [[ ! "$RUNNER_ADDRESS" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            echo "runner public IPv4 lookup returned '$RUNNER_ADDRESS'"
+            exit 1
+          fi
+          echo "TF_VAR_operator_cidrs=[\"$RUNNER_ADDRESS/32\"]" >> "$GITHUB_ENV"
+
       - name: Terraform init
         if: inputs.target == 'hetzner'
         working-directory: infra/terraform
