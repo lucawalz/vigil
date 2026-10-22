@@ -63,7 +63,7 @@ type SessionState interface {
 	CloneDir() string
 }
 
-func HandleCloneRepo(client GitClient, state SessionState, authURL string, maxBytes int) server.ToolHandlerFunc {
+func HandleCloneRepo(client GitClient, state SessionState, repoURL string, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		runID, ok := args["run_id"].(string)
@@ -83,7 +83,7 @@ func HandleCloneRepo(client GitClient, state SessionState, authURL string, maxBy
 			base = defaultBaseBranch
 		}
 
-		cloneDir, err := client.Clone(ctx, authURL, base)
+		cloneDir, err := client.Clone(ctx, repoURL, base)
 		if err != nil {
 			return toolError("HandleCloneRepo", err.Error(), hintCloneRepo), nil
 		}
@@ -509,7 +509,7 @@ func HandleDeleteBranch(client GitClient, state SessionState, protected Protecte
 	}
 }
 
-func HandleReadFile(client GitClient, state SessionState, authURL string, maxBytes int) server.ToolHandlerFunc {
+func HandleReadFile(client GitClient, state SessionState, repoURL string, maxBytes int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		branch, ok := args["branch"].(string)
@@ -522,10 +522,10 @@ func HandleReadFile(client GitClient, state SessionState, authURL string, maxByt
 		}
 		cloneDir := state.CloneDir()
 		if cloneDir == "" {
-			if authURL == "" {
+			if repoURL == "" {
 				return mcp.NewToolResultError("HandleReadFile: session not initialised; call clone_repo first"), nil
 			}
-			dir, err := client.Clone(ctx, authURL, branch)
+			dir, err := client.Clone(ctx, repoURL, branch)
 			if err != nil {
 				return toolError("HandleReadFile", "auto-clone: "+err.Error(), hintCloneRepo), nil
 			}

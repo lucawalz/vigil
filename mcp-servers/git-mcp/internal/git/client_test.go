@@ -2,44 +2,127 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/auth"
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/config"
 )
 
-func TestNewRealGitClient_implementsInterface(t *testing.T) {
-	cfg := &config.Config{
-		GitHubToken: "test-token",
-		RepoURL:     "https://github.com/lucawalz/vigil.git",
-	}
-	var _ = NewRealGitClient(cfg)
+const testRepoURL = "https://github.com/test/test.git"
+
+func newTestClient(token string) GitClient {
+	return NewRealGitClient(&config.Config{RepoURL: testRepoURL}, auth.Identity{
+		Token:       auth.Static(token),
+		AuthorName:  "agent[bot]",
+		AuthorEmail: "1+agent[bot]@users.noreply.github.com",
+	})
 }
 
-func TestRealGitClient_errorPathsSanitiseURL(t *testing.T) {
-	cfg := &config.Config{
-		GitHubToken: "supersecret",
-		RepoURL:     "https://github.com/lucawalz/vigil.git",
+func TestSanitiseAuthError_redactsToken(t *testing.T) {
+	err := sanitiseAuthError(errors.New("auth failed for supersecret"), "supersecret")
+	if strings.Contains(err.Error(), "supersecret") || !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("token not redacted: %v", err)
 	}
-	c := NewRealGitClient(cfg)
-	ctx := context.Background()
+	if got := sanitiseAuthError(errors.New("plain"), ""); got.Error() != "plain" {
+		t.Errorf("empty token altered message: %v", got)
+	}
+}
 
-	authURL := cfg.AuthURL()
-
-	_, err := c.Clone(ctx, authURL, "")
+func TestRealGitClient_cloneErrorOmitsToken(t *testing.T) {
+	c := newTestClient("supersecret")
+	_, err := c.Clone(context.Background(), filepath.Join(t.TempDir(), "missing"), "")
 	if err == nil {
 		t.Fatal("Clone: expected error, got nil")
 	}
 	if strings.Contains(err.Error(), "supersecret") {
 		t.Errorf("Clone: error leaks token: %v", err)
 	}
-	if strings.Contains(err.Error(), authURL) {
-		t.Errorf("Clone: error leaks authURL: %v", err)
+}
+
+func TestRevertCommit_authorsAsIdentity(t *testing.T) {
+	remoteDir, cloneDir := setupRepoWithRemote(t)
+	workDir := t.TempDir()
+	mustRun(t, workDir, "git", "clone", remoteDir, ".")
+	if err := os.WriteFile(filepath.Join(workDir, "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, workDir, "git", "add", "f.txt")
+	mustRun(t, workDir, "git", "commit", "-m", "add f")
+	mustRun(t, workDir, "git", "push", "origin", "main")
+	out, err := exec.Command("git", "-C", workDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := newTestClient("tok").RevertCommit(context.Background(), cloneDir, strings.TrimSpace(string(out)), "main"); err != nil {
+		t.Fatalf("RevertCommit: %v", err)
+	}
+	author, err := exec.Command("git", "-C", cloneDir, "log", "-1", "--format=%an <%ae>|%cn <%ce>").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "agent[bot] <1+agent[bot]@users.noreply.github.com>"
+	if got := strings.TrimSpace(string(author)); got != want+"|"+want {
+		t.Errorf("revert author|committer = %q, want %q for both", got, want)
 	}
 }
+
+func TestCommitFiles_authorsAsIdentity(t *testing.T) {
+	_, cloneDir := setupRepoWithRemote(t)
+	if err := os.WriteFile(filepath.Join(cloneDir, "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newTestClient("tok").CommitFiles(context.Background(), cloneDir, "main", "msg"); err != nil {
+		t.Fatalf("CommitFiles: %v", err)
+	}
+	author, err := exec.Command("git", "-C", cloneDir, "log", "-1", "--format=%an <%ae>").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(author)); got != "agent[bot] <1+agent[bot]@users.noreply.github.com>" {
+		t.Errorf("commit author = %q", got)
+	}
+}
+
+func TestCloneRepoHandler_cloneConfigHoldsNoToken(t *testing.T) {
+	const sentinel = "SECRET_TOKEN_FIXTURE"
+	remoteDir, _ := setupRepoWithRemote(t)
+	state := &cloneOnlyState{}
+	handler := HandleCloneRepo(newTestClient(sentinel), state, remoteDir, config.MaxOutputBytesDefault)
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"run_id": "run-1"}
+	result, err := handler(context.Background(), req)
+	if err != nil || result.IsError {
+		t.Fatalf("clone failed: %v %v", err, result.Content)
+	}
+	defer func() { _ = os.RemoveAll(state.dir) }()
+	gitConfig, err := os.ReadFile(filepath.Join(state.dir, ".git", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(gitConfig), sentinel) {
+		t.Errorf(".git/config holds the token:\n%s", gitConfig)
+	}
+}
+
+type cloneOnlyState struct{ dir string }
+
+func (s *cloneOnlyState) BeginSession(_, cloneDir string) { s.dir = cloneDir }
+func (s *cloneOnlyState) Branch() (string, string)        { return "", s.dir }
+func (s *cloneOnlyState) SetBranch(string)                {}
+func (s *cloneOnlyState) BaseBranch() string              { return "" }
+func (s *cloneOnlyState) SetBaseBranch(string)            {}
+func (s *cloneOnlyState) SetLastCommit(string)            {}
+func (s *cloneOnlyState) RunID() string                   { return "" }
+func (s *cloneOnlyState) CloneDir() string                { return s.dir }
 
 func mustRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
@@ -87,8 +170,7 @@ func TestRevertCommit_FetchesBeforeRevert(t *testing.T) {
 	mustRun(t, cloneDir, "git", "config", "user.email", "test@test")
 	mustRun(t, cloneDir, "git", "config", "user.name", "test")
 
-	cfg := &config.Config{RepoURL: "https://github.com/test/test.git"}
-	c := NewRealGitClient(cfg)
+	c := newTestClient("tok")
 	revertSHA, err := c.RevertCommit(context.Background(), cloneDir, sha, "main")
 	if err != nil {
 		t.Fatalf("RevertCommit: %v", err)
@@ -127,8 +209,7 @@ func TestRevertCommit_PushesRevertedContentToOrigin(t *testing.T) {
 	mustRun(t, cloneDir, "git", "config", "user.email", "test@test")
 	mustRun(t, cloneDir, "git", "config", "user.name", "test")
 
-	cfg := &config.Config{RepoURL: "https://github.com/test/test.git"}
-	c := NewRealGitClient(cfg)
+	c := newTestClient("tok")
 	if _, err := c.RevertCommit(context.Background(), cloneDir, badSHA, "main"); err != nil {
 		t.Fatalf("RevertCommit: %v", err)
 	}
@@ -146,8 +227,7 @@ func TestRevertCommit_FetchFailureReturnsClearError(t *testing.T) {
 	mustRun(t, cloneDir, "git", "remote", "add", "origin", "/nonexistent/path")
 	mustRun(t, cloneDir, "git", "commit", "--allow-empty", "-m", "init")
 
-	cfg := &config.Config{RepoURL: "https://github.com/test/test.git"}
-	c := NewRealGitClient(cfg)
+	c := newTestClient("tok")
 	_, err := c.RevertCommit(context.Background(), cloneDir, "deadbeef", "main")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -163,8 +243,7 @@ func TestCreateBranch_ResetsToFetchedBase(t *testing.T) {
 	mustRun(t, cloneDir, "git", "config", "user.email", "test@test")
 	mustRun(t, cloneDir, "git", "config", "user.name", "test")
 
-	cfg := &config.Config{RepoURL: "https://github.com/test/test.git"}
-	c := NewRealGitClient(cfg)
+	c := newTestClient("tok")
 
 	if err := c.CreateBranch(context.Background(), cloneDir, "remediation/run-x", "main"); err != nil {
 		t.Fatalf("CreateBranch attempt-1: %v", err)
@@ -215,8 +294,7 @@ func TestCreateBranch_FetchFailureReturnsClearError(t *testing.T) {
 	mustRun(t, cloneDir, "git", "remote", "add", "origin", "/nonexistent/path")
 	mustRun(t, cloneDir, "git", "commit", "--allow-empty", "-m", "init")
 
-	cfg := &config.Config{RepoURL: "https://github.com/test/test.git"}
-	c := NewRealGitClient(cfg)
+	c := newTestClient("tok")
 	err := c.CreateBranch(context.Background(), cloneDir, "remediation/run-z", "main")
 	if err == nil {
 		t.Fatal("expected error, got nil")

@@ -16,6 +16,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcptest"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/auth"
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/config"
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/git"
 	gitserver "github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/server"
@@ -320,7 +321,7 @@ func TestCloneRepoHandler_NoTokenInOutput(t *testing.T) {
 		mcp.WithString("run_id", mcp.Required()),
 		mcp.WithString("base_branch"),
 	)
-	handler := git.HandleCloneRepo(fake, state, cfg.AuthURL(), testMaxBytes)
+	handler := git.HandleCloneRepo(fake, state, cfg.RepoURL, testMaxBytes)
 
 	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "run-001"})
 	if err != nil {
@@ -1792,7 +1793,7 @@ func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
 		t.Fatalf("CallTool error: %v", err)
 	}
 	if !result.IsError {
-		t.Error("expected IsError=true when session not initialised and no authURL")
+		t.Error("expected IsError=true when session not initialised and no repo URL")
 	}
 	text := result.Content[0].(mcp.TextContent).Text
 	if !strings.Contains(text, "clone_repo") {
@@ -2122,7 +2123,7 @@ func TestRealGitClient_RevertCommitFetchError(t *testing.T) {
 		GitHubToken: "tok",
 		RepoURL:     "https://github.com/x/y.git",
 	}
-	client := git.NewRealGitClient(cfg)
+	client := git.NewRealGitClient(cfg, auth.Identity{Token: auth.Static(cfg.GitHubToken)})
 
 	_, err := client.RevertCommit(context.Background(), repoDir, "deadbeef", "chore/eval-cluster-baseline")
 	if err == nil {

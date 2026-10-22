@@ -90,7 +90,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			),
 			mcp.WithOutputSchema[git.TextResult](),
 		),
-		git.HandleCloneRepo(client, s, cfg.AuthURL(), cfg.MaxOutputBytes),
+		git.HandleCloneRepo(client, s, cfg.RepoURL, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
@@ -233,7 +233,7 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 			mcp.WithString("path", mcp.Required(), mcp.Description("Repo-relative file path")),
 			mcp.WithOutputSchema[git.ReadFileResult](),
 		),
-		git.HandleReadFile(client, s, cfg.AuthURL(), cfg.MaxOutputBytes),
+		git.HandleReadFile(client, s, cfg.RepoURL, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(

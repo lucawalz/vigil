@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,20 +22,18 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gogithub "github.com/google/go-github/v86/github"
-	"golang.org/x/oauth2"
 
+	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/auth"
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/config"
 )
 
 const (
-	commitAuthorName  = "vigil-remediation"
-	commitAuthorEmail = "remediation@vigil.local"
 	defaultBaseBranch = "main"
 	gitAccessToken    = "x-access-token"
 )
 
 type GitClient interface {
-	Clone(ctx context.Context, authURL, baseBranch string) (cloneDir string, err error)
+	Clone(ctx context.Context, repoURL, baseBranch string) (cloneDir string, err error)
 	CreateBranch(ctx context.Context, cloneDir, branch, baseBranch string) error
 	WriteFile(ctx context.Context, cloneDir, manifestPath, content string) error
 	CommitFiles(ctx context.Context, cloneDir, branch, message string) (sha string, err error)
@@ -53,45 +52,45 @@ type GitClient interface {
 
 type realGitClient struct {
 	gh    *gogithub.Client
-	cfg   *config.Config
+	id    auth.Identity
 	owner string
 	repo  string
 }
 
-func NewRealGitClient(cfg *config.Config) GitClient {
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: cfg.GitHubToken})
-	httpClient := oauth2.NewClient(context.Background(), ts)
-	gh := gogithub.NewClient(httpClient)
-
-	owner, repo := parseRepoURL(cfg.RepoURL)
+func NewRealGitClient(cfg *config.Config, id auth.Identity) GitClient {
+	owner, repo, err := cfg.Repository()
+	if err != nil {
+		log.Fatalf("git-mcp: %v", err)
+	}
 	return &realGitClient{
-		gh:    gh,
-		cfg:   cfg,
+		gh:    gogithub.NewClient(id.Token.HTTPClient()),
+		id:    id,
 		owner: owner,
 		repo:  repo,
 	}
 }
 
-func parseRepoURL(repoURL string) (owner, repo string) {
-	url := repoURL
-	url = strings.TrimPrefix(url, "https://github.com/")
-	url = strings.TrimSuffix(url, ".git")
-	parts := strings.SplitN(url, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		log.Fatalf("git-mcp: cannot parse REPO_URL %q - expected https://github.com/owner/repo.git", repoURL)
+func sanitiseAuthError(err error, token string) error {
+	if err == nil || token == "" {
+		return err
 	}
-	return parts[0], parts[1]
-}
-
-func sanitiseAuthError(err error, authURL string) error {
-	if err == nil {
-		return nil
-	}
-	msg := strings.ReplaceAll(err.Error(), authURL, "[redacted]")
+	msg := strings.ReplaceAll(err.Error(), token, "[redacted]")
 	return fmt.Errorf("%s", msg) //nolint:err113
 }
 
-func (c *realGitClient) Clone(ctx context.Context, authURL, baseBranch string) (string, error) {
+func (c *realGitClient) basicAuth(ctx context.Context) (*githttp.BasicAuth, error) {
+	token, err := c.id.Token(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("github token: %w", err)
+	}
+	return &githttp.BasicAuth{Username: gitAccessToken, Password: token}, nil
+}
+
+func (c *realGitClient) Clone(ctx context.Context, repoURL, baseBranch string) (string, error) {
+	basicAuth, err := c.basicAuth(ctx)
+	if err != nil {
+		return "", fmt.Errorf("clone: %w", err)
+	}
 	dir, err := os.MkdirTemp("", "git-mcp-*")
 	if err != nil {
 		return "", fmt.Errorf("clone: create temp dir: %w", err)
@@ -102,7 +101,8 @@ func (c *realGitClient) Clone(ctx context.Context, authURL, baseBranch string) (
 	}
 
 	opts := &git.CloneOptions{
-		URL:          authURL,
+		URL:          repoURL,
+		Auth:         basicAuth,
 		Depth:        1,
 		SingleBranch: false,
 	}
@@ -112,7 +112,7 @@ func (c *realGitClient) Clone(ctx context.Context, authURL, baseBranch string) (
 	_, err = git.PlainCloneContext(ctx, dir, false, opts)
 	if err != nil {
 		_ = os.RemoveAll(dir)
-		return "", sanitiseAuthError(fmt.Errorf("clone: %w", err), authURL)
+		return "", sanitiseAuthError(fmt.Errorf("clone: %w", err), basicAuth.Password)
 	}
 	return dir, nil
 }
@@ -123,30 +123,34 @@ func (c *realGitClient) CreateBranch(ctx context.Context, cloneDir, branch, base
 	}
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
-		return sanitiseAuthError(fmt.Errorf("create_branch: open repo: %w", err), c.cfg.AuthURL())
+		return fmt.Errorf("create_branch: open repo: %w", err)
 	}
 	wt, err := r.Worktree()
 	if err != nil {
-		return sanitiseAuthError(fmt.Errorf("create_branch: worktree: %w", err), c.cfg.AuthURL())
+		return fmt.Errorf("create_branch: worktree: %w", err)
 	}
 
+	basicAuth, err := c.basicAuth(ctx)
+	if err != nil {
+		return fmt.Errorf("create_branch: %w", err)
+	}
 	fetchErr := r.FetchContext(ctx, &git.FetchOptions{
 		RefSpecs: []gitconfig.RefSpec{
 			gitconfig.RefSpec("refs/heads/" + baseBranch + ":refs/remotes/origin/" + baseBranch),
 		},
-		Auth: &githttp.BasicAuth{Username: gitAccessToken, Password: c.cfg.GitHubToken},
+		Auth: basicAuth,
 	})
 	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
-		return sanitiseAuthError(fmt.Errorf("create_branch: fetch base %s: %w", baseBranch, fetchErr), c.cfg.AuthURL())
+		return sanitiseAuthError(fmt.Errorf("create_branch: fetch base %s: %w", baseBranch, fetchErr), basicAuth.Password)
 	}
 
 	ref, err := r.Reference(plumbing.NewRemoteReferenceName("origin", baseBranch), true)
 	if err != nil {
-		return sanitiseAuthError(fmt.Errorf("create_branch: resolve base %s: %w", baseBranch, err), c.cfg.AuthURL())
+		return fmt.Errorf("create_branch: resolve base %s: %w", baseBranch, err)
 	}
 
 	if err := wt.Reset(&git.ResetOptions{Mode: git.HardReset, Commit: ref.Hash()}); err != nil {
-		return sanitiseAuthError(fmt.Errorf("create_branch: reset to base %s: %w", baseBranch, err), c.cfg.AuthURL())
+		return fmt.Errorf("create_branch: reset to base %s: %w", baseBranch, err)
 	}
 
 	if err := wt.Checkout(&git.CheckoutOptions{
@@ -154,7 +158,7 @@ func (c *realGitClient) CreateBranch(ctx context.Context, cloneDir, branch, base
 		Create: true,
 		Keep:   false,
 	}); err != nil {
-		return sanitiseAuthError(fmt.Errorf("create_branch: checkout: %w", err), c.cfg.AuthURL())
+		return fmt.Errorf("create_branch: checkout: %w", err)
 	}
 	return nil
 }
@@ -173,24 +177,24 @@ func (c *realGitClient) WriteFile(_ context.Context, cloneDir, manifestPath, con
 func (c *realGitClient) CommitFiles(_ context.Context, cloneDir, _ string, message string) (string, error) {
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("commit_files: open repo: %w", err), c.cfg.AuthURL())
+		return "", fmt.Errorf("commit_files: open repo: %w", err)
 	}
 	wt, err := r.Worktree()
 	if err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("commit_files: worktree: %w", err), c.cfg.AuthURL())
+		return "", fmt.Errorf("commit_files: worktree: %w", err)
 	}
 	if err := wt.AddGlob("."); err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("commit_files: add: %w", err), c.cfg.AuthURL())
+		return "", fmt.Errorf("commit_files: add: %w", err)
 	}
 	hash, err := wt.Commit(message, &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  commitAuthorName,
-			Email: commitAuthorEmail,
+			Name:  c.id.AuthorName,
+			Email: c.id.AuthorEmail,
 			When:  time.Now(),
 		},
 	})
 	if err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("commit_files: commit: %w", err), c.cfg.AuthURL())
+		return "", fmt.Errorf("commit_files: commit: %w", err)
 	}
 	return hash.String(), nil
 }
@@ -200,17 +204,18 @@ func (c *realGitClient) Push(ctx context.Context, cloneDir, branch string) error
 	if err != nil {
 		return fmt.Errorf("push: open repo: %w", err)
 	}
+	basicAuth, err := c.basicAuth(ctx)
+	if err != nil {
+		return fmt.Errorf("push: %w", err)
+	}
 	refSpec := gitconfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))
 	err = r.PushContext(ctx, &git.PushOptions{
 		RemoteName: "origin",
-		Auth: &githttp.BasicAuth{
-			Username: gitAccessToken,
-			Password: c.cfg.GitHubToken,
-		},
-		RefSpecs: []gitconfig.RefSpec{refSpec},
+		Auth:       basicAuth,
+		RefSpecs:   []gitconfig.RefSpec{refSpec},
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
-		return sanitiseAuthError(fmt.Errorf("push: %w", err), c.cfg.AuthURL())
+		return sanitiseAuthError(fmt.Errorf("push: %w", err), basicAuth.Password)
 	}
 	return nil
 }
@@ -364,11 +369,15 @@ func (c *realGitClient) ReadFile(ctx context.Context, cloneDir, branch, path str
 	if err != nil {
 		return "", fmt.Errorf("read_file: open repo: %w", err)
 	}
+	basicAuth, err := c.basicAuth(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read_file: %w", err)
+	}
 	fetchErr := r.FetchContext(ctx, &git.FetchOptions{
 		RefSpecs: []gitconfig.RefSpec{
 			gitconfig.RefSpec("refs/heads/" + branch + ":refs/remotes/origin/" + branch),
 		},
-		Auth: &githttp.BasicAuth{Username: gitAccessToken, Password: c.cfg.GitHubToken},
+		Auth: basicAuth,
 	})
 	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
 		return "", fmt.Errorf("branch not found: %s", branch)
@@ -404,33 +413,48 @@ func (c *realGitClient) ResolveManifestPath(_ context.Context, cloneDir, kustomi
 
 // go-git v5 does not expose a native Revert; fall back to the git binary.
 func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (string, error) {
-	fetchCmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "fetch", "origin", branch)
-	if out, err := fetchCmd.CombinedOutput(); err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: fetch: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
+	token, err := c.id.Token(ctx)
+	if err != nil {
+		return "", fmt.Errorf("revert_commit: github token: %w", err)
 	}
-
-	resetCmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "reset", "--hard", "origin/"+branch)
-	if out, err := resetCmd.CombinedOutput(); err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: reset: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
+	env := c.gitEnv(token)
+	steps := []struct {
+		name string
+		args []string
+	}{
+		{"fetch", []string{"fetch", "origin", branch}},
+		{"reset", []string{"reset", "--hard", "origin/" + branch}},
+		{"git revert", []string{"revert", "--no-edit", mergeCommitSHA}},
+		{"push", []string{"push", "origin", "HEAD:" + branch}},
 	}
-
-	cmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "revert", "--no-edit", mergeCommitSHA)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: git revert: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
-	}
-
-	pushCmd := exec.CommandContext(ctx, "git", "-C", cloneDir, "push", "origin", "HEAD:"+branch)
-	if out, err := pushCmd.CombinedOutput(); err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: push: %w: %s", err, strings.TrimSpace(string(out))), c.cfg.AuthURL())
+	for _, step := range steps {
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", cloneDir}, step.args...)...)
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", sanitiseAuthError(fmt.Errorf("revert_commit: %s: %w: %s", step.name, err, strings.TrimSpace(string(out))), token)
+		}
 	}
 
 	r, err := git.PlainOpen(cloneDir)
 	if err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: open repo: %w", err), c.cfg.AuthURL())
+		return "", fmt.Errorf("revert_commit: open repo: %w", err)
 	}
 	head, err := r.Head()
 	if err != nil {
-		return "", sanitiseAuthError(fmt.Errorf("revert_commit: read HEAD after revert: %w", err), c.cfg.AuthURL())
+		return "", fmt.Errorf("revert_commit: read HEAD after revert: %w", err)
 	}
 	return head.Hash().String(), nil
+}
+
+func (c *realGitClient) gitEnv(token string) []string {
+	credentials := base64.StdEncoding.EncodeToString([]byte(gitAccessToken + ":" + token))
+	return append(os.Environ(),
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=http."+config.GitHubURLPrefix+".extraheader",
+		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic "+credentials,
+		"GIT_AUTHOR_NAME="+c.id.AuthorName,
+		"GIT_AUTHOR_EMAIL="+c.id.AuthorEmail,
+		"GIT_COMMITTER_NAME="+c.id.AuthorName,
+		"GIT_COMMITTER_EMAIL="+c.id.AuthorEmail,
+	)
 }
