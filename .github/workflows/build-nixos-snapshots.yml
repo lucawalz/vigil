@@ -74,6 +74,7 @@ jobs:
           PKR_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
           PKR_VAR_role: ${{ matrix.role }}
           PKR_VAR_nixos_commit_sha: ${{ github.sha }}
+          PKR_VAR_github_repository: ${{ github.repository }}
           PKR_VAR_nixos_hash: ${{ steps.hash.outputs.nixos_hash }}
           PKR_VAR_ssh_private_key_file: /tmp/packer_key
           PKR_VAR_campaign_run_id: ${{ github.run_id }}

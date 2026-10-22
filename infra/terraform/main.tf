@@ -33,6 +33,7 @@ locals {
     "vigil-managed" = "true"
     "vigil-run"     = var.campaign_run_id
   }
+  github_repository_url = "https://github.com/${var.github_repository}"
 }
 
 resource "hcloud_network" "vigil" {

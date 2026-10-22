@@ -234,6 +234,7 @@ resource "null_resource" "worker_nixos_config" {
     worker_1_ip = hcloud_server.worker_1.ipv4_address
     worker_2_ip = hcloud_server.worker_2.ipv4_address
     branch      = var.vigil_branch
+    repository  = var.github_repository
   }
 
   provisioner "local-exec" {
@@ -242,7 +243,7 @@ resource "null_resource" "worker_nixos_config" {
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$IP \
           "mkdir -p /etc/vigil && echo '${var.vigil_branch}' > /etc/vigil/branch
           if [ ! -d /opt/vigil/.git ]; then
-            git clone --branch '${var.vigil_branch}' https://github.com/lucawalz/vigil /opt/vigil
+            git clone --branch '${var.vigil_branch}' '${local.github_repository_url}' /opt/vigil
           else
             cd /opt/vigil && git fetch origin && git checkout '${var.vigil_branch}' && git reset --hard origin/'${var.vigil_branch}'
           fi
@@ -290,7 +291,7 @@ resource "local_sensitive_file" "vigil_env" {
   content         = <<-ENV
     VIGIL_WEBHOOK_SECRET=${data.sops_file.vigil_webhook_secret.data["stringData.token"]}
     GITHUB_TOKEN=${var.github_token}
-    REPO_URL=https://github.com/lucawalz/vigil.git
+    REPO_URL=${local.github_repository_url}.git
     %{~if var.anthropic_api_key != ""~}
     ANTHROPIC_API_KEY=${var.anthropic_api_key}
     %{~endif~}
@@ -324,6 +325,7 @@ resource "null_resource" "vigil_agent_setup" {
   triggers = {
     agent_id              = hcloud_server.agent.id
     branch                = var.vigil_branch
+    repository            = var.github_repository
     webhook_secret_sha    = sha256(data.sops_file.vigil_webhook_secret.data["stringData.token"])
     ollama_api_key_sha    = sha256(var.ollama_api_key)
     ollama_base_url_sha   = sha256(var.ollama_base_url)
@@ -336,7 +338,7 @@ resource "null_resource" "vigil_agent_setup" {
     command = <<-EOF
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.agent.ipv4_address} \
-        "mkdir -p /etc/vigil && echo '${var.vigil_branch}' > /etc/vigil/branch"
+        "mkdir -p /etc/vigil && echo '${var.vigil_branch}' > /etc/vigil/branch && echo '${local.github_repository_url}' > /etc/vigil/repo_url"
       scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         ${local_sensitive_file.vigil_env.filename} \
         root@${hcloud_server.agent.ipv4_address}:/etc/vigil/env

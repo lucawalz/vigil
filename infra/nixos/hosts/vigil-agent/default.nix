@@ -62,7 +62,7 @@ in
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
     wantedBy = [ "multi-user.target" ];
-    unitConfig.ConditionPathExists = "/etc/vigil/branch";
+    unitConfig.ConditionPathExists = [ "/etc/vigil/branch" "/etc/vigil/repo_url" ];
     environment = {
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_PREFERENCE = "only-system";
@@ -73,9 +73,10 @@ in
       ExecStart = pkgs.writeShellScript "vigil-setup" ''
         set -euo pipefail
         BRANCH=$(cat /etc/vigil/branch)
+        REPO_URL=$(cat /etc/vigil/repo_url)
         if [ ! -d /root/vigil/.git ]; then
           ${pkgs.git}/bin/git clone --branch "$BRANCH" \
-            https://github.com/lucawalz/vigil /root/vigil
+            "$REPO_URL" /root/vigil
         else
           cd /root/vigil
           ${pkgs.git}/bin/git fetch origin "$BRANCH"

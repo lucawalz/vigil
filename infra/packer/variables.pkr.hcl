@@ -18,6 +18,19 @@ variable "nixos_commit_sha" {
   description = "Git commit SHA pinning the NixOS flake URL used by nixos-anywhere"
 }
 
+variable "github_repository" {
+  type        = string
+  description = "GitHub repository (owner/name) that holds the NixOS flake"
+
+  validation {
+    condition = (
+      can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository)) &&
+      length(setintersection(split("/", var.github_repository), [".", ".."])) == 0
+    )
+    error_message = "The github_repository must have the form owner/name, without . or .. segments."
+  }
+}
+
 variable "nixos_hash" {
   type        = string
   description = "Git tree hash of infra/nixos/ - used as snapshot label for cache invalidation"

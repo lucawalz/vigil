@@ -19,6 +19,19 @@ variable "vigil_branch" {
   default = "chore/eval-cluster-baseline"
 }
 
+variable "github_repository" {
+  type        = string
+  description = "GitHub repository (owner/name) that Flux, the hosts and the orchestrator track"
+
+  validation {
+    condition = (
+      can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository)) &&
+      length(setintersection(split("/", var.github_repository), [".", ".."])) == 0
+    )
+    error_message = "github_repository must have the form owner/name, without . or .. segments."
+  }
+}
+
 variable "github_token" {
   type        = string
   sensitive   = true

@@ -9,7 +9,7 @@ Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` se
 - One NixOS snapshot per role in that project, labelled `vigil-role=control-plane-1`, `worker-1`, `worker-2` and `agent` plus `vigil-run=<run id>`. The Eval Campaign workflow builds them for each campaign through the Build NixOS Snapshots workflow, with Packer from [`infra/packer/`](../packer/).
 - The SOPS age private key for the recipient in [`infra/overlays/hetzner/.sops.yaml`](../overlays/hetzner/.sops.yaml), exported as `SOPS_AGE_KEY_FILE` or `SOPS_AGE_KEY`. Terraform decrypts the orchestrator webhook secret with it.
 - An SSH key pair, `~/.ssh/id_ed25519` by default (`ssh_public_key_path` and `ssh_private_key_path` override it), and an existing `~/.kube/` directory.
-- A GitHub token with write access to `lucawalz/vigil`, the repository that Flux, the hosts and the scenario scripts track.
+- A GitHub token with write access to the repository in `github_repository`, which Flux, the hosts and the scenario scripts track.
 
 ## Variables
 
@@ -18,6 +18,7 @@ Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` se
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `TF_VAR_hcloud_token` | required | Hetzner Cloud API token |
+| `TF_VAR_github_repository` | required | GitHub repository as `owner/name`; the Eval Campaign workflow passes the repository it runs in |
 | `TF_VAR_github_token` | required | GitHub token for the orchestrator's pull requests and pushes; the Eval Campaign workflow maps the `VIGIL_GITHUB_TOKEN` secret to it |
 | `TF_VAR_group_name` | required | Scenario group (`k8s`, `os`, `cross`, `misc`); prefixes every resource name |
 | `TF_VAR_llm_model_name` | required | Orchestrator model, for example `gpt-oss:120b` or `claude-sonnet-4-6` |

@@ -3,13 +3,14 @@ resource "null_resource" "flux_bootstrap" {
 
   triggers = {
     branch           = var.vigil_branch
+    repository       = var.github_repository
     control_plane_id = hcloud_server.control_plane.id
   }
 
   provisioner "local-exec" {
     command = <<-EOF
       nix shell nixpkgs#fluxcd nixpkgs#kubectl nixpkgs#bash --command bash ${path.module}/../scripts/flux-sync.sh \
-        https://github.com/lucawalz/vigil.git \
+        '${local.github_repository_url}.git' \
         '${var.vigil_branch}' \
         ./infra/overlays/hetzner/kubernetes/clusters/hetzner
     EOF

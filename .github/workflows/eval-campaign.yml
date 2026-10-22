@@ -160,6 +160,7 @@ jobs:
       TF_VAR_group_name: ${{ matrix.group }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ matrix.group }}-s${{ matrix.seed }}
       TF_VAR_campaign_run_id: ${{ github.run_id }}
+      TF_VAR_github_repository: ${{ github.repository }}
       TF_VAR_vigil_branch: eval/${{ github.run_id }}/${{ matrix.group }}-${{ matrix.seed }}
       VIGIL_EVAL_BRANCH: eval/${{ github.run_id }}/${{ matrix.group }}-${{ matrix.seed }}
       VIGIL_EVAL_TARGET: ${{ inputs.target }}
