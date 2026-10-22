@@ -21,6 +21,8 @@ import (
 
 const (
 	branchPrefix                     = "remediation/run-"
+	revertBranchPrefix               = "remediation/revert-"
+	revertBranchSHALength            = 12
 	pollIntervalSeconds              = 15
 	defaultWaitForGateTimeoutSeconds = 480
 	unmergeableGateGraceProbes       = 4
@@ -400,25 +402,20 @@ func HandleGetPRStatus(client GitClient, state SessionState) server.ToolHandlerF
 	}
 }
 
-func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeableProbes *int) (*mcp.CallToolResult, bool) {
+func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeableProbes *int) (string, bool, error) {
 	prState, merged, mergeCommitSHA, err := client.GetPRStatus(ctx, prNumber)
 	if err != nil {
-		return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), true
+		return "", true, err
 	}
 	if merged {
-		return mcp.NewToolResultStructured(
-			GatePassedResult{MergeCommitSHA: mergeCommitSHA},
-			fmt.Sprintf("gate passed: merged sha=%s", mergeCommitSHA),
-		), true
+		return mergeCommitSHA, true, nil
 	}
 	if prState == "closed" {
-		return toolError("HandleWaitForGate", "PR closed without merge", hintWaitForGate), true
+		return "", true, errors.New("PR closed without merge")
 	}
 	gateFailed, conclusion, checkErr := client.GetCheckRunStatus(ctx, prNumber)
 	if checkErr == nil && gateFailed {
-		return toolError("HandleWaitForGate",
-			fmt.Sprintf("gate check failed (conclusion=%s)", conclusion),
-			hintWaitForGate), true
+		return "", true, fmt.Errorf("gate check failed (conclusion=%s)", conclusion)
 	}
 
 	mergeableState, msErr := client.GetMergeableState(ctx, prNumber)
@@ -426,14 +423,41 @@ func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeab
 	if msErr == nil && mergeableState == mergeableStateDirty && gateAbsent {
 		*unmergeableProbes++
 		if *unmergeableProbes >= unmergeableGateGraceProbes {
-			return toolError("HandleWaitForGate",
-				"PR is unmergeable (mergeable_state=dirty) and no remediation-gate check dispatched; branch likely not based on current base",
-				hintWaitForGate), true
+			return "", true, errors.New("PR is unmergeable (mergeable_state=dirty) and no remediation-gate check dispatched; branch likely not based on current base")
 		}
 	} else {
 		*unmergeableProbes = 0
 	}
-	return nil, false
+	return "", false, nil
+}
+
+func waitForMerge(ctx context.Context, client GitClient, prNumber, timeoutSecs int, pollInterval time.Duration) (string, error) {
+	timer := time.NewTimer(time.Duration(timeoutSecs) * time.Second)
+	defer timer.Stop()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	unmergeableProbes := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", errors.New("context cancelled")
+		case <-timer.C:
+			return "", fmt.Errorf("timed out after %d seconds", timeoutSecs)
+		case <-ticker.C:
+			if mergeCommitSHA, done, err := pollGateOnce(ctx, client, prNumber, &unmergeableProbes); done {
+				return mergeCommitSHA, err
+			}
+		}
+	}
+}
+
+func gateTimeoutSeconds(args map[string]any) int {
+	if ts, ok := args["timeout_seconds"].(float64); ok && ts > 0 {
+		return int(ts)
+	}
+	return defaultWaitForGateTimeoutSeconds
 }
 
 func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.Duration) server.ToolHandlerFunc {
@@ -443,32 +467,15 @@ func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.D
 		if !ok {
 			return mcp.NewToolResultError("pr_number: missing or wrong type"), nil
 		}
-		prNumber := int(prNumF)
 
-		timeoutSecs := defaultWaitForGateTimeoutSeconds
-		if ts, ok := args["timeout_seconds"].(float64); ok && ts > 0 {
-			timeoutSecs = int(ts)
+		mergeCommitSHA, err := waitForMerge(ctx, client, int(prNumF), gateTimeoutSeconds(args), pollInterval)
+		if err != nil {
+			return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), nil
 		}
-
-		timer := time.NewTimer(time.Duration(timeoutSecs) * time.Second)
-		defer timer.Stop()
-		ticker := time.NewTicker(pollInterval)
-		defer ticker.Stop()
-
-		unmergeableProbes := 0
-
-		for {
-			select {
-			case <-ctx.Done():
-				return toolError("HandleWaitForGate", "context cancelled", hintWaitForGate), nil
-			case <-timer.C:
-				return toolError("HandleWaitForGate", fmt.Sprintf("timed out after %d seconds", timeoutSecs), hintWaitForGate), nil
-			case <-ticker.C:
-				if result, done := pollGateOnce(ctx, client, prNumber, &unmergeableProbes); done {
-					return result, nil
-				}
-			}
-		}
+		return mcp.NewToolResultStructured(
+			GatePassedResult{MergeCommitSHA: mergeCommitSHA},
+			fmt.Sprintf("gate passed: merged sha=%s", mergeCommitSHA),
+		), nil
 	}
 }
 
@@ -576,7 +583,7 @@ func HandleResolveManifestPath(client GitClient, state SessionState) server.Tool
 	}
 }
 
-func HandleRevertCommit(client GitClient, state SessionState, protected ProtectedBranches) server.ToolHandlerFunc {
+func HandleRevertCommit(client GitClient, state SessionState, protected ProtectedBranches, pollInterval time.Duration) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		mergeCommitSHA, ok := args["merge_commit_sha"].(string)
@@ -599,11 +606,30 @@ func HandleRevertCommit(client GitClient, state SessionState, protected Protecte
 		if protected.Contains(baseBranch) {
 			return protectedBranchError("HandleRevertCommit", baseBranch), nil
 		}
-		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA, baseBranch)
+		shortSHA := mergeCommitSHA[:min(len(mergeCommitSHA), revertBranchSHALength)]
+		revertBranch := revertBranchPrefix + shortSHA
+		revertSHA, err := client.RevertCommit(ctx, cloneDir, mergeCommitSHA, baseBranch, revertBranch)
 		if err != nil {
 			return toolError("HandleRevertCommit", err.Error(), hintRevertCommit), nil
 		}
-		state.SetBranch(baseBranch)
-		return mcp.NewToolResultStructured(CommitResult{SHA: revertSHA}, "reverted: "+revertSHA), nil
+		state.SetBranch(revertBranch)
+
+		title := "Revert remediation merge " + shortSHA
+		body := fmt.Sprintf("Reverts merge commit %s on %s.", mergeCommitSHA, baseBranch)
+		prNumber, err := client.CreatePR(ctx, title, revertBranch, baseBranch, body)
+		if err != nil {
+			return toolError("HandleRevertCommit", err.Error(), hintRevertCommit), nil
+		}
+		if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
+			return toolError("HandleRevertCommit", fmt.Sprintf("revert PR #%d: enable auto-merge: %s", prNumber, err), hintEnableAutoMerge), nil
+		}
+		landedSHA, err := waitForMerge(ctx, client, prNumber, gateTimeoutSeconds(args), pollInterval)
+		if err != nil {
+			return toolError("HandleRevertCommit", fmt.Sprintf("revert PR #%d: %s", prNumber, err), hintWaitForGate), nil
+		}
+		return mcp.NewToolResultStructured(
+			RevertResult{SHA: revertSHA, PRNumber: prNumber, MergeCommitSHA: landedSHA},
+			fmt.Sprintf("reverted: %s via pr #%d merged sha=%s", revertSHA, prNumber, landedSHA),
+		), nil
 	}
 }

@@ -25,7 +25,7 @@ jobs:
   remediation-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: startsWith(github.head_ref, 'remediation/run-')
+    if: startsWith(github.head_ref, 'remediation/')
     steps:
       - uses: actions/checkout@v7
         with:

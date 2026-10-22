@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
 	"os/exec"
@@ -15,7 +16,10 @@ import (
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/config"
 )
 
-const testRepoURL = "https://github.com/test/test.git"
+const (
+	testRepoURL      = "https://github.com/test/test.git"
+	testRevertBranch = "remediation/revert-test"
+)
 
 func newTestClient(token string) GitClient {
 	return NewRealGitClient(&config.Config{RepoURL: testRepoURL}, auth.Identity{
@@ -25,6 +29,26 @@ func newTestClient(token string) GitClient {
 	})
 }
 
+func TestGitEnv_resetsInheritedCredentialHelpers(t *testing.T) {
+	dir := t.TempDir()
+	globalConfig := filepath.Join(dir, "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[credential]\n\thelper = inherited\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+
+	cmd := exec.Command("git", "config", "--get-all", "credential.helper")
+	cmd.Env = newTestClient("agent-token").(*realGitClient).gitEnv("agent-token")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+	helpers := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if last := helpers[len(helpers)-1]; last != "" {
+		t.Errorf("last credential.helper entry = %q, want an empty reset after inherited helpers %q", last, helpers)
+	}
+}
+
 func TestSanitiseAuthError_redactsToken(t *testing.T) {
 	err := sanitiseAuthError(errors.New("auth failed for supersecret"), "supersecret")
 	if strings.Contains(err.Error(), "supersecret") || !strings.Contains(err.Error(), "[redacted]") {
@@ -32,6 +56,14 @@ func TestSanitiseAuthError_redactsToken(t *testing.T) {
 	}
 	if got := sanitiseAuthError(errors.New("plain"), ""); got.Error() != "plain" {
 		t.Errorf("empty token altered message: %v", got)
+	}
+}
+
+func TestSanitiseAuthError_redactsExtraHeaderCredentials(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString([]byte("x-access-token:supersecret"))
+	err := sanitiseAuthError(errors.New("header AUTHORIZATION: basic "+encoded), "supersecret")
+	if strings.Contains(err.Error(), encoded) || !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("encoded credentials not redacted: %v", err)
 	}
 }
 
@@ -61,7 +93,7 @@ func TestRevertCommit_authorsAsIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := newTestClient("tok").RevertCommit(context.Background(), cloneDir, strings.TrimSpace(string(out)), "main"); err != nil {
+	if _, err := newTestClient("tok").RevertCommit(context.Background(), cloneDir, strings.TrimSpace(string(out)), "main", testRevertBranch); err != nil {
 		t.Fatalf("RevertCommit: %v", err)
 	}
 	author, err := exec.Command("git", "-C", cloneDir, "log", "-1", "--format=%an <%ae>|%cn <%ce>").Output()
@@ -171,7 +203,7 @@ func TestRevertCommit_FetchesBeforeRevert(t *testing.T) {
 	mustRun(t, cloneDir, "git", "config", "user.name", "test")
 
 	c := newTestClient("tok")
-	revertSHA, err := c.RevertCommit(context.Background(), cloneDir, sha, "main")
+	revertSHA, err := c.RevertCommit(context.Background(), cloneDir, sha, "main", testRevertBranch)
 	if err != nil {
 		t.Fatalf("RevertCommit: %v", err)
 	}
@@ -179,13 +211,21 @@ func TestRevertCommit_FetchesBeforeRevert(t *testing.T) {
 		t.Error("expected non-empty revert SHA")
 	}
 
-	remoteHead, err := exec.Command("git", "-C", remoteDir, "rev-parse", "main").Output()
+	if got := remoteRef(t, remoteDir, testRevertBranch); got != revertSHA {
+		t.Errorf("origin %s = %q, want revert SHA %q", testRevertBranch, got, revertSHA)
+	}
+	if got := remoteRef(t, remoteDir, "main"); got != sha {
+		t.Errorf("origin main = %q, want it to stay at %q", got, sha)
+	}
+}
+
+func remoteRef(t *testing.T, remoteDir, branch string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", remoteDir, "rev-parse", branch).Output()
 	if err != nil {
-		t.Fatalf("rev-parse origin main: %v", err)
+		t.Fatalf("rev-parse %s: %v", branch, err)
 	}
-	if strings.TrimSpace(string(remoteHead)) != revertSHA {
-		t.Errorf("origin main = %q, want revert SHA %q (push did not reach origin)", strings.TrimSpace(string(remoteHead)), revertSHA)
-	}
+	return strings.TrimSpace(string(out))
 }
 
 func TestRevertCommit_PushesRevertedContentToOrigin(t *testing.T) {
@@ -210,14 +250,14 @@ func TestRevertCommit_PushesRevertedContentToOrigin(t *testing.T) {
 	mustRun(t, cloneDir, "git", "config", "user.name", "test")
 
 	c := newTestClient("tok")
-	if _, err := c.RevertCommit(context.Background(), cloneDir, badSHA, "main"); err != nil {
+	if _, err := c.RevertCommit(context.Background(), cloneDir, badSHA, "main", testRevertBranch); err != nil {
 		t.Fatalf("RevertCommit: %v", err)
 	}
 
 	verifyDir := t.TempDir()
-	mustRun(t, verifyDir, "git", "clone", remoteDir, ".")
+	mustRun(t, verifyDir, "git", "clone", "--branch", testRevertBranch, remoteDir, ".")
 	if _, err := os.Stat(filepath.Join(verifyDir, "bad.txt")); !os.IsNotExist(err) {
-		t.Errorf("bad.txt still present on origin after revert; revert did not reach remote (stat err: %v)", err)
+		t.Errorf("bad.txt present on the revert branch (stat err: %v)", err)
 	}
 }
 
@@ -228,7 +268,7 @@ func TestRevertCommit_FetchFailureReturnsClearError(t *testing.T) {
 	mustRun(t, cloneDir, "git", "commit", "--allow-empty", "-m", "init")
 
 	c := newTestClient("tok")
-	_, err := c.RevertCommit(context.Background(), cloneDir, "deadbeef", "main")
+	_, err := c.RevertCommit(context.Background(), cloneDir, "deadbeef", "main", testRevertBranch)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

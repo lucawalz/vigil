@@ -30,6 +30,7 @@ import (
 const (
 	defaultBaseBranch = "main"
 	gitAccessToken    = "x-access-token"
+	redacted          = "[redacted]"
 )
 
 type GitClient interface {
@@ -43,7 +44,7 @@ type GitClient interface {
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
 	GetCheckRunStatus(ctx context.Context, prNumber int) (gateFailed bool, conclusion string, err error)
 	GetMergeableState(ctx context.Context, prNumber int) (string, error)
-	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (revertSHA string, err error)
+	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, baseBranch, revertBranch string) (revertSHA string, err error)
 	ClosePR(ctx context.Context, prNumber int) error
 	DeleteBranch(ctx context.Context, branch string) error
 	ReadFile(ctx context.Context, cloneDir, branch, path string) (string, error)
@@ -74,8 +75,12 @@ func sanitiseAuthError(err error, token string) error {
 	if err == nil || token == "" {
 		return err
 	}
-	msg := strings.ReplaceAll(err.Error(), token, "[redacted]")
+	msg := strings.NewReplacer(token, redacted, basicCredentials(token), redacted).Replace(err.Error())
 	return fmt.Errorf("%s", msg) //nolint:err113
+}
+
+func basicCredentials(token string) string {
+	return base64.StdEncoding.EncodeToString([]byte(gitAccessToken + ":" + token))
 }
 
 func (c *realGitClient) basicAuth(ctx context.Context) (*githttp.BasicAuth, error) {
@@ -412,7 +417,7 @@ func (c *realGitClient) ResolveManifestPath(_ context.Context, cloneDir, kustomi
 }
 
 // go-git v5 does not expose a native Revert; fall back to the git binary.
-func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, branch string) (string, error) {
+func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, baseBranch, revertBranch string) (string, error) {
 	token, err := c.id.Token(ctx)
 	if err != nil {
 		return "", fmt.Errorf("revert_commit: github token: %w", err)
@@ -422,10 +427,10 @@ func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitS
 		name string
 		args []string
 	}{
-		{"fetch", []string{"fetch", "origin", branch}},
-		{"reset", []string{"reset", "--hard", "origin/" + branch}},
+		{"fetch", []string{"fetch", "origin", baseBranch}},
+		{"reset", []string{"reset", "--hard", "origin/" + baseBranch}},
 		{"git revert", []string{"revert", "--no-edit", mergeCommitSHA}},
-		{"push", []string{"push", "origin", "HEAD:" + branch}},
+		{"push", []string{"push", "origin", "HEAD:refs/heads/" + revertBranch}},
 	}
 	for _, step := range steps {
 		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", cloneDir}, step.args...)...)
@@ -447,11 +452,12 @@ func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitS
 }
 
 func (c *realGitClient) gitEnv(token string) []string {
-	credentials := base64.StdEncoding.EncodeToString([]byte(gitAccessToken + ":" + token))
 	return append(os.Environ(),
-		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_COUNT=2",
 		"GIT_CONFIG_KEY_0=http."+config.GitHubURLPrefix+".extraheader",
-		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic "+credentials,
+		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic "+basicCredentials(token),
+		"GIT_CONFIG_KEY_1=credential.helper",
+		"GIT_CONFIG_VALUE_1=",
 		"GIT_AUTHOR_NAME="+c.id.AuthorName,
 		"GIT_AUTHOR_EMAIL="+c.id.AuthorEmail,
 		"GIT_COMMITTER_NAME="+c.id.AuthorName,

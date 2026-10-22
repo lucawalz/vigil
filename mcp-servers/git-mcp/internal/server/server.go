@@ -192,14 +192,17 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 
 	mcpServer.AddTool(
 		mcp.NewTool("revert_commit",
-			mcp.WithDescription("Revert a merged remediation commit on main"),
+			mcp.WithDescription("Revert a merged remediation commit on a new branch, open a pull request into the session's base branch with auto-merge, wait for the CI gate, and return the revert SHA, the pull request number and the merge commit SHA on the base branch"),
 			mcp.WithString("merge_commit_sha",
 				mcp.Required(),
 				mcp.Description("SHA of the merge commit to revert"),
 			),
-			mcp.WithOutputSchema[git.CommitResult](),
+			mcp.WithNumber("timeout_seconds",
+				mcp.Description("Default 480"),
+			),
+			mcp.WithOutputSchema[git.RevertResult](),
 		),
-		git.HandleRevertCommit(client, s, protected),
+		git.HandleRevertCommit(client, s, protected, git.DefaultPollInterval),
 	)
 
 	mcpServer.AddTool(

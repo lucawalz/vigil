@@ -8,6 +8,12 @@ type CommitResult struct {
 	SHA string `json:"sha" jsonschema:"Commit SHA"`
 }
 
+type RevertResult struct {
+	SHA            string `json:"sha" jsonschema:"Revert commit SHA on the revert branch"`
+	PRNumber       int    `json:"pr_number" jsonschema:"Pull request number of the revert"`
+	MergeCommitSHA string `json:"merge_commit_sha" jsonschema:"SHA of the commit the revert pull request merged into the base branch"`
+}
+
 type PRNumberResult struct {
 	PRNumber int `json:"pr_number" jsonschema:"Pull request number"`
 }

@@ -31,6 +31,7 @@ type fakeGitClient struct {
 	cloneDir            string
 	gotBaseBranch       string
 	gotBase             string
+	gotHead             string
 	gotCreateBranchBase string
 	mergeableState      string
 	commitSHA           string
@@ -40,6 +41,7 @@ type fakeGitClient struct {
 	prMergeSHA          string
 	revertSHA           string
 	lastRevertBranch    string
+	lastRevertHead      string
 	pushCalls           int
 	err                 error
 	getPRCalls          int
@@ -81,7 +83,8 @@ func (f *fakeGitClient) Push(_ context.Context, _, _ string) error {
 	return f.err
 }
 
-func (f *fakeGitClient) CreatePR(_ context.Context, _, _, base, _ string) (int, error) {
+func (f *fakeGitClient) CreatePR(_ context.Context, _, head, base, _ string) (int, error) {
+	f.gotHead = head
 	f.gotBase = base
 	return f.prNumber, f.err
 }
@@ -96,8 +99,9 @@ func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, str
 	return f.prState, f.prMerged, f.prMergeSHA, f.err
 }
 
-func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, branch string) (string, error) {
-	f.lastRevertBranch = branch
+func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, base, head string) (string, error) {
+	f.lastRevertBranch = base
+	f.lastRevertHead = head
 	return f.revertSHA, f.err
 }
 
@@ -1380,37 +1384,133 @@ func TestWaitForGateHandler_DirtyButGatedDoesNotFailFast(t *testing.T) {
 	}
 }
 
-func TestRevertCommitHandler_Success(t *testing.T) {
-	cloneDir := t.TempDir()
-	fake := &fakeGitClient{revertSHA: "cafebabe"}
-	state := preloadedState(cloneDir, "remediation/run-001")
-	state.SetBaseBranch("main")
-	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
+func revertCommitTool() mcp.Tool {
+	return mcp.NewTool("revert_commit",
+		mcp.WithString("merge_commit_sha", mcp.Required()),
+		mcp.WithNumber("timeout_seconds"),
+	)
+}
 
-	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+func mergedRevertClient() *fakeGitClient {
+	return &fakeGitClient{revertSHA: "cafebabe", prNumber: 7, prMerged: true, prMergeSHA: "f00dfeed"}
+}
+
+func TestRevertCommitHandler_Success(t *testing.T) {
+	fake := mergedRevertClient()
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
 	}
 	if result.IsError {
-		t.Errorf("expected success, got error: %v", result.Content)
+		t.Fatalf("expected success, got error: %v", result.Content)
 	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "cafebabe") {
-		t.Errorf("expected revert SHA in response, got: %s", text)
+	structured, ok := result.StructuredContent.(map[string]any)
+	if !ok || structured["sha"] != "cafebabe" || structured["pr_number"] != float64(7) || structured["merge_commit_sha"] != "f00dfeed" {
+		t.Errorf("structured result = %#v, want sha cafebabe, pr_number 7, merge_commit_sha f00dfeed", result.StructuredContent)
+	}
+	if fake.lastRevertBranch != "main" || fake.lastRevertHead != "remediation/revert-deadbeef" {
+		t.Errorf("RevertCommit base/head = %q/%q, want main/remediation/revert-deadbeef", fake.lastRevertBranch, fake.lastRevertHead)
+	}
+	if fake.gotHead != "remediation/revert-deadbeef" || fake.gotBase != "main" {
+		t.Errorf("CreatePR head/base = %q/%q, want remediation/revert-deadbeef/main", fake.gotHead, fake.gotBase)
+	}
+	if fake.autoMergeCalls != 1 {
+		t.Errorf("expected auto-merge enabled once, got %d", fake.autoMergeCalls)
+	}
+}
+
+func TestRevertCommitHandler_BranchNameUsesShortSHA(t *testing.T) {
+	fake := mergedRevertClient()
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
+		"merge_commit_sha": "0123456789abcdef0123456789abcdef01234567",
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("revert_commit: %v %v", err, result)
+	}
+	if want := "remediation/revert-0123456789ab"; fake.lastRevertHead != want || fake.gotHead != want {
+		t.Errorf("revert branch = %q (pr head %q), want %q", fake.lastRevertHead, fake.gotHead, want)
+	}
+}
+
+func TestRevertCommitHandler_GateFailureReturnsError(t *testing.T) {
+	fake := &fakeGitClient{revertSHA: "cafebabe", prNumber: 7, prState: "open", checkRunFailed: true, checkRunConclusion: "failure"}
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected IsError=true when the gate fails")
+	}
+	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "gate check failed") || !strings.Contains(text, "#7") {
+		t.Errorf("expected gate failure naming PR #7, got: %s", text)
+	}
+}
+
+func TestRevertCommitHandler_TimeoutReturnsError(t *testing.T) {
+	fake := &fakeGitClient{revertSHA: "cafebabe", prNumber: 7, prState: "open"}
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+		"timeout_seconds":  float64(1),
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected IsError=true on timeout")
+	}
+	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "timed out") {
+		t.Errorf("expected timeout error, got: %s", text)
+	}
+}
+
+func TestRevertCommitHandler_AutoMergeErrorReturnsError(t *testing.T) {
+	fake := mergedRevertClient()
+	fake.autoMergeErr = fmt.Errorf("auto-merge disabled")
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true when auto-merge cannot be enabled")
+	}
+	if fake.getPRCalls != 0 {
+		t.Errorf("expected no gate polling after auto-merge error, got %d polls", fake.getPRCalls)
 	}
 }
 
 func TestRevertCommitHandler_DomainError(t *testing.T) {
-	cloneDir := t.TempDir()
 	fake := &fakeGitClient{err: fmt.Errorf("revert conflict")}
-	state := preloadedState(cloneDir, "remediation/run-001")
-	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
 
-	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
 	})
 	if err != nil {
@@ -1419,14 +1519,17 @@ func TestRevertCommitHandler_DomainError(t *testing.T) {
 	if !result.IsError {
 		t.Error("expected IsError=true for domain error")
 	}
+	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "revert conflict") {
+		t.Errorf("expected revert error in response, got: %s", text)
+	}
 }
 
 func TestRevertCommitHandler_InvalidSHA(t *testing.T) {
 	cloneDir := t.TempDir()
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
-	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
+	tool := revertCommitTool()
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "not-a-sha!",
@@ -1580,11 +1683,11 @@ func TestPushBranchHandler_RefusesProtected(t *testing.T) {
 
 func TestRevertCommitHandler_RefusesProtectedBase(t *testing.T) {
 	cloneDir := t.TempDir()
-	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	fake := mergedRevertClient()
 	state := preloadedState(cloneDir, "remediation/run-001")
 	state.SetBaseBranch("main")
-	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}})
+	tool := revertCommitTool()
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}}, time.Millisecond)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "abc1234",
@@ -1606,11 +1709,11 @@ func TestRevertCommitHandler_RefusesProtectedBase(t *testing.T) {
 
 func TestRevertCommitHandler_AllowsEvalBaseline(t *testing.T) {
 	cloneDir := t.TempDir()
-	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	fake := mergedRevertClient()
 	state := preloadedState(cloneDir, "remediation/run-001")
 	state.SetBaseBranch("chore/eval-cluster-baseline")
-	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}})
+	tool := revertCommitTool()
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}}, time.Millisecond)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "abc1234",
@@ -2060,12 +2163,12 @@ func TestHandleCreateBranch_BaseBranchExplicitOverride(t *testing.T) {
 
 func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
 	cloneDir := t.TempDir()
-	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	fake := mergedRevertClient()
 	state := preloadedState(cloneDir, "remediation/run-001")
 	state.SetBaseBranch("chore/eval-cluster-baseline")
 
-	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
+	tool := revertCommitTool()
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -2079,19 +2182,22 @@ func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
 	if got := fake.lastRevertBranch; got != "chore/eval-cluster-baseline" {
 		t.Errorf("expected lastRevertBranch %q, got %q", "chore/eval-cluster-baseline", got)
 	}
+	if fake.gotBase != "chore/eval-cluster-baseline" {
+		t.Errorf("expected revert PR base %q, got %q", "chore/eval-cluster-baseline", fake.gotBase)
+	}
 	branch, _ := state.Branch()
-	if branch != "chore/eval-cluster-baseline" {
-		t.Errorf("expected session branch %q after revert, got %q", "chore/eval-cluster-baseline", branch)
+	if branch != "remediation/revert-deadbeef" {
+		t.Errorf("expected session branch %q after revert, got %q", "remediation/revert-deadbeef", branch)
 	}
 }
 
 func TestHandleRevertCommit_FailsWhenBaseBranchUnset(t *testing.T) {
 	cloneDir := t.TempDir()
-	fake := &fakeGitClient{revertSHA: "cafebabe"}
+	fake := mergedRevertClient()
 	state := preloadedState(cloneDir, "remediation/run-001")
 
-	tool := mcp.NewTool("revert_commit", mcp.WithString("merge_commit_sha", mcp.Required()))
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{})
+	tool := revertCommitTool()
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -2125,7 +2231,7 @@ func TestRealGitClient_RevertCommitFetchError(t *testing.T) {
 	}
 	client := git.NewRealGitClient(cfg, auth.Identity{Token: auth.Static(cfg.GitHubToken)})
 
-	_, err := client.RevertCommit(context.Background(), repoDir, "deadbeef", "chore/eval-cluster-baseline")
+	_, err := client.RevertCommit(context.Background(), repoDir, "deadbeef", "chore/eval-cluster-baseline", "remediation/revert-deadbeef")
 	if err == nil {
 		t.Fatal("expected error for missing origin remote, got nil")
 	}
