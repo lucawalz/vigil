@@ -1,18 +1,15 @@
 { config, lib, pkgs, meta, self, addresses, ... }:
 let
+  inherit (import ../../pkgs/mcp-servers.nix { inherit pkgs self; }) kubectl-mcp flux-mcp nixos-mcp git-mcp;
   vigilGitCredentialHelper = pkgs.writeShellScript "vigil-git-credentials" ''
     set -eu
-    if [ "''${1:-}" != "get" ]; then exit 0; fi
     if [ -r /etc/vigil/env ]; then
       set -a
       . /etc/vigil/env
       set +a
     fi
-    if [ -n "''${GITHUB_TOKEN:-}" ]; then
-      printf 'username=x-access-token\npassword=%s\n' "$GITHUB_TOKEN"
-    fi
+    exec ${git-mcp}/bin/git-mcp credential "$@"
   '';
-  inherit (import ../../pkgs/mcp-servers.nix { inherit pkgs self; }) kubectl-mcp flux-mcp nixos-mcp git-mcp;
 in
 {
   imports = [

@@ -32,10 +32,15 @@ variable "github_repository" {
   }
 }
 
-variable "github_token" {
+variable "github_app_client_id" {
+  type        = string
+  description = "Client ID of the GitHub App for the orchestrator's pull requests and pushes (set via TF_VAR_github_app_client_id)"
+}
+
+variable "github_app_private_key" {
   type        = string
   sensitive   = true
-  description = "GitHub token for the orchestrator's pull requests and pushes (set via TF_VAR_github_token)"
+  description = "PEM private key of the GitHub App (set via TF_VAR_github_app_private_key)"
 }
 
 variable "ollama_api_key" {
