@@ -114,11 +114,6 @@ in
   };
 
   programs.bash.loginShellInit = ''
-    if [ -f /etc/vigil/env ]; then
-      set -a
-      . /etc/vigil/env
-      set +a
-    fi
     if [ -f /etc/vigil/kubeconfig-eval-runner ]; then
       export KUBECONFIG="/etc/vigil/kubeconfig-eval-runner"
     fi

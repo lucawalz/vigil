@@ -4,7 +4,7 @@ The harness drives one run as inject, then webhook, then orchestration, then a R
 
 ## Where it runs
 
-Runs execute on the agent host of the eval cluster provisioned by [`infra/terraform/`](../infra/terraform/README.md). The repository is checked out at `/root/vigil`, and the login shell loads `/etc/vigil/env` with the orchestrator URL, kubeconfigs and paths the scenario scripts need. The orchestrator listens on `http://localhost:9099`. The same scripts run against the local lab described in [`infra/lab/`](../infra/lab/README.md), where `lab.env` provides the variables.
+Runs execute on the agent host of the eval cluster provisioned by [`infra/terraform/`](../infra/terraform/README.md). The repository is checked out at `/root/vigil`, and [`scripts/agent-exec.sh`](scripts/agent-exec.sh) loads `/etc/vigil/env` for each remote command, with the orchestrator URL, kubeconfigs and paths the scenario scripts need. The orchestrator listens on `http://localhost:9099`. The same scripts run against the local lab described in [`infra/lab/`](../infra/lab/README.md), where `lab.env` provides the variables.
 
 ## Scenarios
 
