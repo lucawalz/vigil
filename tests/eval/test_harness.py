@@ -906,3 +906,213 @@ def test_build_fault_event_omits_sysctl_key_for_non_sysctl_scenario(
 
     assert "sysctl_key" not in payload["alerts"][0]["labels"]
     assert "sysctl_key" not in payload["commonLabels"]
+
+
+_OLD_HEAD = "a" * 40
+_NEW_HEAD = "b1c2d3e4" + "f" * 32
+_FLUX_BRANCH = "eval/lab"
+_KUST_GET = ["get", "kustomization", "cluster-apps", "-n", "flux-system"]
+
+
+def _kust_json(revision: str | None = None, suspend: bool = False) -> str:
+    import json as _json
+
+    status = {"lastAttemptedRevision": revision} if revision else {}
+    return _json.dumps({"spec": {"suspend": suspend}, "status": status})
+
+
+def _fake_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    now = [0.0]
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    monkeypatch.setattr(
+        harness_mod,
+        "time",
+        SimpleNamespace(monotonic=lambda: now[0], sleep=sleep),
+    )
+
+
+def _uptake_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    heads: list[str],
+    kust_outputs: list[str],
+    events: list[str],
+) -> None:
+    head_iter = iter(heads)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = ""
+        result.stdout = ""
+        if cmd[0] == "git" and cmd[-2:] == ["rev-parse", "HEAD"]:
+            result.stdout = next(head_iter) + "\n"
+        elif cmd[0] == "git":
+            result.stdout = _NEW_HEAD[:7] + "\n"
+        elif cmd[0] == "kubectl" and cmd[-len(_KUST_GET) - 2 : -2] == _KUST_GET:
+            events.append("kustomization")
+            result.stdout = (
+                kust_outputs.pop(0) if len(kust_outputs) > 1 else kust_outputs[0]
+            )
+        return result
+
+    monkeypatch.setattr(harness_mod.subprocess, "run", fake_run)
+
+
+def _uptake_scenario(tmp_path: Path) -> Path:
+    import yaml as _yaml
+
+    scenarios_dir = tmp_path / "scenarios"
+    scenario_dir = scenarios_dir / "k8s-3"
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "reset.sh").write_text("#!/bin/bash\nexit 0")
+    (scenario_dir / "inject.sh").write_text("#!/bin/bash\nexit 0")
+    (scenario_dir / "scenario.yaml").write_text(
+        _yaml.dump({"verify_broken": {"symptom": "pod_crashloop"}})
+    )
+    return scenarios_dir
+
+
+def _stub_run_one_collaborators(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, events: list[str]
+) -> None:
+    ready = {"ready": "True", "reason": "ReconciliationSucceeded", "message": ""}
+
+    async def fake_baseline():
+        return {"cluster_apps": ready, "cluster_infra": ready}, True
+
+    async def fake_trigger(*args, **kwargs) -> Path:
+        return tmp_path / "dummy.json"
+
+    def fake_symptom(verify, kubeconfig=None):
+        events.append("symptom")
+        return True
+
+    monkeypatch.setattr(harness_mod, "capture_flux_baseline", fake_baseline)
+    monkeypatch.setattr(harness_mod, "trigger_and_wait", fake_trigger)
+    monkeypatch.setattr(harness_mod, "_symptom_observed", fake_symptom)
+    monkeypatch.setenv("VIGIL_REPO_ROOT", str(tmp_path))
+    _fake_clock(monkeypatch)
+
+
+async def test_symptom_window_opens_after_flux_takes_up_moved_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    _stub_run_one_collaborators(monkeypatch, tmp_path, events)
+    _uptake_runner(
+        monkeypatch,
+        [_OLD_HEAD, _NEW_HEAD],
+        [
+            _kust_json(f"{_FLUX_BRANCH}@sha1:{_OLD_HEAD}"),
+            _kust_json(f"{_FLUX_BRANCH}@sha1:{_NEW_HEAD}"),
+        ],
+        events,
+    )
+
+    await run_one(
+        scenario_id="k8s-3",
+        seed=1,
+        scenarios_dir=_uptake_scenario(tmp_path),
+        model="test-model",
+        runs_dir=tmp_path / "runs",
+        timeout_s=5,
+    )
+
+    assert events == ["kustomization", "kustomization", "symptom"]
+
+
+async def test_unchanged_head_skips_flux_uptake_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    _stub_run_one_collaborators(monkeypatch, tmp_path, events)
+    _uptake_runner(monkeypatch, [_OLD_HEAD, _OLD_HEAD], [_kust_json()], events)
+
+    await run_one(
+        scenario_id="k8s-3",
+        seed=1,
+        scenarios_dir=_uptake_scenario(tmp_path),
+        model="test-model",
+        runs_dir=tmp_path / "runs",
+        timeout_s=5,
+    )
+
+    assert events == ["symptom"]
+
+
+async def test_flux_uptake_timeout_emits_inject_failed_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json as _json
+
+    events: list[str] = []
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(runs_dir))
+    _stub_run_one_collaborators(monkeypatch, tmp_path, events)
+    _uptake_runner(
+        monkeypatch,
+        [_OLD_HEAD, _NEW_HEAD],
+        [_kust_json(f"{_FLUX_BRANCH}@sha1:{_OLD_HEAD}")],
+        events,
+    )
+
+    await run_one(
+        scenario_id="k8s-3",
+        seed=1,
+        scenarios_dir=_uptake_scenario(tmp_path),
+        model="test-model",
+        runs_dir=runs_dir,
+        timeout_s=5,
+    )
+
+    assert "symptom" not in events
+    record = _json.loads(next(runs_dir.glob("*.json")).read_text())
+    assert record["outcome"] == "inject_did_not_break"
+    assert _NEW_HEAD in record["setup_error"]
+
+
+def test_wait_for_flux_uptake_returns_when_kustomization_suspended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    _fake_clock(monkeypatch)
+    _uptake_runner(monkeypatch, [], [_kust_json(suspend=True)], events)
+
+    harness_mod._wait_for_flux_uptake("k8s-3", _NEW_HEAD)
+
+    assert events == ["kustomization"]
+
+
+def test_wait_for_flux_uptake_keeps_polling_through_kubectl_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_clock(monkeypatch)
+    outputs = [
+        (1, ""),
+        (0, "not json"),
+        (0, _kust_json(f"{_FLUX_BRANCH}@sha1:{_NEW_HEAD}")),
+    ]
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.stderr = ""
+        result.returncode, result.stdout = (
+            outputs.pop(0) if len(outputs) > 1 else outputs[0]
+        )
+        return result
+
+    monkeypatch.setattr(harness_mod.subprocess, "run", fake_run)
+
+    harness_mod._wait_for_flux_uptake("k8s-3", _NEW_HEAD)
+
+
+def test_repo_head_is_none_without_repo_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("VIGIL_REPO_ROOT", raising=False)
+
+    assert harness_mod._repo_head() is None

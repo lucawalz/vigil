@@ -37,6 +37,9 @@ log = logging.getLogger(__name__)
 
 _INJECT_ASSERT_TIMEOUT_S = 90
 _INJECT_ASSERT_POLL_INTERVAL_S = 5
+_INJECT_FLUX_UPTAKE_TIMEOUT_S = 300
+_FLUX_NAMESPACE = "flux-system"
+_FLUX_APPS_KUSTOMIZATION = BASELINE_KUSTOMIZATIONS[0]
 
 
 class InjectAssertionFailed(RuntimeError):
@@ -261,6 +264,60 @@ def _wait_for_inject_symptom(
     raise InjectAssertionFailed(
         f"scenario {scenario_id}: symptom {verify['symptom']!r} not observed"
         f" within {timeout}s"
+    )
+
+
+def _repo_head() -> str | None:
+    repo_root = os.environ.get("VIGIL_REPO_ROOT")
+    if not repo_root:
+        return None
+    result = subprocess.run(
+        ["git", "-C", repo_root, "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _flux_has_taken_up(sha: str, kubeconfig: str | None) -> bool:
+    result = _kubectl(
+        [
+            "get",
+            "kustomization",
+            _FLUX_APPS_KUSTOMIZATION,
+            "-n",
+            _FLUX_NAMESPACE,
+            "-o",
+            "json",
+        ],
+        kubeconfig,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        kustomization = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False
+    if kustomization.get("spec", {}).get("suspend"):
+        return True
+    attempted = kustomization.get("status", {}).get("lastAttemptedRevision") or ""
+    return attempted.endswith(f":{sha}")
+
+
+def _wait_for_flux_uptake(scenario_id: str, sha: str) -> None:
+    kubeconfig = os.environ.get("EVAL_RUNNER_KUBECONFIG") or None
+    deadline = time.monotonic() + _INJECT_FLUX_UPTAKE_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if _flux_has_taken_up(sha, kubeconfig):
+            log.info("inject-assert: flux took up %s for %s", sha, scenario_id)
+            return
+        time.sleep(_INJECT_ASSERT_POLL_INTERVAL_S)
+    raise InjectAssertionFailed(
+        f"scenario {scenario_id}: flux did not take up {sha}"
+        f" within {_INJECT_FLUX_UPTAKE_TIMEOUT_S}s"
     )
 
 
@@ -733,7 +790,9 @@ async def run_one(
 
     _reset_circuit_breaker()
     log.info("running inject.sh for %s", scenario_id)
+    head_before = _repo_head()
     _run_script(inject_sh, seed, verbose=verbose)
+    head_after = _repo_head()
 
     target_host: str | None = None
     verify_broken: dict | None = None
@@ -744,19 +803,19 @@ async def run_one(
         target_host = (data.get("inject_params") or {}).get("target_host")
         verify_broken = data.get("verify_broken") or None
 
-    if verify_broken:
-        try:
+    try:
+        if head_before and head_after and head_after != head_before:
+            _wait_for_flux_uptake(scenario_id, head_after)
+        if verify_broken:
             _wait_for_inject_symptom(scenario_id, verify_broken, scenarios_dir)
-        except InjectAssertionFailed as exc:
-            log.error("inject-assert failed for %s: %s", scenario_id, exc)
-            result_path = _emit_inject_failed_record(
-                scenario_id, seed, model, str(exc), runs_dir
+        else:
+            log.warning(
+                "no verify_broken block for %s - skipping inject assertion",
+                scenario_id,
             )
-            return result_path
-    else:
-        log.warning(
-            "no verify_broken block for %s - skipping inject assertion", scenario_id
-        )
+    except InjectAssertionFailed as exc:
+        log.error("inject-assert failed for %s: %s", scenario_id, exc)
+        return _emit_inject_failed_record(scenario_id, seed, model, str(exc), runs_dir)
 
     return await trigger_and_wait(
         scenario_id=scenario_id,

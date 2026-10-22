@@ -9,6 +9,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(autouse=True)
+def isolated_repo_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("VIGIL_REPO_ROOT", raising=False)
+
+
 @pytest.fixture(scope="session")
 def scenarios_dir() -> Path:
     """The canonical eval/scenarios directory in this repo."""
