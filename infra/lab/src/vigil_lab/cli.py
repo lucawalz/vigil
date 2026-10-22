@@ -31,6 +31,7 @@ HUB_READY_TIMEOUT_S = 10.0
 HUB_POLL_INTERVAL_S = 0.1
 FLAKE_ENV = "VIGIL_LAB_FLAKE"
 SOURCE_ENV = "VIGIL_LAB_SOURCE"
+AGENT_ENV_FILE = Path("infra") / "agent-env.json"
 COMMAND_ENV = "VIGIL_LAB_COMMAND"
 SSH_ENV = "VIGIL_LAB_SSH"
 FIRMWARE_ENV = "VIGIL_LAB_FIRMWARE"
@@ -195,6 +196,7 @@ def cmd_agent(args: argparse.Namespace) -> None:
         lab_command=_required_env(COMMAND_ENV),
         ssh_binary=_required_env(SSH_ENV),
         environ=os.environ,
+        agent_env_file=Path(_required_env(SOURCE_ENV)) / AGENT_ENV_FILE,
     )
 
 

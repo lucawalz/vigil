@@ -285,7 +285,7 @@ jobs:
           if [ "$EVENT_NAME" = workflow_dispatch ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif git diff --quiet "$BASE_SHA" HEAD -- \
-              infra/nixos infra/lab infra/overlays/lab infra/inventory.json infra/scripts infra/kubernetes \
+              infra/nixos infra/lab infra/overlays/lab infra/inventory.json infra/agent-env.json infra/scripts infra/kubernetes \
               infra/overlays/hetzner/kubernetes/clusters/hetzner/namespaces \
               infra/overlays/hetzner/kubernetes/clusters/hetzner/sources \
               infra/overlays/hetzner/kubernetes/clusters/hetzner/apps \

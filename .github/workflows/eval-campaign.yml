@@ -330,10 +330,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
           OLLAMA_API_KEY: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
           OLLAMA_BASE_URL: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_BASE_URL || '' }}
-          LLM_REASONING_EFFORT: none
-          DIAGNOSIS_TIMEOUT_S: "600"
-          REMEDIATION_TIMEOUT_S: "900"
-          ORCHESTRATOR_RUN_TIMEOUT_S: "2400"
         run: |
           uv sync --locked --all-packages
           nix run ./infra/nixos#lab -- agent start

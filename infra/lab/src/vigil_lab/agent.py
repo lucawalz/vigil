@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import urllib.error
@@ -57,6 +58,20 @@ def _path_with_bin_first(bin_dir: Path, current: str) -> str:
     return f"{bin_dir}{os.pathsep}{current}"
 
 
+def load_agent_env_defaults(path: Path) -> dict[str, str]:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise LabError(
+            f"cannot read the agent environment defaults {path}: {error}"
+        ) from error
+    if not isinstance(data, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in data.items()
+    ):
+        raise LabError(f"{path} must be a flat JSON object of string values")
+    return data
+
+
 def lab_env(
     paths: LabPaths,
     plan: AddressPlan,
@@ -65,8 +80,10 @@ def lab_env(
     webhook_secret: str,
     lab_command: str,
     environ: Mapping[str, str],
+    agent_defaults: Mapping[str, str],
 ) -> dict[str, str]:
     env = {
+        **agent_defaults,
         "SSH_HOSTS": ",".join(f"{host.name}:{host.ssh_port}" for host in plan.workers),
         "SSH_USER": GUEST_USER,
         "SSH_KEY_PATH": str(paths.lab_key),
@@ -77,7 +94,6 @@ def lab_env(
         "VIGIL_EVAL_BRANCH": settings.branch,
         "VIGIL_ORCHESTRATOR_URL": ORCHESTRATOR_URL,
         "VIGIL_ORCHESTRATOR_RESTART_CMD": f"{lab_command} agent restart",
-        "VIGIL_BLOCK_ALERT_TRIGGERS": "true",
         "PROM_POLLER_ENABLED": "false",
         "VIGIL_EVAL_TARGET": settings.target,
         "REPO_URL": f"{GITHUB_URL}/{settings.repo}.git",
@@ -140,8 +156,10 @@ def start(
     lab_command: str,
     ssh_binary: str,
     environ: Mapping[str, str],
+    agent_env_file: Path,
     command: Sequence[str] = ORCHESTRATOR_COMMAND,
 ) -> None:
+    agent_defaults = load_agent_env_defaults(agent_env_file)
     write_ssh_tools(paths, plan.hosts, ssh_binary)
     (paths.root / "runs").mkdir(exist_ok=True)
     env = lab_env(
@@ -151,6 +169,7 @@ def start(
         webhook_secret=paths.webhook_secret.read_text().strip(),
         lab_command=lab_command,
         environ=environ,
+        agent_defaults=agent_defaults,
     )
     write_lab_env(paths.root / "lab.env", env)
     if not pid_alive(paths.pid(AGENT)):

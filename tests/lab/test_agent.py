@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import stat
@@ -9,7 +10,12 @@ from pathlib import Path
 import pytest
 from vigil_lab import agent
 from vigil_lab.addresses import parse_address_plan
-from vigil_lab.agent import lab_env, write_lab_env, write_ssh_tools
+from vigil_lab.agent import (
+    lab_env,
+    load_agent_env_defaults,
+    write_lab_env,
+    write_ssh_tools,
+)
 from vigil_lab.guest import GUEST_USER
 from vigil_lab.proc import LabError, pid_alive
 from vigil_lab.state import LabPaths, LabSettings
@@ -41,6 +47,24 @@ CALLER_ENV = {
 }
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SHARED_ENV_FILE = REPO_ROOT / "infra" / "agent-env.json"
+SHARED_ENV_KEYS = {
+    "VIGIL_BLOCK_ALERT_TRIGGERS",
+    "LLM_REASONING_EFFORT",
+    "DIAGNOSIS_TIMEOUT_S",
+    "REMEDIATION_TIMEOUT_S",
+    "ORCHESTRATOR_RUN_TIMEOUT_S",
+}
+SHARED_DEFAULTS = {
+    "VIGIL_BLOCK_ALERT_TRIGGERS": "true",
+    "LLM_REASONING_EFFORT": "none",
+    "DIAGNOSIS_TIMEOUT_S": "111",
+    "REMEDIATION_TIMEOUT_S": "222",
+    "ORCHESTRATOR_RUN_TIMEOUT_S": "333",
+}
+
+
 def _env(paths: LabPaths) -> dict[str, str]:
     plan = parse_address_plan(FIXTURE.read_text())
     return lab_env(
@@ -50,7 +74,51 @@ def _env(paths: LabPaths) -> dict[str, str]:
         webhook_secret="s3cret",
         lab_command=LAB_COMMAND,
         environ=CALLER_ENV,
+        agent_defaults=SHARED_DEFAULTS,
     )
+
+
+def test_lab_env_applies_the_shared_defaults_under_the_caller_environment(
+    tmp_path: Path,
+) -> None:
+    env = _env(LabPaths(tmp_path))
+    assert env["REMEDIATION_TIMEOUT_S"] == "222"
+    assert env["ORCHESTRATOR_RUN_TIMEOUT_S"] == "333"
+    assert env["LLM_REASONING_EFFORT"] == "none"
+    assert env["DIAGNOSIS_TIMEOUT_S"] == CALLER_ENV["DIAGNOSIS_TIMEOUT_S"]
+
+
+def test_load_agent_env_defaults_reads_the_flat_map(tmp_path: Path) -> None:
+    source = tmp_path / "agent-env.json"
+    source.write_text(json.dumps(SHARED_DEFAULTS))
+    assert load_agent_env_defaults(source) == SHARED_DEFAULTS
+
+
+@pytest.mark.parametrize(
+    "content",
+    [None, "{", "[]", '{"A": 1}', '{"A": {"B": "c"}}'],
+)
+def test_load_agent_env_defaults_names_the_path_when_unusable(
+    tmp_path: Path, content: str | None
+) -> None:
+    source = tmp_path / "agent-env.json"
+    if content is not None:
+        source.write_text(content)
+    with pytest.raises(LabError) as raised:
+        load_agent_env_defaults(source)
+    assert str(source) in str(raised.value)
+
+
+def test_shared_env_file_holds_exactly_the_agent_defaults() -> None:
+    assert set(load_agent_env_defaults(SHARED_ENV_FILE)) == SHARED_ENV_KEYS
+
+
+def test_terraform_renders_the_agent_defaults_from_the_shared_file() -> None:
+    servers = (REPO_ROOT / "infra" / "terraform" / "servers.tf").read_text()
+    assert "agent-env.json" in servers
+    assert "local.agent_env_defaults" in servers
+    for key in SHARED_ENV_KEYS:
+        assert f"{key}=" not in servers
 
 
 def test_lab_env_matches_the_agent_contract(tmp_path: Path) -> None:
@@ -80,6 +148,9 @@ def test_lab_env_matches_the_agent_contract(tmp_path: Path) -> None:
         "LLM_MODEL_NAME": "qwen3.5:cloud",
         "ANTHROPIC_API_KEY": "ak",
         "DIAGNOSIS_TIMEOUT_S": "600",
+        "LLM_REASONING_EFFORT": "none",
+        "REMEDIATION_TIMEOUT_S": "222",
+        "ORCHESTRATOR_RUN_TIMEOUT_S": "333",
     }
 
 
@@ -94,6 +165,7 @@ def test_lab_env_prepends_the_bin_directory_once(tmp_path: Path) -> None:
         webhook_secret="s3cret",
         lab_command=LAB_COMMAND,
         environ=already_first,
+        agent_defaults=SHARED_DEFAULTS,
     )
     assert env["PATH"] == f"{paths.bin}{os.pathsep}/usr/bin"
 
@@ -142,6 +214,7 @@ def _start(
         lab_command=LAB_COMMAND,
         ssh_binary="/usr/bin/ssh",
         environ=CALLER_ENV,
+        agent_env_file=SHARED_ENV_FILE,
         command=command,
     )
 

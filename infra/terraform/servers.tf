@@ -285,6 +285,10 @@ resource "null_resource" "agent_ssh_auth" {
   }
 }
 
+locals {
+  agent_env_defaults = jsondecode(file("${path.module}/../agent-env.json"))
+}
+
 resource "local_sensitive_file" "vigil_env" {
   filename        = "/tmp/vigil-env-${var.run_id}.env"
   file_permission = "0600"
@@ -300,11 +304,9 @@ resource "local_sensitive_file" "vigil_env" {
     OLLAMA_BASE_URL=${var.ollama_base_url}
     %{~endif~}
     LLM_MODEL_NAME=${var.llm_model_name}
-    VIGIL_BLOCK_ALERT_TRIGGERS=true
-    LLM_REASONING_EFFORT=none
-    DIAGNOSIS_TIMEOUT_S=600
-    REMEDIATION_TIMEOUT_S=900
-    ORCHESTRATOR_RUN_TIMEOUT_S=2400
+    %{~for key, value in local.agent_env_defaults~}
+    ${key}=${value}
+    %{~endfor~}
     VIGIL_ORCHESTRATOR_URL=http://${local.agent_ip}:${local.orchestrator_port}
     EVAL_RUNS_DIR=/root/vigil/eval/runs
     VIGIL_SCENARIOS_DIR=/root/vigil/eval/scenarios
