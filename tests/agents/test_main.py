@@ -14,6 +14,17 @@ os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 os.environ.setdefault("VIGIL_WEBHOOK_SECRET", "test-secret")
 
+from common.constants import (
+    GATE_REVERT_CALL_TIMEOUT_S,
+    GATE_WAIT_TIMEOUT_MAX_S,
+    GATE_WAIT_TIMEOUT_MIN_S,
+    GATE_WAIT_TIMEOUT_S,
+    GIT_MCP_GATE_FINALISER_S,
+    GIT_MCP_GATE_POLL_INTERVAL_S,
+    GIT_MCP_READ_TIMEOUT_S,
+    LLM_REQUEST_TIMEOUT_S,
+    MCP_CALL_TIMEOUT_S,
+)
 from fastapi import FastAPI
 from orchestrator import main as main_mod
 from orchestrator.models import RunRecord
@@ -102,6 +113,127 @@ async def test_lifespan_rejects_an_unknown_eval_target_at_startup(
     with pytest.raises(ValueError, match="VIGIL_EVAL_TARGET"):
         async with main_mod.lifespan(main_mod.app):
             pass
+
+
+class _RecordingMCPServer:
+    def __init__(self, servers: list[dict], **kwargs: object) -> None:
+        servers.append(kwargs)
+
+    async def __aenter__(self) -> _RecordingMCPServer:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+
+@pytest.fixture
+def recorded_servers(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    servers: list[dict] = []
+    monkeypatch.delenv("VIGIL_EVAL_TARGET", raising=False)
+    for server in ("KUBECTL", "FLUX", "NIXOS", "GIT"):
+        monkeypatch.delenv(f"{server}_MCP_CMD", raising=False)
+    monkeypatch.setattr(main_mod, "_configure_logging", lambda: None)
+    monkeypatch.setattr(main_mod, "prometheus_poller", AsyncMock())
+    monkeypatch.setattr(
+        main_mod,
+        "MCPServerStdio",
+        lambda **kwargs: _RecordingMCPServer(servers, **kwargs),
+    )
+    return servers
+
+
+def test_gate_wait_budget_derives_from_the_gate_wait_timeout() -> None:
+    assert GIT_MCP_READ_TIMEOUT_S == (
+        GATE_WAIT_TIMEOUT_S + GIT_MCP_GATE_FINALISER_S + GIT_MCP_GATE_POLL_INTERVAL_S
+    )
+    assert GATE_REVERT_CALL_TIMEOUT_S == GIT_MCP_READ_TIMEOUT_S + MCP_CALL_TIMEOUT_S
+    assert GATE_WAIT_TIMEOUT_S < GIT_MCP_READ_TIMEOUT_S < GATE_REVERT_CALL_TIMEOUT_S
+
+
+def test_gate_wait_budget_check_passes_with_defaults() -> None:
+    main_mod._check_gate_wait_budget()
+
+
+def test_gate_wait_budget_check_reserves_one_llm_request_before_the_gate_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate_wait_with_llm_request_s = GIT_MCP_READ_TIMEOUT_S + LLM_REQUEST_TIMEOUT_S
+    monkeypatch.setattr(
+        main_mod, "REMEDIATION_TIMEOUT_S", gate_wait_with_llm_request_s + 1
+    )
+    main_mod._check_gate_wait_budget()
+
+    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", gate_wait_with_llm_request_s)
+    with pytest.raises(
+        ValueError,
+        match="GIT_MCP_READ_TIMEOUT_S \\+ LLM_REQUEST_TIMEOUT_S.*REMEDIATION_TIMEOUT_S",
+    ):
+        main_mod._check_gate_wait_budget()
+
+
+@pytest.mark.parametrize(
+    "gate_wait_s", [GATE_WAIT_TIMEOUT_MIN_S - 1, GATE_WAIT_TIMEOUT_MAX_S + 1]
+)
+def test_gate_wait_budget_check_rejects_gate_wait_outside_git_mcp_bounds(
+    gate_wait_s: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main_mod, "GATE_WAIT_TIMEOUT_S", gate_wait_s)
+    with pytest.raises(ValueError, match=f"GATE_WAIT_TIMEOUT_S.*{gate_wait_s}"):
+        main_mod._check_gate_wait_budget()
+
+
+def test_gate_wait_budget_check_rejects_remediation_timeout_below_read_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S - 1)
+    with pytest.raises(
+        ValueError, match="GIT_MCP_READ_TIMEOUT_S.*REMEDIATION_TIMEOUT_S"
+    ):
+        main_mod._check_gate_wait_budget()
+
+
+def test_gate_wait_budget_check_rejects_read_timeout_not_above_gate_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main_mod, "GIT_MCP_READ_TIMEOUT_S", GATE_WAIT_TIMEOUT_S)
+    with pytest.raises(ValueError, match="GATE_WAIT_TIMEOUT_S.*GIT_MCP_READ_TIMEOUT_S"):
+        main_mod._check_gate_wait_budget()
+
+
+def test_gate_wait_budget_check_rejects_revert_call_not_above_read_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main_mod, "GATE_REVERT_CALL_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S)
+    with pytest.raises(
+        ValueError, match="GIT_MCP_READ_TIMEOUT_S.*GATE_REVERT_CALL_TIMEOUT_S"
+    ):
+        main_mod._check_gate_wait_budget()
+
+
+async def test_lifespan_checks_the_gate_wait_budget_before_starting_servers(
+    recorded_servers: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S)
+    with pytest.raises(ValueError, match="REMEDIATION_TIMEOUT_S"):
+        async with main_mod.lifespan(FastAPI()):
+            pass
+    assert recorded_servers == []
+
+
+async def test_lifespan_bounds_git_mcp_requests_by_the_gate_wait_budget(
+    recorded_servers: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GATE_WAIT_TIMEOUT_S", raising=False)
+    async with main_mod.lifespan(FastAPI()):
+        pass
+
+    by_command = {server["command"]: server for server in recorded_servers}
+    git_server = by_command["git-mcp"]
+    assert git_server["read_timeout"] == GIT_MCP_READ_TIMEOUT_S
+    assert git_server["env"]["GATE_WAIT_TIMEOUT_S"] == str(GATE_WAIT_TIMEOUT_S)
+    for command in ("kubectl-mcp", "flux-mcp", "nixos-mcp"):
+        assert "read_timeout" not in by_command[command]
+        assert "GATE_WAIT_TIMEOUT_S" not in by_command[command]["env"]
 
 
 async def test_healthz_returns_ok_with_detection_fields(test_app: FastAPI) -> None:

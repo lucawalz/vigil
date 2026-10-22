@@ -10,6 +10,23 @@ WATCHDOG_HEALTHY_STREAK_K: int = int(os.environ.get("WATCHDOG_HEALTHY_STREAK_K",
 
 MCP_CALL_TIMEOUT_S: float = float(os.environ.get("MCP_CALL_TIMEOUT_S", "60"))
 
+GATE_WAIT_TIMEOUT_S: int = int(os.environ.get("GATE_WAIT_TIMEOUT_S", "480"))
+
+# Mirrors the gate wait bounds, finaliser and poll interval compiled into git-mcp.
+GATE_WAIT_TIMEOUT_MIN_S: int = 1
+
+GATE_WAIT_TIMEOUT_MAX_S: int = 3600
+
+GIT_MCP_GATE_FINALISER_S: int = 30
+
+GIT_MCP_GATE_POLL_INTERVAL_S: int = 15
+
+GIT_MCP_READ_TIMEOUT_S: int = (
+    GATE_WAIT_TIMEOUT_S + GIT_MCP_GATE_FINALISER_S + GIT_MCP_GATE_POLL_INTERVAL_S
+)
+
+GATE_REVERT_CALL_TIMEOUT_S: float = GIT_MCP_READ_TIMEOUT_S + MCP_CALL_TIMEOUT_S
+
 LLM_REQUEST_TIMEOUT_S: float = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "240"))
 
 LLM_CONNECT_TIMEOUT_S: float = float(os.environ.get("LLM_CONNECT_TIMEOUT_S", "10"))

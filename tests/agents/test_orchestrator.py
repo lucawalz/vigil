@@ -22,11 +22,10 @@ os.environ.setdefault("LLM_MODEL_NAME", "test-model")
 os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
+from common.constants import GATE_REVERT_CALL_TIMEOUT_S, GATE_WAIT_TIMEOUT_S
 from diagnosis.models import DiagnosisOutputRetryExhausted, DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
-    _ROLLBACK_GATE_TIMEOUT_S,
-    _ROLLBACK_REVERT_CALL_TIMEOUT_S,
     _RUN_LOCK,
     OS_CHECK_NODE_CONDITION,
     OS_CHECK_SYSTEMD,
@@ -995,7 +994,7 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
 
 def test_orchestrator_constants_have_correct_defaults() -> None:
     assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 1800.0
-    assert orch_mod.REMEDIATION_TIMEOUT_S == 600.0
+    assert orch_mod.REMEDIATION_TIMEOUT_S == 900.0
     assert orch_mod._MAX_DIAGNOSIS_ATTEMPTS == 3
 
 
@@ -2233,7 +2232,7 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
     assert len(revert_calls) == 1
     assert revert_calls[0].args[1] == {
         "merge_commit_sha": "abc123",
-        "timeout_seconds": _ROLLBACK_GATE_TIMEOUT_S,
+        "timeout_seconds": GATE_WAIT_TIMEOUT_S,
     }
     trigger_calls = [
         c
@@ -2272,11 +2271,10 @@ async def test_rollback_revert_waits_for_gate_within_its_own_call_timeout(
     assert revert_calls == [
         (
             "revert_commit",
-            {"merge_commit_sha": "abc123", "timeout_seconds": _ROLLBACK_GATE_TIMEOUT_S},
-            _ROLLBACK_REVERT_CALL_TIMEOUT_S,
+            {"merge_commit_sha": "abc123", "timeout_seconds": GATE_WAIT_TIMEOUT_S},
+            GATE_REVERT_CALL_TIMEOUT_S,
         )
     ]
-    assert _ROLLBACK_REVERT_CALL_TIMEOUT_S > _ROLLBACK_GATE_TIMEOUT_S
 
 
 async def test_orchestrator_skips_diagnosis_when_context_unresolvable(

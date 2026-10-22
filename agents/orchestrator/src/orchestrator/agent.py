@@ -16,8 +16,9 @@ from common.constants import (
     CIRCUIT_BREAKER_THRESHOLD,
     CONFIDENCE_AUTO_THRESHOLD,
     CONFIDENCE_REVIEW_THRESHOLD,
+    GATE_REVERT_CALL_TIMEOUT_S,
+    GATE_WAIT_TIMEOUT_S,
     GIT_COMMIT_BUDGET,
-    MCP_CALL_TIMEOUT_S,
     WATCHDOG_NAMESPACE,
 )
 from common.flux_status import coerce_flux_status
@@ -66,14 +67,11 @@ ORCHESTRATOR_RUN_TIMEOUT_S: float = float(
     os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "1800")
 )
 DIAGNOSIS_TIMEOUT_S: float = float(os.environ.get("DIAGNOSIS_TIMEOUT_S", "300"))
-REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "600"))
+REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "900"))
 _MAX_DIAGNOSIS_ATTEMPTS = 3
 _RUN_ID_SUFFIX_LEN = 8
 
 _REMEDIATION_BRANCH_PREFIX = "remediation/run-"
-
-_ROLLBACK_GATE_TIMEOUT_S = 480
-_ROLLBACK_REVERT_CALL_TIMEOUT_S = _ROLLBACK_GATE_TIMEOUT_S + MCP_CALL_TIMEOUT_S
 
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
@@ -334,9 +332,9 @@ async def _revert_through_gate(
         "revert_commit",
         {
             "merge_commit_sha": merge_commit_sha,
-            "timeout_seconds": _ROLLBACK_GATE_TIMEOUT_S,
+            "timeout_seconds": GATE_WAIT_TIMEOUT_S,
         },
-        timeout_s=_ROLLBACK_REVERT_CALL_TIMEOUT_S,
+        timeout_s=GATE_REVERT_CALL_TIMEOUT_S,
     )
 
 

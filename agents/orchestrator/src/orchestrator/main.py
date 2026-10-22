@@ -6,12 +6,20 @@ import os
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncIterator
 
-from common.constants import POLLER_UNHEALTHY_AFTER
+from common.constants import (
+    GATE_REVERT_CALL_TIMEOUT_S,
+    GATE_WAIT_TIMEOUT_MAX_S,
+    GATE_WAIT_TIMEOUT_MIN_S,
+    GATE_WAIT_TIMEOUT_S,
+    GIT_MCP_READ_TIMEOUT_S,
+    LLM_REQUEST_TIMEOUT_S,
+    POLLER_UNHEALTHY_AFTER,
+)
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_ai.mcp import MCPServerStdio
 
-from .agent import build_run_id, run_orchestration
+from .agent import REMEDIATION_TIMEOUT_S, build_run_id, run_orchestration
 from .models import FaultEvent, eval_target_from_env
 from .poller import log_task_exception, prometheus_poller
 
@@ -42,14 +50,41 @@ def _mcp_commands() -> dict[str, list[str]]:
     }
 
 
+def _check_gate_wait_budget() -> None:
+    if not GATE_WAIT_TIMEOUT_MIN_S <= GATE_WAIT_TIMEOUT_S <= GATE_WAIT_TIMEOUT_MAX_S:
+        raise ValueError(
+            f"GATE_WAIT_TIMEOUT_S must be between {GATE_WAIT_TIMEOUT_MIN_S} and "
+            f"{GATE_WAIT_TIMEOUT_MAX_S} seconds, got {GATE_WAIT_TIMEOUT_S}"
+        )
+    gate_wait = ("GATE_WAIT_TIMEOUT_S", GATE_WAIT_TIMEOUT_S)
+    read = ("GIT_MCP_READ_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S)
+    read_after_llm_request = (
+        "GIT_MCP_READ_TIMEOUT_S + LLM_REQUEST_TIMEOUT_S",
+        GIT_MCP_READ_TIMEOUT_S + LLM_REQUEST_TIMEOUT_S,
+    )
+    revert_call = ("GATE_REVERT_CALL_TIMEOUT_S", GATE_REVERT_CALL_TIMEOUT_S)
+    remediation = ("REMEDIATION_TIMEOUT_S", REMEDIATION_TIMEOUT_S)
+    for (shorter, shorter_s), (longer, longer_s) in (
+        (gate_wait, read),
+        (read, revert_call),
+        (read_after_llm_request, remediation),
+    ):
+        if shorter_s >= longer_s:
+            raise ValueError(
+                f"{shorter} ({shorter_s}s) must be below {longer} ({longer_s}s)"
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     eval_target_from_env()
+    _check_gate_wait_budget()
     _configure_logging()
     cmds = _mcp_commands()
     # MCPServerStdio defaults env=None which gives child processes an empty
     # environment, breaking KUBECONFIG, PATH, etc.
     env = os.environ.copy()
+    git_env = {**env, "GATE_WAIT_TIMEOUT_S": str(GATE_WAIT_TIMEOUT_S)}
 
     kubectl_argv = cmds["kubectl"]
     flux_argv = cmds["flux"]
@@ -65,7 +100,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             command=nixos_argv[0], args=nixos_argv[1:], env=env
         ) as nixos_mcp,
         MCPServerStdio(
-            command=git_argv[0], args=git_argv[1:], env=env, max_retries=3
+            command=git_argv[0],
+            args=git_argv[1:],
+            env=git_env,
+            max_retries=3,
+            read_timeout=GIT_MCP_READ_TIMEOUT_S,
         ) as git_mcp,
     ):
         app.state.kubectl_mcp = kubectl_mcp
