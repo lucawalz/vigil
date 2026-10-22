@@ -1,13 +1,12 @@
 # infra/terraform
 
-Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` servers for the hosts `vigil-control-plane-1`, `vigil-worker-1`, `vigil-worker-2` and `vigil-agent` (the control plane, two workers and the agent host) in `hel1` by default, a private network, a firewall and an SSH key. The servers boot from pre-built NixOS snapshots and take their private addresses from [`infra/inventory.json`](../inventory.json). Terraform then joins the K3s nodes, installs Flux on the eval branch through [`infra/scripts/flux-sync.sh`](../scripts/flux-sync.sh), applies the eval RBAC and starts the orchestrator on the agent host.
+Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` servers for the hosts `vigil-control-plane-1`, `vigil-worker-1`, `vigil-worker-2` and `vigil-agent` (the control plane, two workers and the agent host) in `hel1` by default, a private network, a firewall and an SSH key. The servers boot from pre-built NixOS snapshots and take their private addresses from [`infra/inventory.json`](../inventory.json). Terraform then joins the K3s nodes, generates the orchestrator webhook secret and stores it as `vigil-webhook-secret` in the `monitoring` namespace, installs Flux on the eval branch through [`infra/scripts/flux-sync.sh`](../scripts/flux-sync.sh), applies the eval RBAC and starts the orchestrator on the agent host.
 
 ## Prerequisites
 
 - Terraform 1.14 or later, `ssh`, `kubectl`, and `nix` on `PATH` (Flux is installed through `nix shell`).
 - A Hetzner Cloud project and a read-write API token.
 - One NixOS snapshot per role in that project, labelled `vigil-role=control-plane-1`, `worker-1`, `worker-2` and `agent` plus `vigil-run=<run id>`. The Eval Campaign workflow builds them for each campaign through the Build NixOS Snapshots workflow, with Packer from [`infra/packer/`](../packer/).
-- The SOPS age private key for the recipient in [`infra/overlays/hetzner/.sops.yaml`](../overlays/hetzner/.sops.yaml), exported as `SOPS_AGE_KEY_FILE` or `SOPS_AGE_KEY`. Terraform decrypts the orchestrator webhook secret with it.
 - An SSH key pair, `~/.ssh/id_ed25519` by default (`ssh_public_key_path` and `ssh_private_key_path` override it), and an existing `~/.kube/` directory.
 - A GitHub token with write access to the repository in `github_repository`, which Flux, the hosts and the scenario scripts track.
 
@@ -40,14 +39,7 @@ terraform -chdir=infra/terraform apply
 
 ## After apply
 
-The kubeconfig is written to `~/.kube/hetzner-vigil-<group_name>`. Flux decrypts the cluster secrets with a `sops-age` secret, created from the same age key:
-
-```bash
-export KUBECONFIG=~/.kube/hetzner-vigil-k8s
-kubectl create secret generic sops-age --namespace=flux-system --from-file=age.agekey="$SOPS_AGE_KEY_FILE"
-```
-
-The orchestrator listens on port 9099 of the agent host:
+The kubeconfig is written to `~/.kube/hetzner-vigil-<group_name>`. The orchestrator listens on port 9099 of the agent host:
 
 ```bash
 ssh root@"$(terraform -chdir=infra/terraform output -raw agent_public_ip)" curl -sf http://localhost:9099/healthz
@@ -63,4 +55,4 @@ This removes the servers, network, firewall and SSH key. Every resource and snap
 
 ## State
 
-State is local and holds decrypted secrets. [`.gitignore`](.gitignore) excludes it from git.
+State is local and holds the generated webhook secret and the provider tokens. [`.gitignore`](.gitignore) excludes it from git.

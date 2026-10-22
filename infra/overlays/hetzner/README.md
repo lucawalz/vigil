@@ -14,6 +14,7 @@ The dead-man's switch deadline is `OnActiveSec = 180s`, set once in `infra/nixos
 
 ## Tree
 
-- `kubernetes/clusters/hetzner/config/` - Kustomization chain (namespaces -> sources -> secrets -> infrastructure -> apps).
-- `kubernetes/clusters/hetzner/{namespaces,sources,secrets,infrastructure,apps}/` - contents of each stage.
-- `.sops.yaml` - SOPS creation rule binding `*.sops.yaml` to the operator's age recipient.
+- `kubernetes/clusters/hetzner/config/` - Kustomization chain (namespaces -> sources -> infrastructure -> apps).
+- `kubernetes/clusters/hetzner/{namespaces,sources,infrastructure,apps}/` - contents of each stage.
+
+Before it installs Flux, Terraform creates the `vigil-webhook-secret` Secret that Alertmanager reads.

@@ -12,15 +12,11 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.5"
     }
-    sops = {
-      source  = "carlpett/sops"
-      version = "~> 1.1"
-    }
   }
 }
 
 resource "random_password" "k3s_token" {
-  length  = 64
+  length  = local.generated_token_length
   special = false
 }
 
@@ -33,7 +29,8 @@ locals {
     "vigil-managed" = "true"
     "vigil-run"     = var.campaign_run_id
   }
-  github_repository_url = "https://github.com/${var.github_repository}"
+  github_repository_url  = "https://github.com/${var.github_repository}"
+  generated_token_length = 64
 }
 
 resource "hcloud_network" "vigil" {

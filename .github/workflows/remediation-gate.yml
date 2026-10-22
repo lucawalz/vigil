@@ -37,7 +37,6 @@ jobs:
         run: |
           FILES=$(git diff --name-only --diff-filter=d origin/main...HEAD \
             | grep '\.yaml$' \
-            | grep -v '\.sops\.yaml$' \
             | tr '\n' ' ')
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
 

@@ -1,6 +1,6 @@
 # Security policy
 
-vigil handles cluster and cloud credentials (a Hetzner Cloud API token, a GitHub token, kubeconfig and cluster credentials, and a SOPS age key) alongside LLM provider credentials (Anthropic or Ollama API keys). These are read from environment variables. Encrypted secrets that live in the repository use SOPS with age. No plaintext secret is committed.
+vigil handles cluster and cloud credentials (a Hetzner Cloud API token, a GitHub token, kubeconfig and cluster credentials) alongside LLM provider credentials (Anthropic or Ollama API keys). These are read from environment variables. The orchestrator webhook secret is generated per cluster at provisioning time. No plaintext secret is committed.
 
 ## Reporting a vulnerability
 

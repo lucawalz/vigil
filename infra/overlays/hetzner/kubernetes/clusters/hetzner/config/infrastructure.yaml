@@ -7,7 +7,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: cluster-sources
-    - name: cluster-secrets
   path: ./infra/overlays/hetzner/kubernetes/clusters/hetzner/infrastructure
   prune: true
   sourceRef:

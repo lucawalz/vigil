@@ -16,12 +16,6 @@ for var in "${REQUIRED_ENV_VARS[@]}"; do
   fi
 done
 
-AGE_KEY_FILE="$HOME/.config/sops/age/hetzner-eval-keys.txt"
-if [[ ! -f "$AGE_KEY_FILE" ]]; then
-  echo "error: age key not found at $AGE_KEY_FILE" >&2
-  exit 1
-fi
-
 SECRETS_FILE=$(mktemp /tmp/vigil-local-eval-secrets.XXXXXX)
 trap 'rm -f "$SECRETS_FILE"' EXIT
 
@@ -32,7 +26,6 @@ TF_VAR_OLLAMA_API_KEY=${TF_VAR_ollama_api_key}
 TF_VAR_OLLAMA_BASE_URL=${TF_VAR_ollama_base_url}
 TF_VAR_LLM_MODEL_NAME=${TF_VAR_llm_model_name}
 TF_VAR_ANTHROPIC_API_KEY=${TF_VAR_anthropic_api_key:-}
-SOPS_AGE_KEY=$(grep '^AGE-SECRET-KEY-' "$AGE_KEY_FILE")
 EOF
 chmod 600 "$SECRETS_FILE"
 

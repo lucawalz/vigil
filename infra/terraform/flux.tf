@@ -1,5 +1,5 @@
 resource "null_resource" "flux_bootstrap" {
-  depends_on = [null_resource.kubeconfig]
+  depends_on = [null_resource.kubeconfig, null_resource.vigil_webhook_secret]
 
   triggers = {
     branch           = var.vigil_branch

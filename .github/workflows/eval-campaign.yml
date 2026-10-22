@@ -113,14 +113,13 @@ jobs:
           TF_VAR_HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
           TF_VAR_LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           OPERATOR_SSH_PUBKEY: ${{ secrets.OPERATOR_SSH_PUBKEY }}
-          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
           TF_VAR_ANTHROPIC_API_KEY: ${{ secrets.TF_VAR_ANTHROPIC_API_KEY }}
           TF_VAR_OLLAMA_API_KEY: ${{ secrets.TF_VAR_OLLAMA_API_KEY }}
           TF_VAR_OLLAMA_BASE_URL: ${{ secrets.TF_VAR_OLLAMA_BASE_URL }}
         run: |
           required=(VIGIL_GITHUB_TOKEN TF_VAR_LLM_MODEL_NAME)
           if [ "$TARGET" = hetzner ]; then
-            required+=(TF_VAR_HCLOUD_TOKEN OPERATOR_SSH_PUBKEY SOPS_AGE_KEY)
+            required+=(TF_VAR_HCLOUD_TOKEN OPERATOR_SSH_PUBKEY)
           fi
           if [[ "$MODEL" == claude-* ]]; then
             required+=(TF_VAR_ANTHROPIC_API_KEY)
@@ -227,7 +226,6 @@ jobs:
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
           TF_VAR_ollama_api_key: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
           TF_VAR_ollama_base_url: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_BASE_URL || '' }}
-          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: terraform apply -auto-approve -input=false
 
       - name: Wait for kubeconfig
@@ -245,28 +243,6 @@ jobs:
             sleep 5
           done
           echo "kubeconfig ready ($(wc -c < "$KUBECONFIG") bytes)"
-
-      - name: Inject SOPS age key into Flux
-        if: inputs.target == 'hetzner'
-        env:
-          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
-        run: |
-          set -o pipefail
-          KCFG="$HOME/.kube/hetzner-vigil-$GROUP"
-          (umask 077 && printf '%s\n' "$SOPS_AGE_KEY" > /tmp/sops-age.txt)
-          kubectl --kubeconfig "$KCFG" \
-            create secret generic sops-age \
-            --namespace=flux-system \
-            --from-file=age.agekey=/tmp/sops-age.txt \
-            --dry-run=client -o yaml \
-            | kubectl --kubeconfig "$KCFG" apply -f -
-          rm -f /tmp/sops-age.txt
-          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          for ks in flux-system cluster-namespaces cluster-sources cluster-secrets cluster-infrastructure cluster-apps; do
-            kubectl --kubeconfig "$KCFG" \
-              annotate kustomization "$ks" -n flux-system \
-              "reconcile.fluxcd.io/requestedAt=$NOW" --overwrite || true
-          done
 
       - name: Wait for Flux kustomizations ready
         if: inputs.target == 'hetzner'
@@ -447,7 +423,6 @@ jobs:
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
           TF_VAR_ollama_api_key: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
           TF_VAR_ollama_base_url: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_BASE_URL || '' }}
-          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: terraform destroy -auto-approve -input=false
 
       - name: Lab destroy

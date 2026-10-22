@@ -289,7 +289,7 @@ resource "local_sensitive_file" "vigil_env" {
   filename        = "/tmp/vigil-env-${var.run_id}.env"
   file_permission = "0600"
   content         = <<-ENV
-    VIGIL_WEBHOOK_SECRET=${data.sops_file.vigil_webhook_secret.data["stringData.token"]}
+    VIGIL_WEBHOOK_SECRET=${random_password.vigil_webhook_secret.result}
     GITHUB_TOKEN=${var.github_token}
     REPO_URL=${local.github_repository_url}.git
     %{~if var.anthropic_api_key != ""~}
@@ -326,7 +326,7 @@ resource "null_resource" "vigil_agent_setup" {
     agent_id              = hcloud_server.agent.id
     branch                = var.vigil_branch
     repository            = var.github_repository
-    webhook_secret_sha    = sha256(data.sops_file.vigil_webhook_secret.data["stringData.token"])
+    webhook_secret_sha    = sha256(random_password.vigil_webhook_secret.result)
     ollama_api_key_sha    = sha256(var.ollama_api_key)
     ollama_base_url_sha   = sha256(var.ollama_base_url)
     anthropic_api_key_sha = sha256(var.anthropic_api_key)
