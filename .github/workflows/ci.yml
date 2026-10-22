@@ -332,6 +332,17 @@ jobs:
         run: |
           set -a; . "$LAB_STATE/lab.env"; set +a
           eval/scripts/health-gate.sh "$EVAL_RUNNER_KUBECONFIG"
+      - name: Control plane credential hardening
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          S() { timeout "$SSH_TIMEOUT_S" "$LAB_STATE/bin/ssh" vigil-control-plane-1 "$@"; }
+          MODE=$(S stat -c %a /etc/rancher/k3s/k3s.yaml) \
+            || { echo "control plane unreachable over ssh"; exit 1; }
+          [ "$MODE" = 600 ] || { echo "k3s kubeconfig mode is $MODE, expected 600"; exit 1; }
+          S k3s secrets-encrypt status | grep -q 'Encryption Status: Enabled' \
+            || { echo "k3s secrets encryption is not enabled"; exit 1; }
+          S test -s /var/lib/rancher/k3s/server/logs/audit.log \
+            || { echo "k3s api audit log is missing or empty"; exit 1; }
       - name: Boot through SeaBIOS and GRUB
         if: steps.changes.outputs.run == 'true'
         run: |
