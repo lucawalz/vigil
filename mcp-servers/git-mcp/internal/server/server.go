@@ -68,9 +68,13 @@ func (s *GitServer) CloneDir() string {
 	return s.cloneDir
 }
 
-const serverVersion = "1.1.0"
+const (
+	serverVersion             = "1.1.0"
+	gateWaitEndDescription    = "when the wait ends without a merge, auto-merge is disabled and the final PR state is reported"
+	timeoutSecondsDescription = "Wait limit in seconds; defaults to and is capped by the configured maximum"
+)
 
-func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
+func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *server.MCPServer {
 	s := &GitServer{}
 	protected := git.LoadProtectedBranches()
 
@@ -177,32 +181,32 @@ func NewServer(client git.GitClient, cfg *config.Config) *server.MCPServer {
 
 	mcpServer.AddTool(
 		mcp.NewTool("wait_for_gate",
-			mcp.WithDescription("Poll until the remediation PR is merged or fails the CI gate"),
+			mcp.WithDescription("Poll until the remediation PR is merged or fails the CI gate; "+gateWaitEndDescription),
 			mcp.WithNumber("pr_number",
 				mcp.Required(),
 				mcp.Description("Pull request number"),
 			),
 			mcp.WithNumber("timeout_seconds",
-				mcp.Description("Default 480"),
+				mcp.Description(timeoutSecondsDescription),
 			),
 			mcp.WithOutputSchema[git.GatePassedResult](),
 		),
-		git.HandleWaitForGate(client, s, git.DefaultPollInterval),
+		git.HandleWaitForGate(client, s, git.DefaultPollInterval, gateWaitSeconds),
 	)
 
 	mcpServer.AddTool(
 		mcp.NewTool("revert_commit",
-			mcp.WithDescription("Revert a merged remediation commit on a new branch, open a pull request into the session's base branch with auto-merge, wait for the CI gate, and return the revert SHA, the pull request number and the merge commit SHA on the base branch"),
+			mcp.WithDescription("Revert a merged remediation commit on a new branch, open a pull request into the session's base branch with auto-merge, wait for the CI gate, and return the revert SHA, the pull request number and the merge commit SHA on the base branch; "+gateWaitEndDescription),
 			mcp.WithString("merge_commit_sha",
 				mcp.Required(),
 				mcp.Description("SHA of the merge commit to revert"),
 			),
 			mcp.WithNumber("timeout_seconds",
-				mcp.Description("Default 480"),
+				mcp.Description(timeoutSecondsDescription),
 			),
 			mcp.WithOutputSchema[git.RevertResult](),
 		),
-		git.HandleRevertCommit(client, s, protected, git.DefaultPollInterval),
+		git.HandleRevertCommit(client, s, protected, git.DefaultPollInterval, gateWaitSeconds),
 	)
 
 	mcpServer.AddTool(

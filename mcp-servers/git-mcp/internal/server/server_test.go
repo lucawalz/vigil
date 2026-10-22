@@ -21,7 +21,8 @@ func (f *fakeGitClient) CreatePR(_ context.Context, _, _, _, _ string) (int, err
 func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, string, error) {
 	return "", false, "", nil
 }
-func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error { return nil }
+func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error  { return nil }
+func (f *fakeGitClient) DisableAutoMerge(_ context.Context, _ int) error { return nil }
 func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, _, _ string) (string, error) {
 	return "", nil
 }
@@ -47,7 +48,7 @@ func TestServerRegisters13Tools(t *testing.T) {
 		MaxOutputBytes: 4096,
 	}
 	client := &fakeGitClient{}
-	mcpSrv := NewServer(client, cfg)
+	mcpSrv := NewServer(client, cfg, config.DefaultWaitForGateTimeoutSeconds)
 	if mcpSrv == nil {
 		t.Fatal("NewServer returned nil")
 	}

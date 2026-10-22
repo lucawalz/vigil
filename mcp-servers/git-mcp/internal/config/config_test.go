@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -96,6 +97,35 @@ func TestLoad_noCredentialsFails(t *testing.T) {
 	_, err := Load(AgentAppEnv)
 	if err == nil || !strings.Contains(err.Error(), "GITHUB_TOKEN") {
 		t.Errorf("expected error naming GITHUB_TOKEN, got %v", err)
+	}
+}
+
+func TestGateWaitTimeoutSeconds_unsetUsesDefault(t *testing.T) {
+	t.Setenv(GateWaitTimeoutEnv, "")
+	got, err := GateWaitTimeoutSeconds()
+	if err != nil || got != DefaultWaitForGateTimeoutSeconds {
+		t.Errorf("GateWaitTimeoutSeconds() = %d, %v; want %d, nil", got, err, DefaultWaitForGateTimeoutSeconds)
+	}
+}
+
+func TestGateWaitTimeoutSeconds_readsValue(t *testing.T) {
+	t.Setenv(GateWaitTimeoutEnv, "120")
+	got, err := GateWaitTimeoutSeconds()
+	if err != nil || got != 120 {
+		t.Errorf("GateWaitTimeoutSeconds() = %d, %v; want 120, nil", got, err)
+	}
+}
+
+func TestGateWaitTimeoutSeconds_invalidFails(t *testing.T) {
+	aboveBound := strconv.Itoa(MaxWaitForGateTimeoutSeconds + 1)
+	for _, value := range []string{"0", "-5", "eight", aboveBound} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(GateWaitTimeoutEnv, value)
+			_, err := GateWaitTimeoutSeconds()
+			if err == nil || !strings.Contains(err.Error(), GateWaitTimeoutEnv) || !strings.Contains(err.Error(), strconv.Itoa(MaxWaitForGateTimeoutSeconds)) {
+				t.Errorf("expected error naming %s and the bound, got %v", GateWaitTimeoutEnv, err)
+			}
+		})
 	}
 }
 

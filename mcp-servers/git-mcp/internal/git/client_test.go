@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	gogithub "github.com/google/go-github/v86/github"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/auth"
@@ -341,6 +345,51 @@ func TestCreateBranch_FetchFailureReturnsClearError(t *testing.T) {
 	}
 	if !strings.HasPrefix(err.Error(), "create_branch: fetch base") {
 		t.Errorf("expected 'create_branch: fetch base' prefix, got: %v", err)
+	}
+}
+
+func newGitHubStubClient(t *testing.T, pullRequestJSON string, graphQLCalls *int) *realGitClient {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/test/test/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(pullRequestJSON))
+	})
+	mux.HandleFunc("POST /graphql", func(w http.ResponseWriter, _ *http.Request) {
+		*graphQLCalls++
+		_, _ = w.Write([]byte(`{"data":{}}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	gh := gogithub.NewClient(srv.Client())
+	baseURL, err := url.Parse(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh.BaseURL = baseURL
+	return &realGitClient{gh: gh, owner: "test", repo: "test"}
+}
+
+func TestDisableAutoMerge_skipsMutationWithoutAutoMergeRequest(t *testing.T) {
+	graphQLCalls := 0
+	client := newGitHubStubClient(t, `{"number":7,"node_id":"PR_7"}`, &graphQLCalls)
+
+	if err := client.DisableAutoMerge(context.Background(), 7); err != nil {
+		t.Fatalf("DisableAutoMerge: %v", err)
+	}
+	if graphQLCalls != 0 {
+		t.Errorf("expected no mutation for a PR without auto-merge, got %d calls", graphQLCalls)
+	}
+}
+
+func TestDisableAutoMerge_postsMutationForAutoMergeRequest(t *testing.T) {
+	graphQLCalls := 0
+	client := newGitHubStubClient(t, `{"number":7,"node_id":"PR_7","auto_merge":{"merge_method":"squash"}}`, &graphQLCalls)
+
+	if err := client.DisableAutoMerge(context.Background(), 7); err != nil {
+		t.Fatalf("DisableAutoMerge: %v", err)
+	}
+	if graphQLCalls != 1 {
+		t.Errorf("expected one mutation for a PR with auto-merge, got %d calls", graphQLCalls)
 	}
 }
 

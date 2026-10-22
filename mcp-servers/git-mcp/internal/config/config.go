@@ -8,8 +8,11 @@ import (
 )
 
 const (
-	MaxOutputBytesDefault = 4096
-	GitHubURLPrefix       = "https://github.com/"
+	MaxOutputBytesDefault            = 4096
+	GitHubURLPrefix                  = "https://github.com/"
+	GateWaitTimeoutEnv               = "GATE_WAIT_TIMEOUT_S"
+	DefaultWaitForGateTimeoutSeconds = 480
+	MaxWaitForGateTimeoutSeconds     = 3600
 )
 
 type Config struct {
@@ -60,6 +63,18 @@ func (c *Config) Repository() (owner, repo string, err error) {
 		return "", "", fmt.Errorf("cannot parse REPO_URL %q - expected %sowner/repo.git", c.RepoURL, GitHubURLPrefix)
 	}
 	return parts[0], parts[1], nil
+}
+
+func GateWaitTimeoutSeconds() (int, error) {
+	v := os.Getenv(GateWaitTimeoutEnv)
+	if v == "" {
+		return DefaultWaitForGateTimeoutSeconds, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 || n > MaxWaitForGateTimeoutSeconds {
+		return 0, fmt.Errorf("%s must be a whole number of seconds from 1 to %d, got %q", GateWaitTimeoutEnv, MaxWaitForGateTimeoutSeconds, v)
+	}
+	return n, nil
 }
 
 func envInt(key string, fallback int) int {

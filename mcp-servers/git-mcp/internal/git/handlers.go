@@ -20,13 +20,13 @@ import (
 )
 
 const (
-	branchPrefix                     = "remediation/run-"
-	revertBranchPrefix               = "remediation/revert-"
-	revertBranchSHALength            = 12
-	pollIntervalSeconds              = 15
-	defaultWaitForGateTimeoutSeconds = 480
-	unmergeableGateGraceProbes       = 4
-	mergeableStateDirty              = "dirty"
+	branchPrefix               = "remediation/run-"
+	revertBranchPrefix         = "remediation/revert-"
+	revertBranchSHALength      = 12
+	pollIntervalSeconds        = 15
+	unmergeableGateGraceProbes = 4
+	mergeableStateDirty        = "dirty"
+	gateWaitFinaliseTimeout    = 30 * time.Second
 )
 
 const DefaultPollInterval = pollIntervalSeconds * time.Second
@@ -405,7 +405,7 @@ func HandleGetPRStatus(client GitClient, state SessionState) server.ToolHandlerF
 func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeableProbes *int) (string, bool, error) {
 	prState, merged, mergeCommitSHA, err := client.GetPRStatus(ctx, prNumber)
 	if err != nil {
-		return "", true, err
+		return "", false, err
 	}
 	if merged {
 		return mergeCommitSHA, true, nil
@@ -431,9 +431,9 @@ func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeab
 	return "", false, nil
 }
 
-func waitForMerge(ctx context.Context, client GitClient, prNumber, timeoutSecs int, pollInterval time.Duration) (string, error) {
-	timer := time.NewTimer(time.Duration(timeoutSecs) * time.Second)
-	defer timer.Stop()
+func waitForMerge(ctx context.Context, client GitClient, prNumber int, start time.Time, timeoutSecs int, pollInterval time.Duration) (string, error) {
+	waitCtx, cancel := context.WithDeadline(ctx, start.Add(time.Duration(timeoutSecs)*time.Second))
+	defer cancel()
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -441,34 +441,61 @@ func waitForMerge(ctx context.Context, client GitClient, prNumber, timeoutSecs i
 
 	for {
 		select {
-		case <-ctx.Done():
-			return "", errors.New("context cancelled")
-		case <-timer.C:
-			return "", fmt.Errorf("timed out after %d seconds", timeoutSecs)
+		case <-waitCtx.Done():
+			return finaliseGateWait(ctx, client, prNumber, time.Since(start), nil)
 		case <-ticker.C:
-			if mergeCommitSHA, done, err := pollGateOnce(ctx, client, prNumber, &unmergeableProbes); done {
-				return mergeCommitSHA, err
+			mergeCommitSHA, done, err := pollGateOnce(waitCtx, client, prNumber, &unmergeableProbes)
+			if done && err == nil {
+				return mergeCommitSHA, nil
+			}
+			if err != nil {
+				if waitCtx.Err() != nil {
+					err = nil
+				}
+				return finaliseGateWait(ctx, client, prNumber, time.Since(start), err)
 			}
 		}
 	}
 }
 
-func gateTimeoutSeconds(args map[string]any) int {
-	if ts, ok := args["timeout_seconds"].(float64); ok && ts > 0 {
-		return int(ts)
+func finaliseGateWait(ctx context.Context, client GitClient, prNumber int, waited time.Duration, cause error) (string, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gateWaitFinaliseTimeout)
+	defer cancel()
+
+	ended := fmt.Sprintf("gate wait ended after %d seconds", int(waited.Round(time.Second)/time.Second))
+	if cause != nil {
+		ended += fmt.Sprintf(" (%v)", cause)
 	}
-	return defaultWaitForGateTimeoutSeconds
+	disableErr := client.DisableAutoMerge(ctx, prNumber)
+	prState, merged, mergeCommitSHA, statusErr := client.GetPRStatus(ctx, prNumber)
+	switch {
+	case statusErr == nil && merged:
+		return mergeCommitSHA, nil
+	case disableErr != nil:
+		return "", fmt.Errorf("%s; auto-merge could not be disabled (%w); PR #%d may still merge", ended, errors.Join(disableErr, statusErr), prNumber)
+	case statusErr != nil:
+		return "", fmt.Errorf("%s; auto-merge disabled; final state of PR #%d could not be read (%w)", ended, prNumber, statusErr)
+	}
+	return "", fmt.Errorf("%s; auto-merge disabled; PR #%d %s and not merged", ended, prNumber, prState)
 }
 
-func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.Duration) server.ToolHandlerFunc {
+func gateTimeoutSeconds(args map[string]any, maxWaitSeconds int) int {
+	if ts, ok := args["timeout_seconds"].(float64); ok && ts > 0 {
+		return min(int(ts), maxWaitSeconds)
+	}
+	return maxWaitSeconds
+}
+
+func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.Duration, maxWaitSeconds int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		start := time.Now()
 		args := req.GetArguments()
 		prNumF, ok := args["pr_number"].(float64)
 		if !ok {
 			return mcp.NewToolResultError("pr_number: missing or wrong type"), nil
 		}
 
-		mergeCommitSHA, err := waitForMerge(ctx, client, int(prNumF), gateTimeoutSeconds(args), pollInterval)
+		mergeCommitSHA, err := waitForMerge(ctx, client, int(prNumF), start, gateTimeoutSeconds(args, maxWaitSeconds), pollInterval)
 		if err != nil {
 			return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), nil
 		}
@@ -583,8 +610,9 @@ func HandleResolveManifestPath(client GitClient, state SessionState) server.Tool
 	}
 }
 
-func HandleRevertCommit(client GitClient, state SessionState, protected ProtectedBranches, pollInterval time.Duration) server.ToolHandlerFunc {
+func HandleRevertCommit(client GitClient, state SessionState, protected ProtectedBranches, pollInterval time.Duration, maxWaitSeconds int) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		start := time.Now()
 		args := req.GetArguments()
 		mergeCommitSHA, ok := args["merge_commit_sha"].(string)
 		if !ok || mergeCommitSHA == "" {
@@ -623,7 +651,7 @@ func HandleRevertCommit(client GitClient, state SessionState, protected Protecte
 		if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
 			return toolError("HandleRevertCommit", fmt.Sprintf("revert PR #%d: enable auto-merge: %s", prNumber, err), hintEnableAutoMerge), nil
 		}
-		landedSHA, err := waitForMerge(ctx, client, prNumber, gateTimeoutSeconds(args), pollInterval)
+		landedSHA, err := waitForMerge(ctx, client, prNumber, start, gateTimeoutSeconds(args, maxWaitSeconds), pollInterval)
 		if err != nil {
 			return toolError("HandleRevertCommit", fmt.Sprintf("revert PR #%d: %s", prNumber, err), hintWaitForGate), nil
 		}

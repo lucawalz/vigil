@@ -41,6 +41,7 @@ type GitClient interface {
 	Push(ctx context.Context, cloneDir, branch string) error
 	CreatePR(ctx context.Context, title, head, base, body string) (prNumber int, err error)
 	EnableAutoMerge(ctx context.Context, prNumber int) error
+	DisableAutoMerge(ctx context.Context, prNumber int) error
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
 	GetCheckRunStatus(ctx context.Context, prNumber int) (gateFailed bool, conclusion string, err error)
 	GetMergeableState(ctx context.Context, prNumber int) (string, error)
@@ -249,49 +250,75 @@ func (c *realGitClient) CreatePR(ctx context.Context, title, head, base, body st
 	return pr.GetNumber(), nil
 }
 
-func (c *realGitClient) EnableAutoMerge(ctx context.Context, prNumber int) error {
-	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
-	if err != nil {
-		return fmt.Errorf("enable_auto_merge: get pr: %w", err)
-	}
-	nodeID := pr.GetNodeID()
-	if nodeID == "" {
-		return fmt.Errorf("enable_auto_merge: PR #%d has no node_id", prNumber)
-	}
-
-	const mutation = `mutation($pullRequestId: ID!) {
+const (
+	graphQLPath             = "graphql"
+	enableAutoMergeMutation = `mutation($pullRequestId: ID!) {
 		enablePullRequestAutoMerge(input: {
 			pullRequestId: $pullRequestId,
 			mergeMethod: SQUASH
 		}) { pullRequest { id } }
 	}`
+	disableAutoMergeMutation = `mutation($pullRequestId: ID!) {
+		disablePullRequestAutoMerge(input: {
+			pullRequestId: $pullRequestId
+		}) { pullRequest { id } }
+	}`
+)
+
+func (c *realGitClient) EnableAutoMerge(ctx context.Context, prNumber int) error {
+	const op = "enable_auto_merge"
+	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
+	if err != nil {
+		return fmt.Errorf("%s: get pr: %w", op, err)
+	}
+	return c.pullRequestMutation(ctx, op, enableAutoMergeMutation, pr)
+}
+
+func (c *realGitClient) DisableAutoMerge(ctx context.Context, prNumber int) error {
+	const op = "disable_auto_merge"
+	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
+	if err != nil {
+		return fmt.Errorf("%s: get pr: %w", op, err)
+	}
+	if pr.AutoMerge == nil {
+		return nil
+	}
+	return c.pullRequestMutation(ctx, op, disableAutoMergeMutation, pr)
+}
+
+func (c *realGitClient) pullRequestMutation(ctx context.Context, op, mutation string, pr *gogithub.PullRequest) error {
+	nodeID := pr.GetNodeID()
+	if nodeID == "" {
+		return fmt.Errorf("%s: PR #%d has no node_id", op, pr.GetNumber())
+	}
+
 	body, _ := json.Marshal(map[string]any{
 		"query":     mutation,
 		"variables": map[string]any{"pullRequestId": nodeID},
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.github.com/graphql", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.gh.BaseURL.JoinPath(graphQLPath).String(), bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("enable_auto_merge: build request: %w", err)
+		return fmt.Errorf("%s: build request: %w", op, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.gh.Client().Do(req)
 	if err != nil {
-		return fmt.Errorf("enable_auto_merge: post: %w", err)
+		return fmt.Errorf("%s: post: %w", op, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("enable_auto_merge: status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return fmt.Errorf("%s: status %d: %s", op, resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var gqlResp struct {
 		Errors []struct{ Message string } `json:"errors"`
 	}
 	if json.Unmarshal(respBody, &gqlResp) == nil && len(gqlResp.Errors) > 0 {
-		return fmt.Errorf("enable_auto_merge: graphql: %s", gqlResp.Errors[0].Message)
+		return fmt.Errorf("%s: graphql: %s", op, gqlResp.Errors[0].Message)
 	}
 	return nil
 }

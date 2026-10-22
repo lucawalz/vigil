@@ -25,6 +25,7 @@ import (
 const (
 	testMaxBytes         = 4096
 	concurrentGoroutines = 100
+	testMaxWaitSeconds   = 600
 )
 
 type fakeGitClient struct {
@@ -47,6 +48,11 @@ type fakeGitClient struct {
 	getPRCalls          int
 	autoMergeErr        error
 	autoMergeCalls      int
+	disableErr          error
+	disableCalls        int
+	revertDelay         time.Duration
+	disableCtxErr       error
+	onDisable           func(*fakeGitClient)
 	closePRErr          error
 	closePRCalls        int
 	deleteBranchErr     error
@@ -94,12 +100,22 @@ func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error {
 	return f.autoMergeErr
 }
 
+func (f *fakeGitClient) DisableAutoMerge(ctx context.Context, _ int) error {
+	f.disableCalls++
+	f.disableCtxErr = ctx.Err()
+	if f.onDisable != nil {
+		f.onDisable(f)
+	}
+	return f.disableErr
+}
+
 func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, string, error) {
 	f.getPRCalls++
 	return f.prState, f.prMerged, f.prMergeSHA, f.err
 }
 
 func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, base, head string) (string, error) {
+	time.Sleep(f.revertDelay)
 	f.lastRevertBranch = base
 	f.lastRevertHead = head
 	return f.revertSHA, f.err
@@ -1209,7 +1225,7 @@ func TestWaitForGateHandler_Success(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number": float64(42),
 	})
@@ -1232,7 +1248,7 @@ func TestWaitForGateHandler_DomainError(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number":       float64(42),
@@ -1253,7 +1269,7 @@ func TestWaitForGateHandler_TimeoutRespected(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 
 	start := time.Now()
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
@@ -1281,7 +1297,7 @@ func TestWaitForGateHandler_MissingArgument(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{})
 	if err != nil {
@@ -1304,7 +1320,7 @@ func TestWaitForGateHandler_GateCheckFailed(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number":       float64(42),
@@ -1336,7 +1352,7 @@ func TestWaitForGateHandler_FailsFastWhenUnmergeableAndUngated(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number":       float64(42),
@@ -1366,7 +1382,7 @@ func TestWaitForGateHandler_DirtyButGatedDoesNotFailFast(t *testing.T) {
 		mcp.WithNumber("pr_number", mcp.Required()),
 		mcp.WithNumber("timeout_seconds"),
 	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond)
+	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
 		"pr_number":       float64(42),
@@ -1379,8 +1395,209 @@ func TestWaitForGateHandler_DirtyButGatedDoesNotFailFast(t *testing.T) {
 		t.Error("expected IsError=true (timeout), got success")
 	}
 	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "timed out") {
-		t.Errorf("expected timeout error when gate present, got: %s", text)
+	if !strings.Contains(text, "gate wait ended after 1 seconds") {
+		t.Errorf("expected gate wait end error when gate present, got: %s", text)
+	}
+}
+
+func waitForGateTool() mcp.Tool {
+	return mcp.NewTool("wait_for_gate",
+		mcp.WithNumber("pr_number", mcp.Required()),
+		mcp.WithNumber("timeout_seconds"),
+	)
+}
+
+func runWaitForGate(t *testing.T, fake *fakeGitClient, maxWaitSeconds int, timeoutSeconds float64) *mcp.CallToolResult {
+	t.Helper()
+	handler := git.HandleWaitForGate(fake, &fakeSessionState{}, time.Millisecond, maxWaitSeconds)
+	result, err := callHandler(t, "wait_for_gate", waitForGateTool(), handler, map[string]any{
+		"pr_number":       float64(42),
+		"timeout_seconds": timeoutSeconds,
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	return result
+}
+
+func resultText(result *mcp.CallToolResult) string {
+	return result.Content[0].(mcp.TextContent).Text
+}
+
+func TestWaitForGateHandler_TimeoutDisablesAutoMergeAndRereadsState(t *testing.T) {
+	readsBeforeDisable := 0
+	fake := &fakeGitClient{prState: "open", onDisable: func(f *fakeGitClient) { readsBeforeDisable = f.getPRCalls }}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
+
+	if !result.IsError {
+		t.Fatal("expected IsError=true when the wait ends without a merge")
+	}
+	if fake.disableCalls != 1 {
+		t.Errorf("expected DisableAutoMerge called once, got %d", fake.disableCalls)
+	}
+	if fake.getPRCalls <= readsBeforeDisable {
+		t.Errorf("expected PR status re-read after disabling auto-merge")
+	}
+	if text := resultText(result); !strings.Contains(text, "gate wait ended after 1 seconds; auto-merge disabled; PR #42 open and not merged") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_MergeSeenInFinalReadSucceeds(t *testing.T) {
+	fake := &fakeGitClient{prState: "open", onDisable: func(f *fakeGitClient) {
+		f.prState, f.prMerged, f.prMergeSHA = "closed", true, "1a7e5ha"
+	}}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
+
+	if result.IsError {
+		t.Fatalf("expected success for a merge seen in the final read, got: %s", resultText(result))
+	}
+	if structured, ok := result.StructuredContent.(map[string]any); !ok || structured["merge_commit_sha"] != "1a7e5ha" {
+		t.Errorf("structured result = %#v, want merge_commit_sha 1a7e5ha", result.StructuredContent)
+	}
+}
+
+func TestWaitForGateHandler_DisableFailureReportsPossibleMerge(t *testing.T) {
+	fake := &fakeGitClient{prState: "open", disableErr: errors.New("graphql unavailable")}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
+
+	if !result.IsError {
+		t.Fatal("expected IsError=true when auto-merge cannot be disabled")
+	}
+	if text := resultText(result); !strings.Contains(text, "auto-merge could not be disabled (graphql unavailable); PR #42 may still merge") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_GateFailureDisablesAutoMergeAndRereadsState(t *testing.T) {
+	readsBeforeDisable := 0
+	fake := &fakeGitClient{prState: "open", checkRunFailed: true, checkRunConclusion: "cancelled", onDisable: func(f *fakeGitClient) { readsBeforeDisable = f.getPRCalls }}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+
+	if !result.IsError {
+		t.Fatal("expected IsError=true when the gate fails")
+	}
+	if fake.disableCalls != 1 {
+		t.Errorf("expected DisableAutoMerge called once, got %d", fake.disableCalls)
+	}
+	if fake.getPRCalls <= readsBeforeDisable {
+		t.Errorf("expected PR status re-read after disabling auto-merge")
+	}
+	if text := resultText(result); !strings.Contains(text, "(gate check failed (conclusion=cancelled)); auto-merge disabled; PR #42 open and not merged") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_ClosedWithoutMergeReportsFinalState(t *testing.T) {
+	fake := &fakeGitClient{prState: "closed"}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+
+	if !result.IsError {
+		t.Fatal("expected IsError=true for a PR closed without merge")
+	}
+	if fake.disableCalls != 1 {
+		t.Errorf("expected the finaliser to run once, got %d DisableAutoMerge calls", fake.disableCalls)
+	}
+	if text := resultText(result); !strings.Contains(text, "(PR closed without merge); auto-merge disabled; PR #42 closed and not merged") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_PollFailureDisablesAutoMergeAndReportsState(t *testing.T) {
+	fake := &fakeGitClient{prState: "open", err: errors.New("502 bad gateway"), onDisable: func(f *fakeGitClient) { f.err = nil }}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+
+	if !result.IsError {
+		t.Fatal("expected IsError=true when a poll fails and the PR is not merged")
+	}
+	if fake.disableCalls != 1 {
+		t.Errorf("expected DisableAutoMerge called once, got %d", fake.disableCalls)
+	}
+	if text := resultText(result); !strings.Contains(text, "(502 bad gateway); auto-merge disabled; PR #42 open and not merged") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_PollFailureWithMergeInFinalReadSucceeds(t *testing.T) {
+	fake := &fakeGitClient{prState: "open", err: errors.New("502 bad gateway"), onDisable: func(f *fakeGitClient) {
+		f.err, f.prState, f.prMerged, f.prMergeSHA = nil, "closed", true, "1a7e5ha"
+	}}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+
+	if result.IsError {
+		t.Fatalf("expected success for a merge seen in the final read, got: %s", resultText(result))
+	}
+	if structured, ok := result.StructuredContent.(map[string]any); !ok || structured["merge_commit_sha"] != "1a7e5ha" {
+		t.Errorf("structured result = %#v, want merge_commit_sha 1a7e5ha", result.StructuredContent)
+	}
+}
+
+func TestWaitForGateHandler_DisableAndFinalReadFailureNamesBothErrors(t *testing.T) {
+	fake := &fakeGitClient{prState: "open", err: errors.New("api down"), disableErr: errors.New("graphql unavailable")}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+
+	text := resultText(result)
+	if !result.IsError || !strings.Contains(text, "graphql unavailable") || !strings.Contains(text, "api down") || !strings.Contains(text, "PR #42 may still merge") {
+		t.Errorf("expected both errors and the possible merge, got: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_FinalReadFailureNamesUnknownState(t *testing.T) {
+	fake := &fakeGitClient{prState: "open", onDisable: func(f *fakeGitClient) { f.err = errors.New("api down") }}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
+
+	if !result.IsError {
+		t.Fatal("expected IsError=true when the final state cannot be read")
+	}
+	if text := resultText(result); !strings.Contains(text, "auto-merge disabled; final state of PR #42 could not be read") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_TimeoutClampedToConfiguredMaximum(t *testing.T) {
+	const maxWaitSeconds = 1
+	const maxWallSeconds = 3
+	fake := &fakeGitClient{prState: "open"}
+
+	start := time.Now()
+	result := runWaitForGate(t, fake, maxWaitSeconds, testMaxWaitSeconds)
+
+	if elapsed := time.Since(start); elapsed > maxWallSeconds*time.Second {
+		t.Errorf("wait took %v, expected the configured maximum of %ds", elapsed, maxWaitSeconds)
+	}
+	if text := resultText(result); !strings.Contains(text, "gate wait ended after 1 seconds") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestWaitForGateHandler_CancelledRequestStillFinalises(t *testing.T) {
+	fake := &fakeGitClient{prState: "open"}
+	handler := git.HandleWaitForGate(fake, &fakeSessionState{}, time.Hour, testMaxWaitSeconds)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var req mcp.CallToolRequest
+	req.Params.Name = "wait_for_gate"
+	req.Params.Arguments = map[string]any{"pr_number": float64(42)}
+
+	result, err := handler(ctx, req)
+
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if fake.disableCalls != 1 || fake.disableCtxErr != nil {
+		t.Errorf("expected one DisableAutoMerge call on a live context, got %d calls, ctx err %v", fake.disableCalls, fake.disableCtxErr)
+	}
+	if text := resultText(result); !strings.Contains(text, "auto-merge disabled; PR #42 open and not merged") {
+		t.Errorf("unexpected end state: %s", text)
 	}
 }
 
@@ -1399,7 +1616,7 @@ func TestRevertCommitHandler_Success(t *testing.T) {
 	fake := mergedRevertClient()
 	state := preloadedState(t.TempDir(), "remediation/run-001")
 	state.SetBaseBranch("main")
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1429,7 +1646,7 @@ func TestRevertCommitHandler_BranchNameUsesShortSHA(t *testing.T) {
 	fake := mergedRevertClient()
 	state := preloadedState(t.TempDir(), "remediation/run-001")
 	state.SetBaseBranch("main")
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "0123456789abcdef0123456789abcdef01234567",
@@ -1446,7 +1663,7 @@ func TestRevertCommitHandler_GateFailureReturnsError(t *testing.T) {
 	fake := &fakeGitClient{revertSHA: "cafebabe", prNumber: 7, prState: "open", checkRunFailed: true, checkRunConclusion: "failure"}
 	state := preloadedState(t.TempDir(), "remediation/run-001")
 	state.SetBaseBranch("main")
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1460,13 +1677,16 @@ func TestRevertCommitHandler_GateFailureReturnsError(t *testing.T) {
 	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "gate check failed") || !strings.Contains(text, "#7") {
 		t.Errorf("expected gate failure naming PR #7, got: %s", text)
 	}
+	if fake.disableCalls != 1 {
+		t.Errorf("expected auto-merge disabled once after the gate failed, got %d", fake.disableCalls)
+	}
 }
 
 func TestRevertCommitHandler_TimeoutReturnsError(t *testing.T) {
 	fake := &fakeGitClient{revertSHA: "cafebabe", prNumber: 7, prState: "open"}
 	state := preloadedState(t.TempDir(), "remediation/run-001")
 	state.SetBaseBranch("main")
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1478,8 +1698,60 @@ func TestRevertCommitHandler_TimeoutReturnsError(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("expected IsError=true on timeout")
 	}
-	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "timed out") {
-		t.Errorf("expected timeout error, got: %s", text)
+	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "revert PR #7: gate wait ended after 1 seconds; auto-merge disabled") {
+		t.Errorf("expected gate wait end error, got: %s", text)
+	}
+}
+
+func TestRevertCommitHandler_GateDeadlineCountsFromHandlerEntry(t *testing.T) {
+	const setupDelay = 900 * time.Millisecond
+	const maxWall = 1500 * time.Millisecond
+	fake := &fakeGitClient{revertSHA: "cafebabe", prNumber: 7, prState: "open", revertDelay: setupDelay}
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Hour, testMaxWaitSeconds)
+
+	start := time.Now()
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+		"timeout_seconds":  float64(1),
+	})
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if elapsed > maxWall {
+		t.Errorf("revert_commit took %v, want the gate deadline one second after entry", elapsed)
+	}
+	if fake.disableCalls != 1 {
+		t.Errorf("expected DisableAutoMerge called once, got %d", fake.disableCalls)
+	}
+	if text := resultText(result); !strings.Contains(text, "revert PR #7: gate wait ended after 1 seconds; auto-merge disabled") {
+		t.Errorf("unexpected end state: %s", text)
+	}
+}
+
+func TestRevertCommitHandler_MergeSeenInFinalReadSucceeds(t *testing.T) {
+	fake := &fakeGitClient{revertSHA: "cafebabe", prNumber: 7, prState: "open", onDisable: func(f *fakeGitClient) {
+		f.prState, f.prMerged, f.prMergeSHA = "closed", true, "1a7e5ha"
+	}}
+	state := preloadedState(t.TempDir(), "remediation/run-001")
+	state.SetBaseBranch("main")
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
+
+	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
+		"merge_commit_sha": "deadbeef",
+		"timeout_seconds":  float64(1),
+	})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success for a merge seen in the final read, got: %s", resultText(result))
+	}
+	if structured, ok := result.StructuredContent.(map[string]any); !ok || structured["merge_commit_sha"] != "1a7e5ha" {
+		t.Errorf("structured result = %#v, want merge_commit_sha 1a7e5ha", result.StructuredContent)
 	}
 }
 
@@ -1488,7 +1760,7 @@ func TestRevertCommitHandler_AutoMergeErrorReturnsError(t *testing.T) {
 	fake.autoMergeErr = fmt.Errorf("auto-merge disabled")
 	state := preloadedState(t.TempDir(), "remediation/run-001")
 	state.SetBaseBranch("main")
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1508,7 +1780,7 @@ func TestRevertCommitHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{err: fmt.Errorf("revert conflict")}
 	state := preloadedState(t.TempDir(), "remediation/run-001")
 	state.SetBaseBranch("main")
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", revertCommitTool(), handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -1529,7 +1801,7 @@ func TestRevertCommitHandler_InvalidSHA(t *testing.T) {
 	fake := &fakeGitClient{}
 	state := preloadedState(cloneDir, "remediation/run-001")
 	tool := revertCommitTool()
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "not-a-sha!",
@@ -1687,7 +1959,7 @@ func TestRevertCommitHandler_RefusesProtectedBase(t *testing.T) {
 	state := preloadedState(cloneDir, "remediation/run-001")
 	state.SetBaseBranch("main")
 	tool := revertCommitTool()
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "abc1234",
@@ -1713,7 +1985,7 @@ func TestRevertCommitHandler_AllowsEvalBaseline(t *testing.T) {
 	state := preloadedState(cloneDir, "remediation/run-001")
 	state.SetBaseBranch("chore/eval-cluster-baseline")
 	tool := revertCommitTool()
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{"main": {}}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "abc1234",
@@ -2168,7 +2440,7 @@ func TestHandleRevertCommit_UsesBaseBranchFromSession(t *testing.T) {
 	state.SetBaseBranch("chore/eval-cluster-baseline")
 
 	tool := revertCommitTool()
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",
@@ -2197,7 +2469,7 @@ func TestHandleRevertCommit_FailsWhenBaseBranchUnset(t *testing.T) {
 	state := preloadedState(cloneDir, "remediation/run-001")
 
 	tool := revertCommitTool()
-	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond)
+	handler := git.HandleRevertCommit(fake, state, git.ProtectedBranches{}, time.Millisecond, testMaxWaitSeconds)
 
 	result, err := callHandler(t, "revert_commit", tool, handler, map[string]any{
 		"merge_commit_sha": "deadbeef",

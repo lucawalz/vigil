@@ -38,12 +38,16 @@ func main() {
 	if cfg.RepoURL == "" {
 		log.Fatal("git-mcp: REPO_URL is required")
 	}
+	gateWaitSeconds, err := config.GateWaitTimeoutSeconds()
+	if err != nil {
+		log.Fatalf("git-mcp: %v", err)
+	}
 	id, err := auth.NewIdentity(ctx, cfg)
 	if err != nil {
 		log.Fatalf("git-mcp: %v", err)
 	}
 	client := git.NewRealGitClient(cfg, id)
-	s := mcpserver.NewServer(client, cfg)
+	s := mcpserver.NewServer(client, cfg, gateWaitSeconds)
 
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
