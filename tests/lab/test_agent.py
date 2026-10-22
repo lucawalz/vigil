@@ -1,4 +1,5 @@
 import os
+import shutil
 import stat
 import subprocess
 import time
@@ -9,6 +10,7 @@ import pytest
 from vigil_lab import agent
 from vigil_lab.addresses import parse_address_plan
 from vigil_lab.agent import lab_env, write_lab_env, write_ssh_tools
+from vigil_lab.guest import GUEST_USER
 from vigil_lab.proc import LabError, pid_alive
 from vigil_lab.state import LabPaths, LabSettings
 
@@ -25,6 +27,7 @@ SETTINGS = LabSettings(
 )
 LAB_COMMAND = "/nix/store/x-lab/bin/lab"
 PRIVATE_FILE = 0o600
+OWNER_USER = "git-owner"
 CALLER_ENV = {
     "PATH": "/usr/bin",
     "HOME": "/home/u",
@@ -164,6 +167,71 @@ def test_start_returns_once_the_agent_is_healthy(tmp_path: Path, monkeypatch) ->
         assert pid_alive(paths.pid(agent.AGENT))
     finally:
         agent.stop(paths)
+
+
+def _resolved_ssh(config: Path, home: Path, host: str) -> dict[str, list[str]]:
+    result = subprocess.run(
+        ["ssh", "-G", "-F", str(config), host],
+        env={**os.environ, "HOME": str(home)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    options: dict[str, list[str]] = {}
+    for line in result.stdout.splitlines():
+        key, _, value = line.partition(" ")
+        options.setdefault(key, []).append(value)
+    return options
+
+
+@pytest.fixture
+def owner_home(tmp_path: Path) -> Path:
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    (home / ".ssh" / "config").write_text(f"Host github.com\n  User {OWNER_USER}\n")
+    return home
+
+
+@pytest.mark.skipif(shutil.which("ssh") is None, reason="ssh is not installed")
+def test_ssh_config_leaves_other_hosts_to_the_owner_setup(
+    tmp_path: Path, owner_home: Path
+) -> None:
+    paths = LabPaths(tmp_path / "lab")
+    paths.ensure()
+    plan = parse_address_plan(FIXTURE.read_text())
+    write_ssh_tools(paths, plan.hosts, "/usr/bin/ssh")
+    resolved = _resolved_ssh(paths.root / "ssh_config", owner_home, "github.com")
+    assert resolved["user"] == [OWNER_USER]
+    assert str(paths.lab_key) not in resolved["identityfile"]
+    assert resolved["stricthostkeychecking"] == ["ask"]
+
+
+@pytest.mark.skipif(shutil.which("ssh") is None, reason="ssh is not installed")
+def test_ssh_config_keeps_the_lab_identity_for_lab_hosts(
+    tmp_path: Path, owner_home: Path
+) -> None:
+    paths = LabPaths(tmp_path / "lab")
+    paths.ensure()
+    plan = parse_address_plan(FIXTURE.read_text())
+    write_ssh_tools(paths, plan.hosts, "/usr/bin/ssh")
+    worker = next(host for host in plan.hosts if host.name == "vigil-worker-1")
+    resolved = _resolved_ssh(paths.root / "ssh_config", owner_home, worker.name)
+    assert resolved["user"] == [GUEST_USER]
+    assert resolved["port"] == [str(worker.ssh_port)]
+    assert resolved["identityfile"] == [str(paths.lab_key)]
+    assert resolved["stricthostkeychecking"] == ["false"]
+
+
+def test_ssh_config_scopes_shared_options_to_the_lab_hosts(tmp_path: Path) -> None:
+    paths = LabPaths(tmp_path)
+    paths.ensure()
+    plan = parse_address_plan(FIXTURE.read_text())
+    write_ssh_tools(paths, plan.hosts, "/usr/bin/ssh")
+    text = (paths.root / "ssh_config").read_text()
+    names = " ".join(host.name for host in plan.hosts)
+    assert f"Host {names}\n  User {GUEST_USER}\n" in text
+    assert "Host *\n" not in text
+    assert text.endswith("Match all\n  Include ~/.ssh/config\n")
 
 
 def test_ssh_config_never_asks_for_a_password(tmp_path: Path) -> None:

@@ -26,6 +26,7 @@ HEALTHZ_PROBE_TIMEOUT_S = 5.0
 LOG_TAIL_LINES = 20
 HTTP_OK = 200
 EXECUTABLE_MODE = 0o755
+OWNER_SSH_CONFIG = "~/.ssh/config"
 PASSTHROUGH_PREFIXES = ("OLLAMA_", "LLM_", "ANTHROPIC_")
 PASSTHROUGH_KEYS = frozenset(
     {
@@ -103,14 +104,17 @@ def write_lab_env(path: Path, env: Mapping[str, str]) -> None:
 
 def write_ssh_tools(paths: LabPaths, hosts: Iterable[LabHost], ssh_binary: str) -> None:
     config = paths.root / "ssh_config"
+    lab_hosts = list(hosts)
     blocks = [
         f"Host {host.name}\n  HostName {LOOPBACK}\n  Port {host.ssh_port}\n"
-        for host in hosts
+        for host in lab_hosts
     ]
+    names = " ".join(host.name for host in lab_hosts)
     options = "".join(f"  {option.replace('=', ' ', 1)}\n" for option in SSH_OPTIONS)
     blocks.append(
-        f"Host *\n  User {GUEST_USER}\n  IdentityFile {paths.lab_key}\n{options}"
+        f"Host {names}\n  User {GUEST_USER}\n  IdentityFile {paths.lab_key}\n{options}"
     )
+    blocks.append(f"Match all\n  Include {OWNER_SSH_CONFIG}\n")
     config.write_text("\n".join(blocks))
     wrapper = paths.bin / "ssh"
     ssh = shlex.quote(ssh_binary)
