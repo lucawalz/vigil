@@ -21,7 +21,7 @@ in
     enable = true;
     role = "server";
     extraFlags = [
-      "--write-kubeconfig-mode=0644"
+      "--write-kubeconfig-mode=0600"
       "--secrets-encryption"
       "--kube-apiserver-arg=audit-policy-file=/etc/${auditPolicyEtcPath}"
       "--kube-apiserver-arg=audit-log-path=${auditLogPath}"
