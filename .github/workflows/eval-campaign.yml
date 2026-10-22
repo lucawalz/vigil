@@ -136,6 +136,29 @@ jobs:
           fi
           echo "All required secrets for target $TARGET are set"
 
+      - name: Check repository settings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBE_BRANCH: eval/0/k8s-1
+          REQUIRED_CHECK: remediation-gate
+          AUTO_MERGE_QUERY: query($owner:String!,$name:String!){repository(owner:$owner,name:$name){autoMergeAllowed}}
+        run: |
+          failed=0
+          auto_merge=$(gh api graphql -f owner="${GITHUB_REPOSITORY%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
+            -f query="$AUTO_MERGE_QUERY" --jq .data.repository.autoMergeAllowed)
+          if [ "$auto_merge" != true ]; then
+            echo "::error::Auto-merge is disabled on $GITHUB_REPOSITORY; enable Settings > General > Pull Requests > Allow auto-merge (allow_auto_merge)"
+            failed=1
+          fi
+          gated=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/$PROBE_BRANCH?per_page=100" \
+            --jq "[.[] | select(.type == \"required_status_checks\") | .parameters.required_status_checks[].context | select(. == \"$REQUIRED_CHECK\")] | length")
+          if [ "$gated" -eq 0 ]; then
+            echo "::error::No ruleset on $GITHUB_REPOSITORY requires the $REQUIRED_CHECK status check on eval/** branches; add a branch ruleset targeting refs/heads/eval/**/* with required status check $REQUIRED_CHECK"
+            failed=1
+          fi
+          [ "$failed" -eq 0 ] || exit 1
+          echo "Auto-merge is allowed and $REQUIRED_CHECK is required on eval branches"
+
   snapshots:
     needs: check-secrets
     if: inputs.target == 'hetzner'
