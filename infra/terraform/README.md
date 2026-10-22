@@ -8,7 +8,7 @@ Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` se
 - A Hetzner Cloud project and a read-write API token.
 - One NixOS snapshot per role in that project, labelled `vigil-role=control-plane-1`, `worker-1`, `worker-2` and `agent` plus `vigil-run=<run id>`. The Eval Campaign workflow builds them for each campaign through the Build NixOS Snapshots workflow, with Packer from [`infra/packer/`](../packer/).
 - An SSH key pair, `~/.ssh/id_ed25519` by default (`ssh_public_key_path` and `ssh_private_key_path` override it), and an existing `~/.kube/` directory.
-- A GitHub token with write access to the repository in `github_repository`, which Flux, the hosts and the scenario scripts track.
+- A GitHub App installed on the repository in `github_repository`, which Flux, the hosts and the scenario scripts track (see [Running from a fork](#running-from-a-fork)).
 
 ## Variables
 
@@ -18,7 +18,8 @@ Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` se
 |----------|---------|---------|
 | `TF_VAR_hcloud_token` | required | Hetzner Cloud API token |
 | `TF_VAR_github_repository` | required | GitHub repository as `owner/name`; the Eval Campaign workflow passes the repository it runs in |
-| `TF_VAR_github_token` | required | GitHub token for the orchestrator's pull requests and pushes; the Eval Campaign workflow maps the `VIGIL_GITHUB_TOKEN` secret to it |
+| `TF_VAR_github_app_client_id` | required | Client ID of the GitHub App the orchestrator acts as; the Eval Campaign workflow maps the `VIGIL_APP_CLIENT_ID` secret to it |
+| `TF_VAR_github_app_private_key` | required | Private key of that App in PEM form; the Eval Campaign workflow maps the `VIGIL_APP_PRIVATE_KEY` secret to it |
 | `TF_VAR_group_name` | required | Scenario group (`k8s`, `os`, `cross`, `misc`); prefixes every resource name |
 | `TF_VAR_llm_model_name` | required | Orchestrator model, for example `gpt-oss:120b` or `claude-sonnet-4-6` |
 | `TF_VAR_anthropic_api_key` | empty | Required for `claude-*` models |
@@ -38,7 +39,7 @@ One-time setup in the fork, in order:
 
 1. Enable GitHub Actions, including scheduled workflows for the daily Hetzner Sweep.
 2. Create the `eval` environment with the secrets listed under [Campaign workflow](../../eval/README.md#campaign-workflow).
-3. Add a GitHub token with contents and pull-requests write access to the fork as the `VIGIL_GITHUB_TOKEN` secret.
+3. Register a GitHub App under the fork owner's account with the webhook off and "Only on this account". Grant the repository permissions Contents read and write, Pull requests read and write, Checks read and Metadata read, and no others. Install it on the fork only, generate a private key, and add the App's client ID and the key as the `VIGIL_APP_CLIENT_ID` and `VIGIL_APP_PRIVATE_KEY` secrets. Pull requests, merges and agent commits then appear as `<app-slug>[bot]`. The App must not be a bypass actor of any ruleset, so that `remediation-gate` gates its pull requests.
 4. Enable Settings > General > Pull Requests > Allow auto-merge.
 5. Add a branch ruleset targeting `refs/heads/eval/**/*` that requires the `remediation-gate` status check. The campaign verifies this and the previous setting before it starts.
 6. Make sure the Hetzner project has room for four servers at a time: the four snapshot builds run in parallel and finish before the four cluster servers of the first cell are created.

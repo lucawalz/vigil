@@ -39,7 +39,9 @@ for m in mcp-servers/*/; do (cd "$m" && go install .); done
 | `VIGIL_WEBHOOK_SECRET` | Bearer token required on `/webhook` |
 | `KUBECONFIG` | Cluster for `kubectl-mcp` and `flux-mcp` |
 | `SSH_HOSTS`, `SSH_USER`, `SSH_KEY_PATH` | NixOS hosts for `nixos-mcp`; `SSH_HOSTS` is required |
-| `REPO_URL`, `GITHUB_TOKEN` | Repository that `git-mcp` commits to; both are required |
+| `REPO_URL` | Repository that `git-mcp` commits to; required |
+| `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY_FILE` | GitHub App credentials; the agent acts as `<app-slug>[bot]` |
+| `GITHUB_TOKEN` | Token for lab and local runs, used instead of the App credentials |
 | `KUBECTL_MCP_CMD`, `FLUX_MCP_CMD`, `NIXOS_MCP_CMD`, `GIT_MCP_CMD` | Optional override of each MCP server command |
 
 With the variables exported, start the orchestrator and check its health endpoint:
