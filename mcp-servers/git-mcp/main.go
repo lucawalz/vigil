@@ -18,25 +18,20 @@ func main() {
 	log.SetOutput(os.Stderr)
 	ctx := context.Background()
 
-	if len(os.Args) > 1 && os.Args[1] == credentialCommand {
-		action := ""
-		if len(os.Args) > 2 {
-			action = os.Args[2]
-		}
-		newToken := func(ctx context.Context) (auth.TokenFunc, error) {
-			cfg, err := config.Load()
-			if err != nil {
-				return nil, err
+	if len(os.Args) > 1 {
+		if app, ok := credentialAppEnvs[os.Args[1]]; ok {
+			action := ""
+			if len(os.Args) > 2 {
+				action = os.Args[2]
 			}
-			return auth.NewTokenFunc(ctx, cfg)
+			if err := credential(ctx, action, os.Stdin, os.Stdout, tokenFromEnv(app)); err != nil {
+				log.Fatalf("git-mcp %s: %v", os.Args[1], err)
+			}
+			return
 		}
-		if err := credential(ctx, action, os.Stdin, os.Stdout, newToken); err != nil {
-			log.Fatalf("git-mcp credential: %v", err)
-		}
-		return
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(config.AgentAppEnv)
 	if err != nil {
 		log.Fatalf("git-mcp: %v", err)
 	}

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -21,21 +20,31 @@ type Config struct {
 	MaxOutputBytes    int
 }
 
-func Load() (*Config, error) {
+type AppEnv struct {
+	ClientID       string
+	PrivateKeyFile string
+}
+
+var (
+	AgentAppEnv   = AppEnv{ClientID: "GITHUB_APP_CLIENT_ID", PrivateKeyFile: "GITHUB_APP_PRIVATE_KEY_FILE"}
+	HarnessAppEnv = AppEnv{ClientID: "VIGIL_HARNESS_APP_CLIENT_ID", PrivateKeyFile: "VIGIL_HARNESS_APP_PRIVATE_KEY_FILE"}
+)
+
+func Load(app AppEnv) (*Config, error) {
 	c := &Config{
 		GitHubToken:       os.Getenv("GITHUB_TOKEN"),
-		AppClientID:       os.Getenv("GITHUB_APP_CLIENT_ID"),
-		AppPrivateKeyFile: os.Getenv("GITHUB_APP_PRIVATE_KEY_FILE"),
+		AppClientID:       os.Getenv(app.ClientID),
+		AppPrivateKeyFile: os.Getenv(app.PrivateKeyFile),
 		RepoURL:           os.Getenv("REPO_URL"),
 		MaxOutputBytes:    envInt("MAX_OUTPUT_BYTES", MaxOutputBytesDefault),
 	}
 	switch {
 	case c.AppClientID != "" && c.AppPrivateKeyFile == "":
-		return nil, errors.New("GITHUB_APP_PRIVATE_KEY_FILE is required when GITHUB_APP_CLIENT_ID is set")
+		return nil, fmt.Errorf("%s is required when %s is set", app.PrivateKeyFile, app.ClientID)
 	case c.AppClientID == "" && c.AppPrivateKeyFile != "":
-		return nil, errors.New("GITHUB_APP_CLIENT_ID is required when GITHUB_APP_PRIVATE_KEY_FILE is set")
+		return nil, fmt.Errorf("%s is required when %s is set", app.ClientID, app.PrivateKeyFile)
 	case !c.UsesApp() && c.GitHubToken == "":
-		return nil, errors.New("GITHUB_TOKEN or GITHUB_APP_CLIENT_ID with GITHUB_APP_PRIVATE_KEY_FILE is required")
+		return nil, fmt.Errorf("GITHUB_TOKEN or %s with %s is required", app.ClientID, app.PrivateKeyFile)
 	}
 	return c, nil
 }

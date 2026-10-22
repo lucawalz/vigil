@@ -7,13 +7,30 @@ import (
 	"io"
 
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/auth"
+	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/config"
 )
 
 const (
-	credentialCommand   = "credential"
-	credentialGetAction = "get"
-	credentialUsername  = "x-access-token"
+	credentialCommand        = "credential"
+	harnessCredentialCommand = "harness-credential"
+	credentialGetAction      = "get"
+	credentialUsername       = "x-access-token"
 )
+
+var credentialAppEnvs = map[string]config.AppEnv{
+	credentialCommand:        config.AgentAppEnv,
+	harnessCredentialCommand: config.HarnessAppEnv,
+}
+
+func tokenFromEnv(app config.AppEnv) func(context.Context) (auth.TokenFunc, error) {
+	return func(ctx context.Context) (auth.TokenFunc, error) {
+		cfg, err := config.Load(app)
+		if err != nil {
+			return nil, err
+		}
+		return auth.NewTokenFunc(ctx, cfg)
+	}
+}
 
 func credential(ctx context.Context, action string, in io.Reader, out io.Writer, newToken func(context.Context) (auth.TokenFunc, error)) error {
 	if action != credentialGetAction {

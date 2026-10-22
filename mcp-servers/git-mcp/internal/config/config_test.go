@@ -17,7 +17,7 @@ func TestLoad_staticToken(t *testing.T) {
 	t.Setenv("REPO_URL", "https://github.com/owner/repo.git")
 	t.Setenv("MAX_OUTPUT_BYTES", "1024")
 
-	cfg, err := Load()
+	cfg, err := Load(AgentAppEnv)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestLoad_defaultMaxOutputBytes(t *testing.T) {
 	setAuthEnv(t, "tok", "", "")
 	t.Setenv("MAX_OUTPUT_BYTES", "")
 
-	cfg, err := Load()
+	cfg, err := Load(AgentAppEnv)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestLoad_defaultMaxOutputBytes(t *testing.T) {
 func TestLoad_app(t *testing.T) {
 	setAuthEnv(t, "", "Iv23abc", "/run/key.pem")
 
-	cfg, err := Load()
+	cfg, err := Load(AgentAppEnv)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -57,25 +57,43 @@ func TestLoad_app(t *testing.T) {
 	}
 }
 
-func TestLoad_incompleteAppFails(t *testing.T) {
-	cases := map[string]struct{ clientID, keyFile, missing string }{
-		"client id only": {"Iv23abc", "", "GITHUB_APP_PRIVATE_KEY_FILE"},
-		"key file only":  {"", "/run/key.pem", "GITHUB_APP_CLIENT_ID"},
+func TestLoad_harnessAppReadsHarnessNames(t *testing.T) {
+	setAuthEnv(t, "", "Iv23agent", "/run/agent.pem")
+	t.Setenv("VIGIL_HARNESS_APP_CLIENT_ID", "Iv23harness")
+	t.Setenv("VIGIL_HARNESS_APP_PRIVATE_KEY_FILE", "/run/harness.pem")
+
+	cfg, err := Load(HarnessAppEnv)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			setAuthEnv(t, "tok", tc.clientID, tc.keyFile)
-			_, err := Load()
-			if err == nil || !strings.Contains(err.Error(), tc.missing) {
-				t.Errorf("expected error naming %s, got %v", tc.missing, err)
-			}
-		})
+	if cfg.AppClientID != "Iv23harness" || cfg.AppPrivateKeyFile != "/run/harness.pem" {
+		t.Errorf("expected harness app settings, got %+v", cfg)
+	}
+}
+
+func TestLoad_incompleteAppFails(t *testing.T) {
+	for _, app := range []AppEnv{AgentAppEnv, HarnessAppEnv} {
+		cases := map[string]struct{ clientID, keyFile, missing string }{
+			"client id only": {"Iv23abc", "", app.PrivateKeyFile},
+			"key file only":  {"", "/run/key.pem", app.ClientID},
+		}
+		for name, tc := range cases {
+			t.Run(app.ClientID+" "+name, func(t *testing.T) {
+				t.Setenv("GITHUB_TOKEN", "tok")
+				t.Setenv(app.ClientID, tc.clientID)
+				t.Setenv(app.PrivateKeyFile, tc.keyFile)
+				_, err := Load(app)
+				if err == nil || !strings.Contains(err.Error(), tc.missing) {
+					t.Errorf("expected error naming %s, got %v", tc.missing, err)
+				}
+			})
+		}
 	}
 }
 
 func TestLoad_noCredentialsFails(t *testing.T) {
 	setAuthEnv(t, "", "", "")
-	_, err := Load()
+	_, err := Load(AgentAppEnv)
 	if err == nil || !strings.Contains(err.Error(), "GITHUB_TOKEN") {
 		t.Errorf("expected error naming GITHUB_TOKEN, got %v", err)
 	}
