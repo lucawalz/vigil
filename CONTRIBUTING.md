@@ -41,6 +41,7 @@ for m in mcp-servers/*/; do (cd "$m" && go install .); done
 | `SSH_HOSTS`, `SSH_USER`, `SSH_KEY_PATH` | NixOS hosts for `nixos-mcp`; `SSH_HOSTS` is required |
 | `REPO_URL` | Repository that `git-mcp` commits to; required |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY_FILE` | GitHub App credentials; the agent acts as `<app-slug>[bot]` |
+| `VIGIL_HARNESS_APP_CLIENT_ID`, `VIGIL_HARNESS_APP_PRIVATE_KEY_FILE` | Eval harness GitHub App credentials, used by the harness credential helper for scenario pushes and branch setup |
 | `GITHUB_TOKEN` | Token for lab and local runs, used instead of the App credentials |
 | `KUBECTL_MCP_CMD`, `FLUX_MCP_CMD`, `NIXOS_MCP_CMD`, `GIT_MCP_CMD` | Optional override of each MCP server command |
 

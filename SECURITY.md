@@ -1,6 +1,6 @@
 # Security policy
 
-vigil handles cluster and cloud credentials (a Hetzner Cloud API token, a GitHub token, kubeconfig and cluster credentials) alongside LLM provider credentials (Anthropic or Ollama API keys). These are read from environment variables. The orchestrator webhook secret is generated per cluster at provisioning time. No plaintext secret is committed.
+vigil handles cluster and cloud credentials (a Hetzner Cloud API token, GitHub App private keys or a GitHub token, kubeconfig and cluster credentials) alongside LLM provider credentials (Anthropic or Ollama API keys). These are read from environment variables; the GitHub App private keys are read from files whose paths come from environment variables. The orchestrator webhook secret is generated per cluster at provisioning time. No plaintext secret is committed.
 
 ## Reporting a vulnerability
 
