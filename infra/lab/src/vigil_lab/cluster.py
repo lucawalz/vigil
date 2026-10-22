@@ -44,8 +44,11 @@ KUBECONFIG_READY_TIMEOUT_S = 300.0
 NODES_READY_TIMEOUT_S = 600.0
 READY = "True"
 GIT_LS_REMOTE_NO_MATCH = 2
-CREDENTIAL_HELPER = "!git-mcp credential"
-APP_CREDENTIAL_KEYS = ("GITHUB_APP_CLIENT_ID", "GITHUB_APP_PRIVATE_KEY_FILE")
+CREDENTIAL_HELPER = "!git-mcp harness-credential"
+HARNESS_APP_CREDENTIAL_KEYS = (
+    "VIGIL_HARNESS_APP_CLIENT_ID",
+    "VIGIL_HARNESS_APP_PRIVATE_KEY_FILE",
+)
 TOKEN_CREDENTIAL_KEY = "GITHUB_TOKEN"
 HELPER_KEY = "credential.https://github.com.helper"
 SCRATCH_GIT_CONFIG = {
@@ -60,7 +63,7 @@ def github_repo_url(repo: str) -> str:
 
 def has_github_credentials(environ: Mapping[str, str]) -> bool:
     return bool(environ.get(TOKEN_CREDENTIAL_KEY)) or all(
-        environ.get(key) for key in APP_CREDENTIAL_KEYS
+        environ.get(key) for key in HARNESS_APP_CREDENTIAL_KEYS
     )
 
 
@@ -172,7 +175,8 @@ def ensure_branch(
     if not has_github_credentials(environ):
         raise LabError(
             f"branch {branch} does not exist on origin; export "
-            f"{' and '.join(APP_CREDENTIAL_KEYS)} for a GitHub App, or "
+            f"{' and '.join(HARNESS_APP_CREDENTIAL_KEYS)} for the eval harness "
+            "GitHub App, or "
             f"{TOKEN_CREDENTIAL_KEY}, with contents write access so the lab "
             "can create it from main"
         )

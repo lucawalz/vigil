@@ -140,14 +140,14 @@ def test_scratch_clone_resets_the_credential_helper_list_before_adding_its_own(
     )
 
 
-def test_scratch_clone_authenticates_through_the_git_mcp_credential_helper_only(
+def test_scratch_clone_authenticates_through_the_git_mcp_harness_credential_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_git_mcp = fake_bin / "git-mcp"
     fake_git_mcp.write_text(
-        '#!/bin/sh\n[ "$1 $2" = "credential get" ] || exit 0\n'
+        '#!/bin/sh\n[ "$1 $2" = "harness-credential get" ] || exit 0\n'
         'printf "username=x-access-token\\npassword=%s\\n" "$GITHUB_TOKEN"\n'
     )
     fake_git_mcp.chmod(0o755)
@@ -211,32 +211,38 @@ def clone_of_remote(tmp_path: Path) -> Path:
     return clone
 
 
-APP_SETTINGS = {
-    "GITHUB_APP_CLIENT_ID": "Iv1.abc",
-    "GITHUB_APP_PRIVATE_KEY_FILE": "/keys/app.pem",
+HARNESS_APP_SETTINGS = {
+    "VIGIL_HARNESS_APP_CLIENT_ID": "Iv1.harness",
+    "VIGIL_HARNESS_APP_PRIVATE_KEY_FILE": "/keys/harness.pem",
+}
+AGENT_APP_SETTINGS = {
+    "GITHUB_APP_CLIENT_ID": "Iv1.agent",
+    "GITHUB_APP_PRIVATE_KEY_FILE": "/keys/agent.pem",
 }
 
 
 def test_ensure_branch_needs_credentials_to_create_a_missing_branch(
     clone_of_remote: Path,
 ) -> None:
-    with pytest.raises(LabError, match="GITHUB_APP_CLIENT_ID.*GITHUB_TOKEN"):
+    with pytest.raises(LabError, match="VIGIL_HARNESS_APP_CLIENT_ID.*GITHUB_TOKEN"):
         ensure_branch(clone_of_remote, "eval/lab", REPO, {})
 
 
-def test_ensure_branch_rejects_incomplete_app_settings(
-    clone_of_remote: Path,
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        {"VIGIL_HARNESS_APP_CLIENT_ID": "Iv1.harness"},
+        AGENT_APP_SETTINGS,
+    ],
+)
+def test_ensure_branch_rejects_settings_other_than_complete_harness_app(
+    clone_of_remote: Path, credentials: dict[str, str]
 ) -> None:
     with pytest.raises(LabError, match="GITHUB_TOKEN"):
-        ensure_branch(
-            clone_of_remote,
-            "eval/lab",
-            REPO,
-            {"GITHUB_APP_CLIENT_ID": APP_SETTINGS["GITHUB_APP_CLIENT_ID"]},
-        )
+        ensure_branch(clone_of_remote, "eval/lab", REPO, credentials)
 
 
-@pytest.mark.parametrize("credentials", [{"GITHUB_TOKEN": "t"}, APP_SETTINGS])
+@pytest.mark.parametrize("credentials", [{"GITHUB_TOKEN": "t"}, HARNESS_APP_SETTINGS])
 def test_ensure_branch_creates_a_missing_branch_from_main(
     clone_of_remote: Path, credentials: dict[str, str]
 ) -> None:
