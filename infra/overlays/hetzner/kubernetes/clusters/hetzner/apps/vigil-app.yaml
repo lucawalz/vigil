@@ -29,10 +29,10 @@ spec:
           periodSeconds: 5
           failureThreshold: 3
         resources:
-          requests:
-            memory: 64Mi
           limits:
             memory: 128Mi
+          requests:
+            memory: 64Mi
         volumeMounts:
         - name: nginx-config-template
           mountPath: /etc/nginx/templates
@@ -49,13 +49,11 @@ spec:
         - --timeout
         - '0'
         resources:
-          requests:
-            memory: 8Mi
           limits:
             memory: 96Mi
+          requests:
+            memory: 8Mi
       volumes:
       - name: nginx-config-template
         configMap:
           name: vigil-app-nginx-config
-      nodeSelector:
-        kubernetes.io/hostname: nonexistent-bogus-node
