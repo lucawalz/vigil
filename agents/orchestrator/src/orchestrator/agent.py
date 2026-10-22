@@ -17,6 +17,7 @@ from common.constants import (
     CONFIDENCE_AUTO_THRESHOLD,
     CONFIDENCE_REVIEW_THRESHOLD,
     GIT_COMMIT_BUDGET,
+    MCP_CALL_TIMEOUT_S,
     WATCHDOG_NAMESPACE,
 )
 from common.flux_status import coerce_flux_status
@@ -70,6 +71,9 @@ _MAX_DIAGNOSIS_ATTEMPTS = 3
 _RUN_ID_SUFFIX_LEN = 8
 
 _REMEDIATION_BRANCH_PREFIX = "remediation/run-"
+
+_ROLLBACK_GATE_TIMEOUT_S = 480
+_ROLLBACK_REVERT_CALL_TIMEOUT_S = _ROLLBACK_GATE_TIMEOUT_S + MCP_CALL_TIMEOUT_S
 
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
@@ -322,6 +326,20 @@ def _has_rollback_target(recommended_action: str, merge_commit_sha: str | None) 
     return True
 
 
+async def _revert_through_gate(
+    git_mcp: MCPServerStdio, merge_commit_sha: str | None
+) -> None:
+    await call_tool(
+        git_mcp,
+        "revert_commit",
+        {
+            "merge_commit_sha": merge_commit_sha,
+            "timeout_seconds": _ROLLBACK_GATE_TIMEOUT_S,
+        },
+        timeout_s=_ROLLBACK_REVERT_CALL_TIMEOUT_S,
+    )
+
+
 async def _issue_rollback(
     recommended_action: str,
     git_mcp: MCPServerStdio,
@@ -339,11 +357,7 @@ async def _issue_rollback(
                 {"namespace": "flux-system", "name": "cluster-apps"},
             )
         elif recommended_action == "git_commit_k8s":
-            await call_tool(
-                git_mcp,
-                "revert_commit",
-                {"merge_commit_sha": merge_commit_sha},
-            )
+            await _revert_through_gate(git_mcp, merge_commit_sha)
             await call_tool(
                 flux_mcp,
                 "reconcile_kustomization",
@@ -352,11 +366,7 @@ async def _issue_rollback(
         elif recommended_action == "nixos_rebuild":
             return True
         elif recommended_action == "git_commit_nix":
-            await call_tool(
-                git_mcp,
-                "revert_commit",
-                {"merge_commit_sha": merge_commit_sha},
-            )
+            await _revert_through_gate(git_mcp, merge_commit_sha)
             await call_tool(
                 nixos_mcp,
                 "trigger_reconcile",

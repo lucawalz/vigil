@@ -25,6 +25,8 @@ os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 from diagnosis.models import DiagnosisOutputRetryExhausted, DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
+    _ROLLBACK_GATE_TIMEOUT_S,
+    _ROLLBACK_REVERT_CALL_TIMEOUT_S,
     _RUN_LOCK,
     OS_CHECK_NODE_CONDITION,
     OS_CHECK_SYSTEMD,
@@ -2229,7 +2231,10 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
         if c.args and c.args[0] == "revert_commit"
     ]
     assert len(revert_calls) == 1
-    assert revert_calls[0].args[1] == {"merge_commit_sha": "abc123"}
+    assert revert_calls[0].args[1] == {
+        "merge_commit_sha": "abc123",
+        "timeout_seconds": _ROLLBACK_GATE_TIMEOUT_S,
+    }
     trigger_calls = [
         c
         for c in nixos_mcp.direct_call_tool.call_args_list
@@ -2238,6 +2243,40 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
     assert len(trigger_calls) == 1
     assert trigger_calls[0].args[1] == {"host": "vigil-worker-1"}
     flux_mcp.direct_call_tool.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["git_commit_k8s", "git_commit_nix"])
+async def test_rollback_revert_waits_for_gate_within_its_own_call_timeout(
+    action: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, dict[str, object], float | None]] = []
+
+    async def _record(
+        _server: object,
+        name: str,
+        args: dict[str, object],
+        *,
+        timeout_s: float | None = None,
+    ) -> object:
+        calls.append((name, args, timeout_s))
+        return {"content": "ok"}
+
+    monkeypatch.setattr(orch_mod, "call_tool", _record)
+
+    result = await _issue_rollback(
+        action, AsyncMock(), AsyncMock(), AsyncMock(), "abc123", "vigil-worker-1"
+    )
+
+    assert result is True
+    revert_calls = [c for c in calls if c[0] == "revert_commit"]
+    assert revert_calls == [
+        (
+            "revert_commit",
+            {"merge_commit_sha": "abc123", "timeout_seconds": _ROLLBACK_GATE_TIMEOUT_S},
+            _ROLLBACK_REVERT_CALL_TIMEOUT_S,
+        )
+    ]
+    assert _ROLLBACK_REVERT_CALL_TIMEOUT_S > _ROLLBACK_GATE_TIMEOUT_S
 
 
 async def test_orchestrator_skips_diagnosis_when_context_unresolvable(
