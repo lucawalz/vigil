@@ -286,14 +286,21 @@ resource "null_resource" "agent_ssh_auth" {
 }
 
 locals {
-  agent_env_defaults          = jsondecode(file("${path.module}/../agent-env.json"))
-  github_app_private_key_path = "/etc/vigil/github-app.pem"
+  agent_env_defaults           = jsondecode(file("${path.module}/../agent-env.json"))
+  github_app_private_key_path  = "/etc/vigil/github-app.pem"
+  harness_app_private_key_path = "/etc/vigil/github-harness-app.pem"
 }
 
 resource "local_sensitive_file" "github_app_private_key" {
   filename        = "/tmp/vigil-github-app-${var.run_id}.pem"
   file_permission = "0600"
   content         = var.github_app_private_key
+}
+
+resource "local_sensitive_file" "harness_app_private_key" {
+  filename        = "/tmp/vigil-github-harness-app-${var.run_id}.pem"
+  file_permission = "0600"
+  content         = var.harness_app_private_key
 }
 
 resource "local_sensitive_file" "vigil_env" {
@@ -303,6 +310,8 @@ resource "local_sensitive_file" "vigil_env" {
     VIGIL_WEBHOOK_SECRET=${random_password.vigil_webhook_secret.result}
     GITHUB_APP_CLIENT_ID=${var.github_app_client_id}
     GITHUB_APP_PRIVATE_KEY_FILE=${local.github_app_private_key_path}
+    VIGIL_HARNESS_APP_CLIENT_ID=${var.harness_app_client_id}
+    VIGIL_HARNESS_APP_PRIVATE_KEY_FILE=${local.harness_app_private_key_path}
     REPO_URL=${local.github_repository_url}.git
     %{~if var.anthropic_api_key != ""~}
     ANTHROPIC_API_KEY=${var.anthropic_api_key}
@@ -339,6 +348,8 @@ resource "null_resource" "vigil_agent_setup" {
     webhook_secret_sha    = sha256(random_password.vigil_webhook_secret.result)
     github_app_client_id  = var.github_app_client_id
     github_app_key_sha    = sha256(var.github_app_private_key)
+    harness_app_client_id = var.harness_app_client_id
+    harness_app_key_sha   = sha256(var.harness_app_private_key)
     ollama_api_key_sha    = sha256(var.ollama_api_key)
     ollama_base_url_sha   = sha256(var.ollama_base_url)
     anthropic_api_key_sha = sha256(var.anthropic_api_key)
@@ -355,12 +366,15 @@ resource "null_resource" "vigil_agent_setup" {
         ${local_sensitive_file.github_app_private_key.filename} \
         root@${hcloud_server.agent.ipv4_address}:${local.github_app_private_key_path}
       scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        ${local_sensitive_file.harness_app_private_key.filename} \
+        root@${hcloud_server.agent.ipv4_address}:${local.harness_app_private_key_path}
+      scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         ${local_sensitive_file.vigil_env.filename} \
         root@${hcloud_server.agent.ipv4_address}:/etc/vigil/env
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.agent.ipv4_address} \
-        "chmod 600 /etc/vigil/env ${local.github_app_private_key_path} && systemctl start --no-block vigil-orchestrator.service"
-      rm -f ${local_sensitive_file.vigil_env.filename} ${local_sensitive_file.github_app_private_key.filename}
+        "chmod 600 /etc/vigil/env ${local.github_app_private_key_path} ${local.harness_app_private_key_path} && systemctl start --no-block vigil-orchestrator.service"
+      rm -f ${local_sensitive_file.vigil_env.filename} ${local_sensitive_file.github_app_private_key.filename} ${local_sensitive_file.harness_app_private_key.filename}
       %{if var.operator_ssh_pubkey != ""}
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         root@${hcloud_server.agent.ipv4_address} \

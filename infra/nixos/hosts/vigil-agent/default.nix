@@ -8,7 +8,7 @@ let
       . /etc/vigil/env
       set +a
     fi
-    exec ${git-mcp}/bin/git-mcp credential "$@"
+    exec ${git-mcp}/bin/git-mcp harness-credential "$@"
   '';
 in
 {
