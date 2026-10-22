@@ -30,6 +30,21 @@ Terraform module that provisions the Hetzner Cloud eval cluster: four `cpx22` se
 | `TF_VAR_operator_ssh_pubkey` | empty | Extra public key added to every host |
 | `TF_VAR_ssh_public_key_path`, `TF_VAR_ssh_private_key_path` | `~/.ssh/id_ed25519.pub`, `~/.ssh/id_ed25519` | Key pair for provisioning |
 
+## Running from a fork
+
+Packer, Flux and the hosts fetch the repository anonymously, so the fork is public.
+
+One-time setup in the fork, in order:
+
+1. Enable GitHub Actions, including scheduled workflows for the daily Hetzner Sweep.
+2. Create the `eval` environment with the secrets listed under [Campaign workflow](../../eval/README.md#campaign-workflow).
+3. Add a GitHub token with contents and pull-requests write access to the fork as the `VIGIL_GITHUB_TOKEN` secret.
+4. Enable Settings > General > Pull Requests > Allow auto-merge.
+5. Add a branch ruleset targeting `refs/heads/eval/**/*` that requires the `remediation-gate` status check. The campaign verifies this and the previous setting before it starts.
+6. Make sure the Hetzner project has room for four servers at a time: the four snapshot builds run in parallel and finish before the four cluster servers of the first cell are created.
+
+Then dispatch the Eval Campaign workflow with `target: hetzner`. Cell branches, the `docs/eval-results` results branch, snapshots and teardown are handled by the workflow.
+
 ## Provision
 
 ```bash

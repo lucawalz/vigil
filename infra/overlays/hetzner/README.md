@@ -1,6 +1,6 @@
 # infra/overlays/hetzner
 
-Flux GitOps source for the Hetzner Cloud eval cluster. [`infra/scripts/flux-sync.sh`](../../scripts/flux-sync.sh) installs Flux and points it at `lucawalz/vigil` on the branch set by the Terraform variable `vigil_branch`, path `infra/overlays/hetzner/kubernetes/clusters/hetzner`.
+Flux GitOps source for the Hetzner Cloud eval cluster. [`infra/scripts/flux-sync.sh`](../../scripts/flux-sync.sh) installs Flux and points it at the repository the campaign runs in (`github_repository`) on the branch set by the Terraform variable `vigil_branch`, path `infra/overlays/hetzner/kubernetes/clusters/hetzner`.
 
 ## Platform values
 

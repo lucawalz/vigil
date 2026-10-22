@@ -18,7 +18,7 @@ nix run ./infra/nixos#lab -- destroy            # stop every lab process, delete
 
 `up --no-golden` installs the disks in place and skips the golden copies (the runner mode); a lab started this way returns to a fresh cluster through `destroy` and `up`. `--repo owner/name` and `--branch` choose what the guests and Flux track; the defaults are the `origin` remote and `eval/lab`. `up` creates a missing branch from `main` and then needs `GITHUB_TOKEN` with contents write access. Flux is installed and pointed at the branch by [`infra/scripts/flux-sync.sh`](../scripts/flux-sync.sh), the same script the Hetzner eval cluster uses.
 
-`agent start` passes `GITHUB_TOKEN`, the run timeout variables and the `OLLAMA_*`, `LLM_*` and `ANTHROPIC_*` variables from the calling shell to the orchestrator and writes `lab.env` with the same keys the eval agent host uses. `agent stop` and `agent restart` stop or restart the orchestrator.
+`agent start` applies the shared defaults from [`infra/agent-env.json`](../agent-env.json), passes `GITHUB_TOKEN`, the run timeout variables and the `OLLAMA_*`, `LLM_*` and `ANTHROPIC_*` variables from the calling shell to the orchestrator, where they take precedence over the defaults, and writes `lab.env` with the same keys the eval agent host uses. `agent stop` and `agent restart` stop or restart the orchestrator.
 
 ## Requirements
 
