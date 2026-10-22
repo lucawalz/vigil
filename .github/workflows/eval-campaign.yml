@@ -109,7 +109,8 @@ jobs:
         env:
           MODEL: ${{ inputs.model }}
           TARGET: ${{ inputs.target }}
-          VIGIL_GITHUB_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          VIGIL_APP_CLIENT_ID: ${{ secrets.VIGIL_APP_CLIENT_ID }}
+          VIGIL_APP_PRIVATE_KEY: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
           TF_VAR_HCLOUD_TOKEN: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
           TF_VAR_LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           OPERATOR_SSH_PUBKEY: ${{ secrets.OPERATOR_SSH_PUBKEY }}
@@ -117,7 +118,7 @@ jobs:
           TF_VAR_OLLAMA_API_KEY: ${{ secrets.TF_VAR_OLLAMA_API_KEY }}
           TF_VAR_OLLAMA_BASE_URL: ${{ secrets.TF_VAR_OLLAMA_BASE_URL }}
         run: |
-          required=(VIGIL_GITHUB_TOKEN TF_VAR_LLM_MODEL_NAME)
+          required=(VIGIL_APP_CLIENT_ID VIGIL_APP_PRIVATE_KEY TF_VAR_LLM_MODEL_NAME)
           if [ "$TARGET" = hetzner ]; then
             required+=(TF_VAR_HCLOUD_TOKEN OPERATOR_SSH_PUBKEY)
           fi
@@ -135,6 +136,16 @@ jobs:
             exit 1
           fi
           echo "All required secrets for target $TARGET are set"
+
+      - name: Check the GitHub App grants
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
 
       - name: Check repository settings
         env:
@@ -196,9 +207,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Mint a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
       - name: Create cell branch
         env:
-          GH_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           MAIN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
@@ -243,7 +263,8 @@ jobs:
         working-directory: infra/terraform
         env:
           TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-          TF_VAR_github_token: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          TF_VAR_github_app_client_id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
+          TF_VAR_github_app_private_key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
           TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
@@ -325,12 +346,16 @@ jobs:
       - name: Agent start
         if: inputs.target == 'runner'
         env:
-          GITHUB_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          GITHUB_APP_CLIENT_ID: ${{ secrets.VIGIL_APP_CLIENT_ID }}
+          VIGIL_APP_PRIVATE_KEY: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
           LLM_MODEL_NAME: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           ANTHROPIC_API_KEY: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
           OLLAMA_API_KEY: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_API_KEY || '' }}
           OLLAMA_BASE_URL: ${{ !startsWith(inputs.model, 'claude-') && secrets.TF_VAR_OLLAMA_BASE_URL || '' }}
         run: |
+          export GITHUB_APP_PRIVATE_KEY_FILE="$RUNNER_TEMP/github-app.pem"
+          (umask 077 && printf '%s\n' "$VIGIL_APP_PRIVATE_KEY" > "$GITHUB_APP_PRIVATE_KEY_FILE")
+          unset VIGIL_APP_PRIVATE_KEY
           uv sync --locked --all-packages
           nix run ./infra/nixos#lab -- agent start
 
@@ -436,7 +461,8 @@ jobs:
         working-directory: infra/terraform
         env:
           TF_VAR_hcloud_token: ${{ secrets.TF_VAR_HCLOUD_TOKEN }}
-          TF_VAR_github_token: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          TF_VAR_github_app_client_id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
+          TF_VAR_github_app_private_key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
           TF_VAR_llm_model_name: ${{ secrets.TF_VAR_LLM_MODEL_NAME }}
           TF_VAR_operator_ssh_pubkey: ${{ secrets.OPERATOR_SSH_PUBKEY }}
           TF_VAR_anthropic_api_key: ${{ startsWith(inputs.model, 'claude-') && secrets.TF_VAR_ANTHROPIC_API_KEY || '' }}
@@ -542,10 +568,21 @@ jobs:
             git push origin "${RESULTS_BRANCH}"
           fi
 
+      - name: Mint a GitHub App token
+        id: app-token
+        if: always() && !(inputs.skip_destroy && inputs.target == 'hetzner')
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: read
+
       - name: Delete cell and agent branches
         if: always() && !(inputs.skip_destroy && inputs.target == 'hetzner')
         env:
-          GH_TOKEN: ${{ secrets.VIGIL_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RUN_ID: ${{ github.run_id }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/eval/$RUN_ID/" --jq '.[].ref' \
