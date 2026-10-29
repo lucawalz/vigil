@@ -27,4 +27,10 @@
   };
 
   services.vigilAutoReconciler.enable = true;
+
+  # Enable k3s service with proper unit configuration
+  services.k3s = {
+    enable = true;
+    role = "server"; # or "agent" depending on cluster role
+  };
 }
