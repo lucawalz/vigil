@@ -35,7 +35,6 @@ TF_VAR_ANTHROPIC_API_KEY=${TF_VAR_anthropic_api_key:-}
 EOF
 chmod 600 "$SECRETS_FILE"
 
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 MODEL="${TF_VAR_llm_model_name}"
 
 PAYLOAD_FILE=$(mktemp /tmp/vigil-local-eval-payload.XXXXXX.json)
@@ -44,10 +43,9 @@ trap 'rm -f "$SECRETS_FILE" "$PAYLOAD_FILE"' EXIT
 cat > "$PAYLOAD_FILE" <<EOF
 {
   "inputs": {
-    "vigil_branch": "${VIGIL_BRANCH:-$CURRENT_BRANCH}",
-    "seed": "${SEED:-1}",
-    "concurrency": "${CONCURRENCY:-1}",
-    "model": "$MODEL"
+    "seed_count": "${SEED_COUNT:-1}",
+    "model": "$MODEL",
+    "target": "${TARGET:-hetzner}"
   }
 }
 EOF
