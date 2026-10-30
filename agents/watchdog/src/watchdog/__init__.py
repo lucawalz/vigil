@@ -9,6 +9,7 @@ from .agent import (
     capture_health_snapshot,
     is_workload_healthy,
     os_target_healthy,
+    probe_os_target,
     revision_matches,
     run_watchdog,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "capture_health_snapshot",
     "is_workload_healthy",
     "os_target_healthy",
+    "probe_os_target",
     "revision_matches",
     "run_watchdog",
 ]

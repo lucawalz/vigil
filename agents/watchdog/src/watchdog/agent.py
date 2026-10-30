@@ -293,50 +293,56 @@ def _coerce_tool_text(result: object) -> str:
     return content if isinstance(content, str) else str(content)
 
 
-def _node_condition_satisfied(text: str, condition: str, expected: str) -> bool:
+def _node_condition_satisfied(
+    text: str, condition: str | None, expected: str | None
+) -> bool:
     return f"{condition}: {expected}" in text
 
 
-async def os_target_healthy(deps: WatchdogDeps) -> bool:
+async def probe_os_target(deps: WatchdogDeps) -> bool:
     """Report whether the NixOS host has converged to the declared OS state.
 
     systemd targets are healthy when the unit reports Active: active (running);
     sysctl targets when the live value equals os_check_expected; node-condition
     targets when describe_node reports os_check_key at os_check_expected; absent
     a specific check, a host is healthy when it has at least one generation.
+    A failed read raises.
     """
     if not deps.target_host:
         return False
-    try:
-        if deps.os_check_kind == OS_CHECK_NODE_CONDITION:
-            result = await call_tool(
-                deps.kubectl_mcp, "describe_node", {"name": deps.target_host}
-            )
-            return _node_condition_satisfied(
-                _coerce_tool_text(result), deps.os_check_key, deps.os_check_expected
-            )
-        if deps.nixos_mcp is None:
-            return False
-        if deps.os_check_kind == OS_CHECK_SYSTEMD and deps.os_check_key:
-            result = await call_tool(
-                deps.nixos_mcp,
-                "get_systemd_status",
-                {"host": deps.target_host, "unit": deps.os_check_key},
-            )
-            return _ACTIVE_RUNNING in _coerce_tool_text(result)
-        if deps.os_check_kind == OS_CHECK_SYSCTL and deps.os_check_key:
-            result = await call_tool(
-                deps.nixos_mcp,
-                "get_sysctl",
-                {"host": deps.target_host, "key": deps.os_check_key},
-            )
-            return (
-                _parse_sysctl_value(_coerce_tool_text(result)) == deps.os_check_expected
-            )
+    if deps.os_check_kind == OS_CHECK_NODE_CONDITION:
         result = await call_tool(
-            deps.nixos_mcp, "get_generations", {"host": deps.target_host}
+            deps.kubectl_mcp, "describe_node", {"name": deps.target_host}
         )
-        return bool(_coerce_tool_text(result).strip())
+        return _node_condition_satisfied(
+            _coerce_tool_text(result), deps.os_check_key, deps.os_check_expected
+        )
+    if deps.nixos_mcp is None:
+        return False
+    if deps.os_check_kind == OS_CHECK_SYSTEMD and deps.os_check_key:
+        result = await call_tool(
+            deps.nixos_mcp,
+            "get_systemd_status",
+            {"host": deps.target_host, "unit": deps.os_check_key},
+        )
+        return _ACTIVE_RUNNING in _coerce_tool_text(result)
+    if deps.os_check_kind == OS_CHECK_SYSCTL and deps.os_check_key:
+        result = await call_tool(
+            deps.nixos_mcp,
+            "get_sysctl",
+            {"host": deps.target_host, "key": deps.os_check_key},
+        )
+        return _parse_sysctl_value(_coerce_tool_text(result)) == deps.os_check_expected
+    result = await call_tool(
+        deps.nixos_mcp, "get_generations", {"host": deps.target_host}
+    )
+    return bool(_coerce_tool_text(result).strip())
+
+
+async def os_target_healthy(deps: WatchdogDeps) -> bool:
+    """Probe the NixOS host for one watchdog poll; a failed read counts as unhealthy."""
+    try:
+        return await probe_os_target(deps)
     except Exception as exc:
         log.warning("os watchdog probe failed, treating poll as unhealthy: %s", exc)
         return False

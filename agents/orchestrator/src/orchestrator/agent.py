@@ -67,6 +67,8 @@ from watchdog.agent import (
     OS_CHECK_SYSCTL,
     OS_CHECK_SYSTEMD,
     capture_health_snapshot,
+    is_workload_healthy,
+    probe_os_target,
     revision_matches,
     run_watchdog,
 )
@@ -102,7 +104,40 @@ _PR_STATE_CLOSED = "closed"
 
 _SHUTDOWN_REASON = "shutdown"
 
+MAX_TRIES = 3
+_PRIOR_TRY_MAX_CHARS = 400
+_DIAGNOSIS_ITERATION = 1
+
+_COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
+_MANIFEST_PATH_PATTERN = re.compile(r"^[A-Za-z0-9._/-]{1,200}$")
+_KIND_PATTERN = re.compile(r"^[A-Za-z]{1,63}$")
+_DNS1123_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
+_HOST_PATTERN = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
+_PARENT_DIR = ".."
+_NONE = "none"
+_INVALID = "invalid"
+
 _RUN_LOCK = asyncio.Lock()
+_ACTIVE_RUNS: set[asyncio.Task[RunRecord]] = set()
+
+
+def log_task_exception(task: asyncio.Task, logger: logging.Logger) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("background orchestration task failed: %s", exc, exc_info=exc)
+
+
+def track_run(task: asyncio.Task[RunRecord]) -> None:
+    """Hold a strong reference to a run task until it ends and log its failure."""
+    _ACTIVE_RUNS.add(task)
+    task.add_done_callback(_ACTIVE_RUNS.discard)
+    task.add_done_callback(lambda t: log_task_exception(t, log))
+
+
+def retry_run_id(incident_id: str, try_number: int) -> str:
+    return f"{incident_id}-try-{try_number}"
 
 
 @dataclass
@@ -117,6 +152,12 @@ class _RunState:
     merge_sha: str | None = None
     open_pr: int | None = None
     verdict: WatchdogResult | None = None
+    incident_id: str = ""
+    seed_str: str = ""
+    try_number: int = 1
+    prior_tries: tuple[str, ...] = ()
+    report: DiagnosisReport | None = None
+    commit_shas: tuple[str, ...] = ()
 
     def end_gate(self, gate_status: str, sha: str | None) -> tuple[str, str | None]:
         self.gate_status = gate_status
@@ -441,6 +482,99 @@ def _created_pr_number(msgs: list[ModelMessage]) -> int | None:
     return pr_number
 
 
+def _committed_shas(msgs: list[ModelMessage]) -> tuple[str, ...]:
+    shas: list[str] = []
+    for msg in msgs:
+        for part in getattr(msg, "parts", []):
+            if not isinstance(part, ToolReturnPart) or part.tool_name != "commit_files":
+                continue
+            content = part.content
+            sha = content.get("sha") if isinstance(content, dict) else None
+            if isinstance(sha, str) and _COMMIT_SHA_PATTERN.fullmatch(sha):
+                shas.append(sha)
+    return tuple(shas)
+
+
+def _vouched(value: str | None, pattern: re.Pattern[str]) -> str:
+    if value is None:
+        return _NONE
+    return value if pattern.fullmatch(value) else _INVALID
+
+
+def _watchdog_fact(run: _RunState) -> str:
+    if run.merge_sha is None:
+        return "not run"
+    if run.verdict is None:
+        return "unverified"
+    verdict = run.verdict
+    reason = verdict.reason or ("degraded" if verdict.degraded else "healthy")
+    snapshot = verdict.snapshot
+    if snapshot is None:
+        return reason
+    return (
+        f"{reason} ready={snapshot.ready_replicas}/{snapshot.spec_replicas}"
+        f" flux_ready={snapshot.flux_ready}"
+    )
+
+
+def _target_fact(run: _RunState) -> str:
+    target = run.target
+    if target is None:
+        return _NONE
+    if run.action == "git_commit_nix":
+        return _vouched(target.target_host, _HOST_PATTERN)
+    parts = (
+        _vouched(target.target_kind, _KIND_PATTERN),
+        _vouched(target.namespace, _DNS1123_PATTERN),
+        _vouched(target.target_name, _DNS1123_PATTERN),
+    )
+    return _INVALID if _INVALID in parts else "/".join(parts)
+
+
+def _prior_try_entry(record: RunRecord, run: _RunState) -> str:
+    """Describe a try from orchestrator-vouched values, never model text."""
+    manifest = run.report.manifest_path if run.report else None
+    manifest_fact = _vouched(manifest, _MANIFEST_PATH_PATTERN)
+    if manifest and _PARENT_DIR in manifest:
+        manifest_fact = _INVALID
+    if not record.rollback_triggered:
+        rollback = "not run"
+    else:
+        rollback = "succeeded" if record.rollback_success else "failed"
+    entry = (
+        f"try {run.try_number}: action={run.action or _NONE};"
+        f" gate={run.gate_status or _NONE};"
+        f" merge={_vouched(run.merge_sha, _COMMIT_SHA_PATTERN)};"
+        f" watchdog={_watchdog_fact(run)}; rollback={rollback};"
+        f" commits={','.join(run.commit_shas) or _NONE};"
+        f" manifest={manifest_fact}; target={_target_fact(run)}"
+    )
+    return entry[:_PRIOR_TRY_MAX_CHARS]
+
+
+def _retry_rule_met(record: RunRecord, run: _RunState) -> bool:
+    """A failed try qualifies only when it left no vigil change live."""
+    if record.setup_error is not None or run.try_number >= MAX_TRIES:
+        return False
+    closed = record.outcome == "gate_failed" and run.gate_status == _GATE_CLOSED
+    reverted = record.rollback_triggered and record.rollback_success is True
+    return closed or reverted
+
+
+async def _target_still_degraded(target: WatchdogDeps | None) -> bool:
+    if target is None:
+        return False
+    try:
+        async with asyncio.timeout(MCP_CALL_TIMEOUT_S):
+            if target.target_host and target.target_kind is None:
+                return not await probe_os_target(target)
+            snapshot = await capture_health_snapshot(target)
+    except Exception as exc:
+        log.warning("target health unreadable, ending the incident: %s", exc)
+        return False
+    return not is_workload_healthy(snapshot, None)
+
+
 async def _uncancellable[T](coro: Coroutine[Any, Any, T]) -> T:
     """MCP sends no cancel, so an interrupted call leaves its side effect in flight."""
     task = asyncio.ensure_future(coro)
@@ -640,9 +774,10 @@ async def _run_diagnosis_attempt(
     diagnosis_context,
     model,
     breaker: _CircuitBreaker,
-    run_id: str,
+    run: _RunState,
 ) -> tuple[DiagnosisReport, RunUsage, list[ModelMessage]] | _DiagnosisAbort:
     """Run one diagnosis pass; return its result or a terminal abort signal."""
+    run_id = run.run_id
     try:
         async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
             return await run_diagnosis(
@@ -650,7 +785,7 @@ async def _run_diagnosis_attempt(
                 event,
                 diagnosis_context,
                 model=model,
-                prior_tries=(),
+                prior_tries=run.prior_tries,
                 breaker=breaker,
             )
     except asyncio.TimeoutError:
@@ -732,6 +867,7 @@ async def _dispatch_remediation_and_watchdog(
                 agent_branch=agent_branch,
                 breaker=breaker,
             )
+        run.commit_shas = _committed_shas(rem_msgs)
         remediation_result = await _gate_and_reconcile(
             remediation_result, rem_msgs, remediation_deps, report, run
         )
@@ -838,7 +974,6 @@ def _terminal_record(
     identity: _RunIdentity,
     *,
     outcome: str,
-    attempts_count: int,
     mttr_s: float | None,
     setup_error: str | None = None,
 ) -> RunRecord:
@@ -872,7 +1007,6 @@ def _terminal_record(
         actions_taken=[],
         model_version=identity.model_name,
         setup_error=setup_error,
-        attempts=attempts_count,
     )
 
 
@@ -889,7 +1023,6 @@ def _attempt_record(
     total_tool_calls: int,
     iteration_count: int,
     actions_taken: list[str],
-    attempts_count: int,
 ) -> RunRecord:
     mttr_s = asyncio.get_event_loop().time() - t0
     ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -944,7 +1077,6 @@ def _attempt_record(
         gate_status=remediation_result.gate_status,
         merge_commit_sha=remediation_result.merge_commit_sha,
         forbidden_action_violations=forbidden_violations,
-        attempts=attempts_count,
     )
     log.info("run %s finished outcome=%s MTTR=%.1fs", identity.run_id, outcome, mttr_s)
     return record
@@ -990,7 +1122,6 @@ async def _run_review_remediation(
     diag_msgs: list[ModelMessage],
     total_usage: RunUsage,
     iteration_count: int,
-    attempts_count: int,
 ) -> RunRecord | _RemediationAbort:
     """Dispatch a review-tier remediation that opens a PR for human merge.
 
@@ -1059,7 +1190,6 @@ async def _run_review_remediation(
         agent_commits=remediation_result.agent_commits,
         gate_status=remediation_result.gate_status,
         merge_commit_sha=remediation_result.merge_commit_sha,
-        attempts=attempts_count,
     )
     log.info(
         "run %s finished outcome=awaiting_human_review (confidence=%.2f action=%s)",
@@ -1081,8 +1211,14 @@ async def run_orchestration(
     seed: int | None = None,
     model_name: str | None = None,
     run_id: str | None = None,
+    incident_id: str | None = None,
+    incident_seed: str | None = None,
+    try_number: int = 1,
+    prior_tries: tuple[str, ...] = (),
 ) -> RunRecord:
     """Serialize orchestration runs behind the single-flight lock."""
+    if not 1 <= try_number <= MAX_TRIES:
+        raise ValueError(f"try_number {try_number} outside 1..{MAX_TRIES}")
     async with _RUN_LOCK:
         return await _run_orchestration(
             event,
@@ -1094,6 +1230,10 @@ async def run_orchestration(
             seed=seed,
             model_name=model_name,
             run_id=run_id,
+            incident_id=incident_id,
+            incident_seed=incident_seed,
+            try_number=try_number,
+            prior_tries=prior_tries,
         )
 
 
@@ -1104,15 +1244,20 @@ async def _run_orchestration(
     nixos_mcp: MCPServerStdio,
     git_mcp: MCPServerStdio,
     *,
-    scenario: str = "k8s-1",
-    seed: int | None = None,
-    model_name: str | None = None,
-    run_id: str | None = None,
+    scenario: str,
+    seed: int | None,
+    model_name: str | None,
+    run_id: str | None,
+    incident_id: str | None,
+    incident_seed: str | None,
+    try_number: int,
+    prior_tries: tuple[str, ...],
 ) -> RunRecord:
     """Drive one diagnosis-remediation-verification try, then finalise it."""
     model_name = model_name or os.environ.get("LLM_MODEL_NAME", "unknown")
     derived_run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
     run_id = run_id or derived_run_id
+    seed_str = incident_seed or seed_str
     identity = _RunIdentity(
         run_id=run_id,
         scenario=scenario,
@@ -1121,7 +1266,14 @@ async def _run_orchestration(
         sha7=sha7,
         started_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
-    run = _RunState(run_id, asyncio.get_running_loop().time())
+    run = _RunState(
+        run_id,
+        asyncio.get_running_loop().time(),
+        incident_id=incident_id or run_id,
+        seed_str=seed_str,
+        try_number=try_number,
+        prior_tries=prior_tries,
+    )
     record = await _run_attempt(
         event,
         kubectl_mcp,
@@ -1131,7 +1283,31 @@ async def _run_orchestration(
         identity=identity,
         run=run,
     )
-    return await _uncancellable(_finalise(record, run, git_mcp, flux_mcp, nixos_mcp))
+    record = await _uncancellable(_finalise(record, run, git_mcp, flux_mcp, nixos_mcp))
+    if record.retry_queued:
+        next_try = try_number + 1
+        track_run(
+            asyncio.create_task(
+                run_orchestration(
+                    event,
+                    kubectl_mcp,
+                    flux_mcp,
+                    nixos_mcp,
+                    git_mcp,
+                    scenario=scenario,
+                    model_name=model_name,
+                    run_id=retry_run_id(run.incident_id, next_try),
+                    incident_id=run.incident_id,
+                    incident_seed=run.seed_str,
+                    try_number=next_try,
+                    prior_tries=run.prior_tries + (_prior_try_entry(record, run),),
+                )
+            )
+        )
+        log.info(
+            "run %s: queued try %d of incident %s", run_id, next_try, run.incident_id
+        )
+    return record
 
 
 async def _finalise(
@@ -1144,7 +1320,11 @@ async def _finalise(
     """Settle what the run left live and write its record once."""
     if run.open_pr is not None and run.gate_status is None:
         await _close_and_read_pr(git_mcp, run.open_pr, run)
-    update: dict[str, object] = {}
+    update: dict[str, object] = {
+        "incident_id": run.incident_id or run.run_id,
+        "seed": run.seed_str or record.seed,
+        "attempts": run.try_number,
+    }
     if run.gate_status is not None:
         update["gate_status"] = run.gate_status
     if run.merge_sha is not None:
@@ -1171,6 +1351,10 @@ async def _finalise(
             update["outcome"] = "rollback_succeeded" if ok else "rollback_failed"
         log.info("run %s: rolled back sha=%s ok=%s", run.run_id, run.merge_sha, ok)
     record = record.model_copy(update=update)
+    retry_queued = _retry_rule_met(record, run) and await _target_still_degraded(
+        run.target
+    )
+    record = record.model_copy(update={"retry_queued": retry_queued})
     _write_run_record(record)
     return record
 
@@ -1202,7 +1386,6 @@ async def _run_attempt(
 
     total_tool_calls = 0
     iteration_count = 0
-    attempts_count = 0
 
     def _abort_record(_reason: str, _outcome: str = "abort") -> RunRecord:
         ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1230,7 +1413,6 @@ async def _run_attempt(
             model_version=model_name,
             setup_error=_reason,
             forbidden_action_violations=[],
-            attempts=attempts_count,
         )
 
     def _escalate_record(_report, _diag_msgs, _iteration_count: int) -> RunRecord:
@@ -1259,7 +1441,6 @@ async def _run_attempt(
             actions_taken=[],
             forbidden_action_violations=[],
             model_version=model_name,
-            attempts=attempts_count,
         )
 
     total_usage = RunUsage()
@@ -1287,8 +1468,6 @@ async def _run_attempt(
                 record = _abort_record(f"clone_repo_failed: {exc}")
                 return record
 
-            attempts_count = 1
-
             try:
                 diagnosis_context = await build_diagnosis_context(diagnosis_deps, event)
             except (ManifestPathUnresolvable, ResourceKindUnresolvable) as exc:
@@ -1296,7 +1475,6 @@ async def _run_attempt(
                 record = _terminal_record(
                     identity,
                     outcome="escalated",
-                    attempts_count=attempts_count,
                     mttr_s=asyncio.get_event_loop().time() - t0,
                     setup_error=str(exc),
                 )
@@ -1312,16 +1490,17 @@ async def _run_attempt(
                 diagnosis_context=diagnosis_context,
                 model=model,
                 breaker=breaker,
-                run_id=run_id,
+                run=run,
             )
             if isinstance(diagnosis_outcome, _DiagnosisAbort):
                 total_usage = total_usage + (diagnosis_outcome.usage or RunUsage())
                 total_tool_calls += _count_tool_calls(diagnosis_outcome.messages)
                 if diagnosis_outcome.count_iteration:
-                    iteration_count = attempts_count
+                    iteration_count = _DIAGNOSIS_ITERATION
                 record = _abort_record(diagnosis_outcome.reason)
                 return record
             report, diag_usage, diag_msgs = diagnosis_outcome
+            run.report = report
 
             total_usage = total_usage + diag_usage
 
@@ -1337,7 +1516,6 @@ async def _run_attempt(
                 record = _terminal_record(
                     identity,
                     outcome="quota_exhausted",
-                    attempts_count=attempts_count,
                     mttr_s=None,
                 )
                 return record
@@ -1392,7 +1570,6 @@ async def _run_attempt(
                     diag_msgs=diag_msgs,
                     total_usage=total_usage,
                     iteration_count=iteration_count,
-                    attempts_count=attempts_count,
                 )
                 if isinstance(review_outcome, _RemediationAbort):
                     total_usage = total_usage + (review_outcome.usage or RunUsage())
@@ -1464,7 +1641,6 @@ async def _run_attempt(
                 total_tool_calls=total_tool_calls,
                 iteration_count=iteration_count,
                 actions_taken=_extract_tool_names(rem_msgs),
-                attempts_count=attempts_count,
             )
             return record
 
@@ -1503,13 +1679,12 @@ async def _run_attempt(
             model_version=model_name,
             setup_error="iteration_limit",
             forbidden_action_violations=[],
-            attempts=attempts_count,
         )
         return record
     except CircuitBreakerTripped:
         log.exception("run %s aborted: circuit_breaker", run_id)
         total_tool_calls = max(total_tool_calls, _count_trace_tool_calls(run_id))
-        iteration_count = max(iteration_count, attempts_count)
+        iteration_count = max(iteration_count, _DIAGNOSIS_ITERATION)
         record = _abort_record("circuit_breaker_3_consecutive_errors")
         return record
     except UnexpectedModelBehavior as e:

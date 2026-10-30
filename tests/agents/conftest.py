@@ -1,10 +1,26 @@
 """Shared pytest fixtures for agent tests. Mock MCP clients avoid live cluster deps."""
 
+import asyncio
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
 
+import orchestrator.agent as orch_mod
 import pytest
 from diagnosis.context import DiagnosisContext
 from orchestrator.models import FaultEvent
+
+
+@pytest.fixture(autouse=True)
+async def _isolated_run_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[None]:
+    active: set[asyncio.Task] = set()
+    monkeypatch.setattr(orch_mod, "_RUN_LOCK", asyncio.Lock())
+    monkeypatch.setattr(orch_mod, "_ACTIVE_RUNS", active)
+    yield
+    for task in active:
+        task.cancel()
+    await asyncio.gather(*active, return_exceptions=True)
 
 
 @pytest.fixture

@@ -27,10 +27,11 @@ from .agent import (
     ORCHESTRATOR_RUN_TIMEOUT_S,
     REMEDIATION_TIMEOUT_S,
     build_run_id,
+    log_task_exception,
     run_orchestration,
 )
 from .models import FaultEvent, eval_target_from_env
-from .poller import log_task_exception, prometheus_poller
+from .poller import prometheus_poller
 
 log = logging.getLogger("vigil.orchestrator")
 

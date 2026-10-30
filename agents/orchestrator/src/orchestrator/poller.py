@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from .agent import run_orchestration
+from .agent import log_task_exception, run_orchestration
 from .models import FaultEvent
 
 log = logging.getLogger("vigil.orchestrator.poller")
@@ -29,14 +29,6 @@ def _is_auth_failure(exc: Exception) -> bool:
         isinstance(exc, httpx.HTTPStatusError)
         and exc.response.status_code in _AUTH_FAILURE_STATUSES
     )
-
-
-def log_task_exception(task: asyncio.Task, logger: logging.Logger) -> None:
-    if task.cancelled():
-        return
-    exc = task.exception()
-    if exc is not None:
-        logger.error("background orchestration task failed: %s", exc, exc_info=exc)
 
 
 def _alert_to_fault_event(alert: dict) -> FaultEvent:

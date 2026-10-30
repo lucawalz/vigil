@@ -84,6 +84,8 @@ class RunRecord(BaseModel):
     autonomy_level: Literal["full", "supervised"]
     actions_taken: list[str]
     attempts: int = 1
+    incident_id: str | None = None
+    retry_queued: bool = False
     model_version: str | None = None
     setup_error: str | None = None
     agent_branch: str | None = None

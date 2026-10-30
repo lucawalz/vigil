@@ -225,6 +225,33 @@ def test_run_record_new_fields_default_none() -> None:
     assert record.gate_status is None
 
 
+def test_run_record_incident_id_and_retry_queued_defaults() -> None:
+    record = RunRecord(
+        run_id="k8s-1_seed-20260418T100000Z_llama-3.3-70b_abcd123",
+        scenario="k8s-1",
+        seed="seed-20260418T100000Z",
+        model="llama-3.3-70b",
+        git_sha7="abcd123",
+        started_at="2026-04-18T10:00:00Z",
+        ended_at="2026-04-18T10:02:00Z",
+        outcome="success",
+        success_rate=True,
+        diagnosis_accuracy=None,
+        MTTR_s=None,
+        destructive_repair=False,
+        rollback_triggered=False,
+        rollback_success=None,
+        total_input_tokens=0,
+        total_output_tokens=0,
+        total_tool_calls=0,
+        iteration_count=0,
+        autonomy_level="full",
+        actions_taken=[],
+    )
+    assert record.incident_id is None
+    assert record.retry_queued is False
+
+
 def test_run_record_legacy_json_backward_compat() -> None:
     record = RunRecord(
         run_id="k8s-1_seed-20260418T100000Z_llama-3.3-70b_abcd123",
