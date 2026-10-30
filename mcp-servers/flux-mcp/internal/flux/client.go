@@ -7,6 +7,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
@@ -43,21 +44,47 @@ func NewRealFluxClient(cfg *rest.Config) (FluxClient, error) {
 	return &realFluxClient{dynClient: dynClient}, nil
 }
 
-func (c *realFluxClient) ReconcileKustomization(ctx context.Context, namespace, name string) (string, error) {
+const (
+	requestedAtAnnotation = "reconcile.fluxcd.io/requestedAt"
+	gitRepositoryKind     = "GitRepository"
+)
+
+func (c *realFluxClient) annotateRequestedAt(ctx context.Context, gvr schema.GroupVersionResource, namespace, name, requestedAt string) error {
 	patch, err := json.Marshal(map[string]interface{}{
 		"metadata": map[string]interface{}{
-			"annotations": map[string]string{
-				"reconcile.fluxcd.io/requestedAt": time.Now().UTC().Format(time.RFC3339),
-			},
+			"annotations": map[string]string{requestedAtAnnotation: requestedAt},
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshal patch: %w", err)
+		return fmt.Errorf("marshal patch: %w", err)
 	}
-	_, err = c.dynClient.Resource(kustomizationGVR).Namespace(namespace).Patch(
+	_, err = c.dynClient.Resource(gvr).Namespace(namespace).Patch(
 		ctx, name, types.MergePatchType, patch, metav1.PatchOptions{},
 	)
+	return err
+}
+
+func (c *realFluxClient) ReconcileKustomization(ctx context.Context, namespace, name string) (string, error) {
+	ks, err := c.dynClient.Resource(kustomizationGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
+		return "", fmt.Errorf("reconcile kustomization %s/%s: %w", namespace, name, err)
+	}
+	if suspended, _, _ := unstructured.NestedBool(ks.Object, "spec", "suspend"); suspended {
+		return "", fmt.Errorf("kustomization %s/%s is suspended", namespace, name)
+	}
+	requestedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	kind, _, _ := unstructured.NestedString(ks.Object, "spec", "sourceRef", "kind")
+	srcName, _, _ := unstructured.NestedString(ks.Object, "spec", "sourceRef", "name")
+	if kind == gitRepositoryKind && srcName != "" {
+		srcNamespace, _, _ := unstructured.NestedString(ks.Object, "spec", "sourceRef", "namespace")
+		if srcNamespace == "" {
+			srcNamespace = namespace
+		}
+		if err := c.annotateRequestedAt(ctx, gitRepositoryGVR, srcNamespace, srcName, requestedAt); err != nil {
+			return "", fmt.Errorf("reconcile git repository %s/%s: %w", srcNamespace, srcName, err)
+		}
+	}
+	if err := c.annotateRequestedAt(ctx, kustomizationGVR, namespace, name, requestedAt); err != nil {
 		return "", fmt.Errorf("reconcile kustomization %s/%s: %w", namespace, name, err)
 	}
 	return fmt.Sprintf("kustomization %s/%s reconciliation requested", namespace, name), nil

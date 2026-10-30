@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -131,5 +132,88 @@ func TestGetGitRepositoryStatus_ArtifactRevision(t *testing.T) {
 	}
 	if got.Ready == nil || !*got.Ready {
 		t.Errorf("expected ready=true, got: %s", out)
+	}
+}
+
+func reconcileFixture(t *testing.T, ksSpec map[string]interface{}, srcNamespace string) (*realFluxClient, *dynamicfake.FakeDynamicClient) {
+	t.Helper()
+	ks := kustomizationObject("flux-system", "infra", nil)
+	ks.Object["spec"] = ksSpec
+	src := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "source.toolkit.fluxcd.io/v1",
+		"kind":       "GitRepository",
+		"metadata":   map[string]interface{}{"namespace": srcNamespace, "name": "repo"},
+	}}
+	listKinds := map[schema.GroupVersionResource]string{
+		kustomizationGVR: "KustomizationList",
+		gitRepositoryGVR: "GitRepositoryList",
+	}
+	dc := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), listKinds, ks, src)
+	return &realFluxClient{dynClient: dc}, dc
+}
+
+func patchedResources(dc *dynamicfake.FakeDynamicClient) []string {
+	var out []string
+	for _, a := range dc.Actions() {
+		if a.GetVerb() == "patch" {
+			out = append(out, a.GetResource().Resource)
+		}
+	}
+	return out
+}
+
+func annotation(t *testing.T, c *realFluxClient, gvr schema.GroupVersionResource, ns, name string) string {
+	t.Helper()
+	obj, err := c.dynClient.Resource(gvr).Namespace(ns).Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get %s: %v", name, err)
+	}
+	return obj.GetAnnotations()[requestedAtAnnotation]
+}
+
+func TestReconcileKustomization_annotatesSourceFirst(t *testing.T) {
+	c, dc := reconcileFixture(t, map[string]interface{}{
+		"sourceRef": map[string]interface{}{"kind": "GitRepository", "name": "repo", "namespace": "src"},
+	}, "src")
+
+	if _, err := c.ReconcileKustomization(context.Background(), "flux-system", "infra"); err != nil {
+		t.Fatalf("ReconcileKustomization: %v", err)
+	}
+	got := patchedResources(dc)
+	if len(got) != 2 || got[0] != "gitrepositories" || got[1] != "kustomizations" {
+		t.Fatalf("patch order = %v, want [gitrepositories kustomizations]", got)
+	}
+	srcAt := annotation(t, c, gitRepositoryGVR, "src", "repo")
+	ksAt := annotation(t, c, kustomizationGVR, "flux-system", "infra")
+	if srcAt == "" || srcAt != ksAt {
+		t.Errorf("requestedAt source=%q kustomization=%q, want equal and non-empty", srcAt, ksAt)
+	}
+}
+
+func TestReconcileKustomization_suspendedIsError(t *testing.T) {
+	c, dc := reconcileFixture(t, map[string]interface{}{
+		"suspend":   true,
+		"sourceRef": map[string]interface{}{"kind": "GitRepository", "name": "repo", "namespace": "src"},
+	}, "src")
+
+	_, err := c.ReconcileKustomization(context.Background(), "flux-system", "infra")
+	if err == nil || err.Error() != "kustomization flux-system/infra is suspended" {
+		t.Fatalf("err = %v, want suspended error", err)
+	}
+	if got := patchedResources(dc); len(got) != 0 {
+		t.Errorf("patched %v, want none", got)
+	}
+}
+
+func TestReconcileKustomization_sourceNamespaceDefaultsToKustomization(t *testing.T) {
+	c, _ := reconcileFixture(t, map[string]interface{}{
+		"sourceRef": map[string]interface{}{"kind": "GitRepository", "name": "repo"},
+	}, "flux-system")
+
+	if _, err := c.ReconcileKustomization(context.Background(), "flux-system", "infra"); err != nil {
+		t.Fatalf("ReconcileKustomization: %v", err)
+	}
+	if annotation(t, c, gitRepositoryGVR, "flux-system", "repo") == "" {
+		t.Error("source in the kustomization namespace was not annotated")
 	}
 }

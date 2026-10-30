@@ -21,7 +21,7 @@ func NewFluxServer(client flux.FluxClient, cfg *config.Config) *server.MCPServer
 
 	mcpServer.AddTool(
 		mcp.NewTool("reconcile_kustomization",
-			mcp.WithDescription("Trigger reconciliation of a Flux Kustomization"),
+			mcp.WithDescription("Trigger reconciliation of a Flux Kustomization: first reconciles its Git source, then the Kustomization; returns an error when the Kustomization is suspended"),
 			mcp.WithString("namespace", mcp.Required(), mcp.Description("Kubernetes namespace")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Kustomization name")),
 			mcp.WithOutputSchema[TextResult](),
