@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 import uuid
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +24,7 @@ from common.constants import (
     GIT_MCP_READ_TIMEOUT_S,
     MCP_CALL_TIMEOUT_S,
     ROLLBACK_TIMEOUT_S,
+    ROLLBACK_VERIFY_WINDOW_S,
     WATCHDOG_NAMESPACE,
 )
 from common.flux_status import coerce_flux_status
@@ -66,6 +67,7 @@ from watchdog.agent import (
     OS_CHECK_SYSCTL,
     OS_CHECK_SYSTEMD,
     capture_health_snapshot,
+    revision_matches,
     run_watchdog,
 )
 from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps, WatchdogResult
@@ -88,6 +90,8 @@ _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_n
 _COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
 
 _FLUX_APPS = {"namespace": "flux-system", "name": "cluster-apps"}
+
+_ROLLBACK_VERIFY_POLL_S = 10
 
 _GATE_MERGED = "merged"
 _GATE_CLOSED = "closed"
@@ -121,8 +125,10 @@ class _RunState:
 
     @property
     def needs_rollback(self) -> bool:
-        return self.merge_sha is not None and (
-            self.verdict is None or self.verdict.degraded
+        return (
+            self.action is not None
+            and self.merge_sha is not None
+            and (self.verdict is None or self.verdict.degraded)
         )
 
 
@@ -338,47 +344,21 @@ def _write_run_record(record: RunRecord) -> None:
         f.write(record.model_dump_json() + "\n")
 
 
-async def _revert_through_gate(
-    git_mcp: MCPServerStdio, merge_commit_sha: str | None
-) -> None:
-    await call_tool(
-        git_mcp,
-        "revert_commit",
-        {"merge_commit_sha": merge_commit_sha},
-        timeout_s=GATE_REVERT_CALL_TIMEOUT_S,
-    )
-
-
-async def _issue_rollback(
-    recommended_action: str | None,
-    git_mcp: MCPServerStdio,
-    flux_mcp: MCPServerStdio,
-    nixos_mcp: MCPServerStdio,
-    merge_commit_sha: str | None,
-    target_host: str | None,
-) -> bool:
-    """Dispatch rollback by recommended_action class. Returns True on full success."""
-    try:
-        if recommended_action == "flux_reconcile":
-            await call_tool(flux_mcp, "reconcile_kustomization", _FLUX_APPS)
-        elif recommended_action == "git_commit_k8s":
-            await _revert_through_gate(git_mcp, merge_commit_sha)
-            await call_tool(flux_mcp, "reconcile_kustomization", _FLUX_APPS)
-        elif recommended_action == "nixos_rebuild":
-            return True
-        elif recommended_action == "git_commit_nix":
-            await _revert_through_gate(git_mcp, merge_commit_sha)
-            await call_tool(
-                nixos_mcp,
-                "trigger_reconcile",
-                {"host": target_host},
-            )
-        else:
-            return False
-        return True
-    except Exception:
-        log.exception("rollback failed for action=%s", recommended_action)
-        return False
+async def _poll_until(check: Callable[[], Awaitable[bool]]) -> bool:
+    """Start checks only while the verify window has time left; failures count as no."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + ROLLBACK_VERIFY_WINDOW_S
+    while (remaining := deadline - loop.time()) > 0:
+        try:
+            async with asyncio.timeout(remaining):
+                if await check():
+                    return True
+        except Exception as exc:
+            log.warning("rollback verification check failed: %s", exc)
+        await asyncio.sleep(
+            max(0, min(_ROLLBACK_VERIFY_POLL_S, deadline - loop.time()))
+        )
+    return False
 
 
 async def _rollback(
@@ -387,14 +367,47 @@ async def _rollback(
     flux_mcp: MCPServerStdio,
     nixos_mcp: MCPServerStdio,
 ) -> bool:
-    return await _issue_rollback(
-        run.action,
-        git_mcp,
-        flux_mcp,
-        nixos_mcp,
-        run.merge_sha,
-        run.target.target_host if run.target else None,
-    )
+    """Revert the merge through the gate; succeed once the target runs the revert."""
+    try:
+        reverted = await call_tool(
+            git_mcp,
+            "revert_commit",
+            {"merge_commit_sha": run.merge_sha},
+            timeout_s=GATE_REVERT_CALL_TIMEOUT_S,
+        )
+    except Exception:
+        log.exception("run %s: revert of sha=%s failed", run.run_id, run.merge_sha)
+        return False
+    landed = reverted.get("merge_commit_sha") if isinstance(reverted, dict) else None
+    if not landed:
+        log.warning(
+            "run %s: revert of sha=%s landed no merge", run.run_id, run.merge_sha
+        )
+        return False
+    nix = run.action == "git_commit_nix"
+    host = {"host": run.target.target_host if run.target else None}
+    try:
+        if nix:
+            await call_tool(nixos_mcp, "trigger_reconcile", host)
+        else:
+            await call_tool(flux_mcp, "reconcile_kustomization", _FLUX_APPS)
+    except Exception:
+        log.exception("run %s: reconcile request after revert failed", run.run_id)
+
+    async def at_revert() -> bool:
+        if nix:
+            applied = await call_tool(nixos_mcp, "get_reconciled_revision", host)
+            return isinstance(applied, str) and revision_matches(
+                applied.strip(), landed
+            )
+        status = coerce_flux_status(
+            await call_tool(flux_mcp, "get_kustomization_status", _FLUX_APPS)
+        )
+        return status.get("ready") is True and revision_matches(
+            status.get("revision"), landed
+        )
+
+    return await _poll_until(at_revert)
 
 
 async def _commit_nixos_generation(

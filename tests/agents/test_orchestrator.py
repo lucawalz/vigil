@@ -29,7 +29,6 @@ from orchestrator.agent import (
     _RUN_LOCK,
     OS_CHECK_NODE_CONDITION,
     OS_CHECK_SYSTEMD,
-    _issue_rollback,
     _os_watchdog_check,
     _score_diagnosis_accuracy,
     build_run_id,
@@ -382,12 +381,10 @@ async def test_run_orchestration_triggers_rollback_on_watchdog_degraded(
     degraded_snap = _degraded_snapshot()
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = _git_tools(
-        {"revert_commit": {"content": "reverted: cafebabe"}}
-    )
+    mock_git_mcp.direct_call_tool = _git_tools({"revert_commit": dict(_REVERTED)})
     mock_flux_mcp.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": '{"found": true, "ready": true}'}
+            dict(_FLUX_AT_REVERT)
             if tool == "get_kustomization_status"
             else {"content": "reconciled"}
         )
@@ -1125,12 +1122,10 @@ async def test_outcome_rollback_succeeded(
     degraded_snap = _degraded_snapshot()
     degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = _git_tools(
-        {"revert_commit": {"content": "reverted: cafebabe"}}
-    )
+    mock_git_mcp.direct_call_tool = _git_tools({"revert_commit": dict(_REVERTED)})
     mock_flux_mcp.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": '{"found": true, "ready": true}'}
+            dict(_FLUX_AT_REVERT)
             if tool == "get_kustomization_status"
             else {"content": "ok"}
         )
@@ -1783,12 +1778,10 @@ async def test_rollback_when_watchdog_stays_degraded(
         degraded=True, snapshot=degraded_snap, reason="deadline_reached"
     )
     monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = _git_tools(
-        {"revert_commit": {"content": "reverted: cafebabe"}}
-    )
+    mock_git_mcp.direct_call_tool = _git_tools({"revert_commit": dict(_REVERTED)})
     mock_flux_mcp.direct_call_tool = AsyncMock(
         side_effect=lambda tool, args: (
-            {"content": '{"found": true, "ready": true}'}
+            dict(_FLUX_AT_REVERT)
             if tool == "get_kustomization_status"
             else {"content": "reconciled"}
         )
@@ -2251,84 +2244,8 @@ def test_score_accuracy_none_when_expected_action_absent(
     assert result is None
 
 
-async def test_rollback_flux_reconcile_calls_reconcile_only() -> None:
-    git_mcp = AsyncMock()
-    git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
-    flux_mcp = AsyncMock()
-    flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
-    nixos_mcp = AsyncMock()
-    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
-
-    result = await _issue_rollback(
-        "flux_reconcile", git_mcp, flux_mcp, nixos_mcp, None, None
-    )
-
-    assert result is True
-    reconcile_calls = [
-        c
-        for c in flux_mcp.direct_call_tool.call_args_list
-        if c.args and c.args[0] == "reconcile_kustomization"
-    ]
-    assert len(reconcile_calls) == 1
-    assert reconcile_calls[0].args[1] == {
-        "namespace": "flux-system",
-        "name": "cluster-apps",
-    }
-    git_mcp.direct_call_tool.assert_not_called()
-    nixos_mcp.direct_call_tool.assert_not_called()
-
-
-async def test_rollback_nixos_rebuild_issues_no_durable_call() -> None:
-    git_mcp = AsyncMock()
-    git_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
-    flux_mcp = AsyncMock()
-    flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
-    nixos_mcp = AsyncMock()
-    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
-
-    result = await _issue_rollback(
-        "nixos_rebuild", git_mcp, flux_mcp, nixos_mcp, None, "vigil-worker-1"
-    )
-
-    assert result is True
-    git_mcp.direct_call_tool.assert_not_called()
-    flux_mcp.direct_call_tool.assert_not_called()
-    nixos_mcp.direct_call_tool.assert_not_called()
-
-
-async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
-    git_mcp = AsyncMock()
-    git_mcp.direct_call_tool = AsyncMock(return_value={"content": "reverted"})
-    flux_mcp = AsyncMock()
-    flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "ok"})
-    nixos_mcp = AsyncMock()
-    nixos_mcp.direct_call_tool = AsyncMock(return_value={"content": "triggered"})
-
-    result = await _issue_rollback(
-        "git_commit_nix", git_mcp, flux_mcp, nixos_mcp, "abc123", "vigil-worker-1"
-    )
-
-    assert result is True
-    revert_calls = [
-        c
-        for c in git_mcp.direct_call_tool.call_args_list
-        if c.args and c.args[0] == "revert_commit"
-    ]
-    assert len(revert_calls) == 1
-    assert revert_calls[0].args[1] == {"merge_commit_sha": "abc123"}
-    trigger_calls = [
-        c
-        for c in nixos_mcp.direct_call_tool.call_args_list
-        if c.args and c.args[0] == "trigger_reconcile"
-    ]
-    assert len(trigger_calls) == 1
-    assert trigger_calls[0].args[1] == {"host": "vigil-worker-1"}
-    flux_mcp.direct_call_tool.assert_not_called()
-
-
-@pytest.mark.parametrize("action", ["git_commit_k8s", "git_commit_nix"])
-async def test_rollback_revert_waits_for_gate_within_its_own_call_timeout(
-    action: str, monkeypatch: pytest.MonkeyPatch
+async def test_rollback_reverts_within_the_revert_call_timeout(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, dict[str, object], float | None]] = []
 
@@ -2340,20 +2257,21 @@ async def test_rollback_revert_waits_for_gate_within_its_own_call_timeout(
         timeout_s: float | None = None,
     ) -> object:
         calls.append((name, args, timeout_s))
-        return {"content": "ok"}
+        if name == "revert_commit":
+            return dict(_REVERTED)
+        return dict(_FLUX_AT_REVERT)
 
     monkeypatch.setattr(orch_mod, "call_tool", _record)
+    run = orch_mod._RunState("run-1", 0.0, action="git_commit_k8s", merge_sha="abc1234")
 
-    result = await _issue_rollback(
-        action, AsyncMock(), AsyncMock(), AsyncMock(), "abc123", "vigil-worker-1"
-    )
+    result = await orch_mod._rollback(run, AsyncMock(), AsyncMock(), AsyncMock())
 
     assert result is True
     revert_calls = [c for c in calls if c[0] == "revert_commit"]
     assert revert_calls == [
         (
             "revert_commit",
-            {"merge_commit_sha": "abc123"},
+            {"merge_commit_sha": "abc1234"},
             GATE_REVERT_CALL_TIMEOUT_S,
         )
     ]
@@ -3880,3 +3798,241 @@ async def test_open_pr_after_failed_close_records_unknown(
 
     assert record.gate_status == "unknown"
     assert record.outcome == "gate_failed"
+
+
+_SHORT_WINDOW_S = 0.05
+_VERIFY_WINDOW_S = 1
+_NO_POLL_DELAY_S = 0
+_WORKER_HOST = "vigil-worker-1"
+_FLUX_AT_MERGE = {"found": True, "ready": True, "revision": f"main@sha1:{_MERGE_SHA}"}
+_FLUX_NOT_READY_AT_MERGE = {**_FLUX_AT_MERGE, "ready": False}
+
+
+def _flux_statuses(
+    servers: SimpleNamespace, events: list[str], *statuses: dict
+) -> None:
+    remaining = list(statuses)
+
+    async def flux_tool(tool: str, _args: dict) -> dict:
+        events.append(tool)
+        if tool == "get_kustomization_status":
+            return dict(remaining.pop(0) if len(remaining) > 1 else remaining[0])
+        return {"content": "ok"}
+
+    servers.flux.direct_call_tool = AsyncMock(side_effect=flux_tool)
+
+
+def _reconciler_answers(
+    servers: SimpleNamespace, events: list[str], after_rollback: str
+) -> None:
+    async def nixos_tool(tool: str, _args: dict) -> object:
+        events.append(tool)
+        if tool != "get_reconciled_revision":
+            return {"content": "ok"}
+        if "revert_commit" not in events:
+            return _MERGE_SHA
+        rolled = "trigger_reconcile" in events[events.index("revert_commit") :]
+        return after_rollback if rolled else _MERGE_SHA
+
+    servers.nixos.direct_call_tool = AsyncMock(side_effect=nixos_tool)
+
+
+def _stub_nix_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    servers: SimpleNamespace,
+    after_rollback: str,
+) -> list[str]:
+    _stub_stages(
+        monkeypatch,
+        tmp_path,
+        messages=_create_pr_return(),
+        report=_canned_report_with_action("git_commit_nix", target_host=_WORKER_HOST),
+        watchdog=_watchdog_degraded(),
+    )
+    events: list[str] = []
+    _answer_rollbacks(servers, events, {})
+    _reconciler_answers(servers, events, after_rollback)
+    return events
+
+
+async def test_rollback_success_requires_flux_ready_at_revert_revision(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(
+        monkeypatch,
+        tmp_path,
+        messages=_create_pr_return(),
+        watchdog=_watchdog_degraded(),
+    )
+    monkeypatch.setattr(orch_mod, "ROLLBACK_VERIFY_WINDOW_S", _SHORT_WINDOW_S)
+    events: list[str] = []
+    _answer_rollbacks(servers, events, {})
+    _flux_statuses(servers, events, _FLUX_NOT_READY_AT_MERGE)
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert _reverts(servers.git) == [{"merge_commit_sha": _MERGE_SHA}]
+    assert record.outcome == "rollback_failed"
+    assert record.destructive_repair is True
+
+
+async def test_rollback_succeeds_once_flux_reports_the_revert_revision(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(
+        monkeypatch,
+        tmp_path,
+        messages=_create_pr_return(),
+        watchdog=_watchdog_degraded(),
+    )
+    monkeypatch.setattr(orch_mod, "ROLLBACK_VERIFY_WINDOW_S", _VERIFY_WINDOW_S)
+    monkeypatch.setattr(orch_mod, "_ROLLBACK_VERIFY_POLL_S", _NO_POLL_DELAY_S)
+    events: list[str] = []
+    _answer_rollbacks(servers, events, {})
+    _flux_statuses(servers, events, _FLUX_AT_MERGE, _FLUX_AT_REVERT)
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    after_revert = events[events.index("revert_commit") :]
+    assert after_revert.count("get_kustomization_status") == 2
+    assert record.outcome == "rollback_succeeded"
+    assert record.rollback_success is True
+
+
+async def test_revert_without_a_landed_sha_fails_the_rollback(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(
+        monkeypatch,
+        tmp_path,
+        messages=_create_pr_return(),
+        watchdog=_watchdog_degraded(),
+    )
+    events: list[str] = []
+    _answer_rollbacks(servers, events, {"revert_commit": {"content": "reverted"}})
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert events[-1] == "revert_commit"
+    assert record.outcome == "rollback_failed"
+
+
+async def test_nix_rollback_succeeds_when_the_reconciler_applies_the_revert(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = _stub_nix_rollback(monkeypatch, tmp_path, servers, _REVERT_SHA)
+    monkeypatch.setattr(orch_mod, "ROLLBACK_VERIFY_WINDOW_S", _VERIFY_WINDOW_S)
+    monkeypatch.setattr(orch_mod, "_ROLLBACK_VERIFY_POLL_S", _NO_POLL_DELAY_S)
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    nixos_calls = _tool_calls(servers.nixos)
+    assert nixos_calls.count(("trigger_reconcile", {"host": _WORKER_HOST})) == 2
+    assert nixos_calls[-1] == ("get_reconciled_revision", {"host": _WORKER_HOST})
+    assert "reconcile_kustomization" not in events
+    assert record.outcome == "rollback_succeeded"
+
+
+async def test_nix_rollback_fails_while_the_reconciler_stays_on_the_merge(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_nix_rollback(monkeypatch, tmp_path, servers, _MERGE_SHA)
+    monkeypatch.setattr(orch_mod, "ROLLBACK_VERIFY_WINDOW_S", _SHORT_WINDOW_S)
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert _reverts(servers.git) == [{"merge_commit_sha": _MERGE_SHA}]
+    assert record.outcome == "rollback_failed"
+
+
+async def test_nix_merge_found_when_the_deadline_cuts_the_gate_is_rolled_back(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(
+        monkeypatch,
+        tmp_path,
+        messages=_create_pr_return(7),
+        report=_canned_report_with_action("git_commit_nix", target_host=_WORKER_HOST),
+    )
+    monkeypatch.setattr(orch_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", _RUN_DEADLINE_S)
+    _answer_rollbacks(
+        servers,
+        [],
+        {"wait_for_gate": _block_forever, "get_pr_status": dict(_MERGED_PR_STATUS)},
+    )
+    servers.nixos.direct_call_tool = _git_tools(
+        {"get_reconciled_revision": _REVERT_SHA}
+    )
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert _reverts(servers.git) == [{"merge_commit_sha": "late1234567890"}]
+    assert _tool_calls(servers.nixos)[-2:] == [
+        ("trigger_reconcile", {"host": _WORKER_HOST}),
+        ("get_reconciled_revision", {"host": _WORKER_HOST}),
+    ]
+    assert record.rollback_success is True
+
+
+async def test_human_merged_review_pull_request_skips_the_rollback(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(
+        monkeypatch,
+        tmp_path,
+        messages=[],
+        report=_confidence_report("git_commit_k8s", 0.5),
+    )
+    exhausted = RemediationOutputRetryExhausted(
+        RunUsage(), _create_pr_return(7), UnexpectedModelBehavior("bad output")
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(side_effect=exhausted))
+    servers.git.direct_call_tool = _git_tools(
+        {
+            "close_pr": ModelRetry("already merged"),
+            "get_pr_status": dict(_MERGED_PR_STATUS),
+        }
+    )
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert "revert_commit" not in _tool_names(servers.git)
+    assert record.gate_status == "merged"
+    assert record.merge_commit_sha == "late1234567890"
+    assert record.rollback_triggered is False
