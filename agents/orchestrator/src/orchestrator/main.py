@@ -18,6 +18,9 @@ from common.constants import (
     POLLER_UNHEALTHY_AFTER,
     ROLLBACK_TIMEOUT_S,
     ROLLBACK_VERIFY_WINDOW_S,
+    SHUTDOWN_DRAIN_S,
+    SHUTDOWN_STOP_MARGIN_S,
+    SHUTDOWN_STOP_TIMEOUT_S,
 )
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -28,9 +31,11 @@ from .agent import (
     DIAGNOSIS_TIMEOUT_S,
     ORCHESTRATOR_RUN_TIMEOUT_S,
     REMEDIATION_TIMEOUT_S,
+    active_run_count,
     build_run_id,
-    log_task_exception,
+    drain_runs,
     run_orchestration,
+    track_run,
 )
 from .models import FaultEvent, eval_target_from_env
 from .poller import prometheus_poller
@@ -103,6 +108,12 @@ def _check_gate_wait_budget() -> None:
             f"ROLLBACK_VERIFY_WINDOW_S ({rollback_s}s) must not exceed "
             f"ROLLBACK_TIMEOUT_S ({ROLLBACK_TIMEOUT_S}s)"
         )
+    stop_s = SHUTDOWN_DRAIN_S + SHUTDOWN_STOP_MARGIN_S
+    if stop_s > SHUTDOWN_STOP_TIMEOUT_S:
+        raise ValueError(
+            f"SHUTDOWN_DRAIN_S + SHUTDOWN_STOP_MARGIN_S ({stop_s}s) must not exceed "
+            f"SHUTDOWN_STOP_TIMEOUT_S ({SHUTDOWN_STOP_TIMEOUT_S}s)"
+        )
 
 
 @asynccontextmanager
@@ -149,6 +160,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await poll_task
         except asyncio.CancelledError:
             pass
+        log.info("draining %d active runs", active_run_count())
+        await drain_runs()
         log.info("MCP servers shutting down")
 
 
@@ -190,9 +203,6 @@ def _check_auth(
 
 
 app = FastAPI(title="Vigil Orchestrator", lifespan=lifespan)
-
-# Holds references to in-flight background tasks so they are not GC'd.
-_active_tasks: set[asyncio.Task] = set()
 
 
 @app.get("/healthz")
@@ -240,7 +250,5 @@ async def webhook(
             run_id=run_id,
         )
     )
-    _active_tasks.add(task)
-    task.add_done_callback(_active_tasks.discard)
-    task.add_done_callback(lambda t: log_task_exception(t, log))
+    track_run(task)
     return {"run_id": run_id}

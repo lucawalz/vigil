@@ -17,6 +17,7 @@ async def _isolated_run_registry(
     active: set[asyncio.Task] = set()
     monkeypatch.setattr(orch_mod, "_RUN_LOCK", asyncio.Lock())
     monkeypatch.setattr(orch_mod, "_ACTIVE_RUNS", active)
+    monkeypatch.setattr(orch_mod, "_DRAINING", asyncio.Event())
     yield
     for task in active:
         task.cancel()

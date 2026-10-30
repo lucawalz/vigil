@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import re
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncIterator
@@ -26,8 +30,12 @@ from common.constants import (
     LLM_REQUEST_TIMEOUT_S,
     MCP_CALL_TIMEOUT_S,
     ROLLBACK_VERIFY_WINDOW_S,
+    SHUTDOWN_DRAIN_S,
+    SHUTDOWN_STOP_MARGIN_S,
+    SHUTDOWN_STOP_TIMEOUT_S,
 )
 from fastapi import FastAPI
+from orchestrator import agent as orch_mod
 from orchestrator import main as main_mod
 from orchestrator.models import RunRecord
 
@@ -247,6 +255,34 @@ def test_gate_wait_budget_check_fits_the_rollback_in_its_budget(
         main_mod._check_gate_wait_budget()
 
 
+_LOW_GATE_WAIT_S = "180"
+_RAISED_MCP_CALL_TIMEOUT_S = "200"
+_BUDGET_CHECK = (
+    "from orchestrator.main import _check_gate_wait_budget; _check_gate_wait_budget()"
+)
+
+
+def test_gate_wait_budget_check_fits_the_shutdown_drain_in_the_stop_timeout() -> None:
+    assert SHUTDOWN_DRAIN_S + SHUTDOWN_STOP_MARGIN_S <= SHUTDOWN_STOP_TIMEOUT_S
+    env = {
+        **os.environ,
+        "GATE_WAIT_TIMEOUT_S": _LOW_GATE_WAIT_S,
+        "MCP_CALL_TIMEOUT_S": _RAISED_MCP_CALL_TIMEOUT_S,
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", _BUDGET_CHECK],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert re.search(
+        r"SHUTDOWN_DRAIN_S \+ SHUTDOWN_STOP_MARGIN_S.*SHUTDOWN_STOP_TIMEOUT_S",
+        result.stderr,
+    )
+
+
 async def test_lifespan_checks_the_gate_wait_budget_before_starting_servers(
     recorded_servers: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -271,6 +307,50 @@ async def test_lifespan_bounds_git_mcp_requests_by_the_gate_wait_budget(
     for command in ("kubectl-mcp", "flux-mcp", "nixos-mcp"):
         assert "read_timeout" not in by_command[command]
         assert "GATE_WAIT_TIMEOUT_S" not in by_command[command]["env"]
+
+
+_DRAIN_WORK_S = 0.05
+_TEST_WAIT_S = 5.0
+_MCP_SERVER_COUNT = 4
+
+
+class _ClosingMCPServer:
+    def __init__(self, events: list[str]) -> None:
+        self._events = events
+
+    async def __aenter__(self) -> _ClosingMCPServer:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        self._events.append("exit")
+
+
+async def test_lifespan_drains_active_runs_before_closing_servers(
+    recorded_servers: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(
+        main_mod, "MCPServerStdio", lambda **_kwargs: _ClosingMCPServer(events)
+    )
+    started = asyncio.Event()
+
+    async def rolling_back_run() -> RunRecord:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            events.append("cancelled")
+            await asyncio.sleep(_DRAIN_WORK_S)
+            events.append("rolled back")
+            raise
+        return _canned_record()
+
+    async with main_mod.lifespan(FastAPI()):
+        orch_mod.track_run(asyncio.create_task(rolling_back_run()))
+        await asyncio.wait_for(started.wait(), _TEST_WAIT_S)
+
+    assert events[:2] == ["cancelled", "rolled back"]
+    assert events[2:] == ["exit"] * _MCP_SERVER_COUNT
 
 
 async def test_healthz_returns_ok_with_detection_fields(test_app: FastAPI) -> None:

@@ -31,6 +31,13 @@ ROLLBACK_VERIFY_WINDOW_S: int = 180
 
 ROLLBACK_TIMEOUT_S: int = 825
 
+SHUTDOWN_DRAIN_S: float = 2 * MCP_CALL_TIMEOUT_S + ROLLBACK_TIMEOUT_S
+
+# Mirrors TimeoutStopSec of the agent unit and the lab agent stop timeout.
+SHUTDOWN_STOP_TIMEOUT_S: int = 1005
+
+SHUTDOWN_STOP_MARGIN_S: int = 60
+
 LLM_REQUEST_TIMEOUT_S: float = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "240"))
 
 LLM_CONNECT_TIMEOUT_S: float = float(os.environ.get("LLM_CONNECT_TIMEOUT_S", "10"))

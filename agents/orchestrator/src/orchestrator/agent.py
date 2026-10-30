@@ -119,6 +119,7 @@ _INVALID = "invalid"
 
 _RUN_LOCK = asyncio.Lock()
 _ACTIVE_RUNS: set[asyncio.Task[RunRecord]] = set()
+_DRAINING = asyncio.Event()
 
 
 def log_task_exception(task: asyncio.Task, logger: logging.Logger) -> None:
@@ -134,6 +135,20 @@ def track_run(task: asyncio.Task[RunRecord]) -> None:
     _ACTIVE_RUNS.add(task)
     task.add_done_callback(_ACTIVE_RUNS.discard)
     task.add_done_callback(lambda t: log_task_exception(t, log))
+
+
+def active_run_count() -> int:
+    return len(_ACTIVE_RUNS)
+
+
+async def drain_runs() -> None:
+    """Cancel every tracked run, including tries queued while the drain runs."""
+    _DRAINING.set()
+    while _ACTIVE_RUNS:
+        tasks = list(_ACTIVE_RUNS)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def retry_run_id(incident_id: str, try_number: int) -> str:
@@ -1351,8 +1366,10 @@ async def _finalise(
             update["outcome"] = "rollback_succeeded" if ok else "rollback_failed"
         log.info("run %s: rolled back sha=%s ok=%s", run.run_id, run.merge_sha, ok)
     record = record.model_copy(update=update)
-    retry_queued = _retry_rule_met(record, run) and await _target_still_degraded(
-        run.target
+    retry_queued = (
+        _retry_rule_met(record, run)
+        and await _target_still_degraded(run.target)
+        and not _DRAINING.is_set()
     )
     record = record.model_copy(update={"retry_queued": retry_queued})
     _write_run_record(record)

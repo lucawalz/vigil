@@ -4505,3 +4505,100 @@ async def test_unreadable_os_target_ends_the_incident(
     assert record.rollback_success is True
     assert record.retry_queued is False
     assert not orch_mod._ACTIVE_RUNS
+
+
+async def test_shutdown_during_the_finaliser_queues_no_try(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_incident(
+        monkeypatch,
+        tmp_path,
+        servers,
+        watchdogs=[_watchdog_degraded()],
+        merges=[_MERGE_SHA],
+    )
+    revert_started = asyncio.Event()
+    release_revert = asyncio.Event()
+
+    async def held_revert(_args: dict) -> dict:
+        revert_started.set()
+        await release_revert.wait()
+        return dict(_REVERTED)
+
+    gate = {"wait_for_gate": {"merge_commit_sha": _MERGE_SHA}}
+    _answer_rollbacks(servers, [], {**gate, "revert_commit": held_revert})
+
+    orch_mod.track_run(asyncio.create_task(_orchestrate(sample_fault_event, servers)))
+    await asyncio.wait_for(revert_started.wait(), _TEST_WAIT_S)
+    drain = asyncio.create_task(orch_mod.drain_runs())
+    for _ in range(_LOOP_TURNS):
+        await asyncio.sleep(0)
+    release_revert.set()
+    await asyncio.wait_for(drain, _TEST_WAIT_S)
+
+    record = _written_record(tmp_path)
+    assert record["rollback_success"] is True
+    assert record["retry_queued"] is False
+    assert not orch_mod._ACTIVE_RUNS
+
+
+async def test_drain_runs_cancels_queued_tries_without_a_record(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=_create_pr_return())
+
+    async with orch_mod._RUN_LOCK:
+        tries = [
+            asyncio.create_task(
+                run_orchestration(
+                    sample_fault_event,
+                    servers.kubectl,
+                    servers.flux,
+                    servers.nixos,
+                    servers.git,
+                    try_number=try_number,
+                )
+            )
+            for try_number in (1, _SECOND_TRY)
+        ]
+        for task in tries:
+            orch_mod.track_run(task)
+        await asyncio.sleep(0)
+        await asyncio.wait_for(orch_mod.drain_runs(), _TEST_WAIT_S)
+
+    assert all(task.cancelled() for task in tries)
+    assert not (tmp_path / "runs_index.jsonl").exists()
+    assert not orch_mod._ACTIVE_RUNS
+
+
+async def _blocked_run() -> RunRecord:
+    await asyncio.Event().wait()
+    raise AssertionError("a blocked run never resumes")
+
+
+async def test_drain_cancels_a_try_queued_while_draining() -> None:
+    queued: list[asyncio.Task[RunRecord]] = []
+
+    async def run_that_queues_on_cancel() -> RunRecord:
+        try:
+            return await _blocked_run()
+        except asyncio.CancelledError:
+            queued.append(asyncio.create_task(_blocked_run()))
+            orch_mod.track_run(queued[0])
+            raise
+
+    first = asyncio.create_task(run_that_queues_on_cancel())
+    orch_mod.track_run(first)
+    await asyncio.sleep(0)
+    await asyncio.wait_for(orch_mod.drain_runs(), _TEST_WAIT_S)
+
+    assert first.done()
+    (try_queued,) = queued
+    assert try_queued.done()
+    assert not orch_mod._ACTIVE_RUNS

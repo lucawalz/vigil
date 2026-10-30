@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from .agent import log_task_exception, run_orchestration
+from .agent import active_run_count, run_orchestration, track_run
 from .models import FaultEvent
 
 log = logging.getLogger("vigil.orchestrator.poller")
@@ -70,7 +70,6 @@ async def prometheus_poller(app) -> None:
     handled_ttl = int(os.environ.get("PROM_HANDLED_TTL_S", "600"))
     model_name = os.environ.get("LLM_MODEL_NAME", "unknown")
     handled: dict[str, float] = {}
-    _active_tasks: set[asyncio.Task] = set()
     health = _init_poller_health(app)
 
     async with httpx.AsyncClient() as client:
@@ -100,7 +99,7 @@ async def prometheus_poller(app) -> None:
                 if alert.get("state") != "firing":
                     continue
                 fp = alert.get("fingerprint") or str(alert.get("labels", {}))
-                if fp in handled:
+                if fp in handled or active_run_count():
                     continue
                 handled[fp] = now + handled_ttl
                 event = _alert_to_fault_event(alert)
@@ -121,6 +120,4 @@ async def prometheus_poller(app) -> None:
                         model_name=model_name,
                     )
                 )
-                _active_tasks.add(task)
-                task.add_done_callback(_active_tasks.discard)
-                task.add_done_callback(lambda t: log_task_exception(t, log))
+                track_run(task)

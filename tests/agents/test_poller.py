@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 import types
@@ -11,8 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from common.constants import POLLER_UNHEALTHY_AFTER
+from orchestrator import agent as orch_mod
 from orchestrator.agent import run_orchestration
-from orchestrator.models import FaultEvent
+from orchestrator.models import FaultEvent, RunRecord
 
 # These imports will fail until poller.py is created - that is the RED gate.
 from orchestrator.poller import _alert_to_fault_event, prometheus_poller
@@ -159,6 +161,53 @@ async def test_poller_passes_all_mcp_servers_to_run_orchestration(monkeypatch):
     assert "git_mcp" in kwargs
     sig = inspect.signature(run_orchestration)
     sig.bind(*args, **kwargs)
+
+
+_SECOND_POLL = 2
+_LAST_POLL = 3
+
+
+@pytest.mark.asyncio
+async def test_poller_starts_no_run_while_a_run_is_active(monkeypatch):
+    monkeypatch.setenv("PROM_POLLER_ENABLED", "true")
+    monkeypatch.setenv("PROM_POLL_INTERVAL_S", "0")
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"data": {"alerts": [SAMPLE_ALERT]}}
+    release = asyncio.Event()
+
+    async def active_run() -> RunRecord:
+        await release.wait()
+        raise asyncio.CancelledError
+
+    active = asyncio.create_task(active_run())
+    orch_mod.track_run(active)
+    runs_before_release: list[int] = []
+    polls = 0
+
+    async def poll_wait(_interval: float) -> None:
+        nonlocal polls
+        polls += 1
+        if polls == _SECOND_POLL:
+            runs_before_release.append(mock_run.call_count)
+            release.set()
+            with contextlib.suppress(asyncio.CancelledError):
+                await active
+        if polls == _LAST_POLL:
+            raise asyncio.CancelledError
+
+    run_patch = patch("orchestrator.poller.run_orchestration", new_callable=AsyncMock)
+    client_patch = patch("orchestrator.poller.httpx.AsyncClient")
+    sleep_patch = patch("orchestrator.poller.asyncio.sleep", side_effect=poll_wait)
+    with run_patch as mock_run, client_patch as MockClient:
+        instance = MockClient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=mock_response)
+        with sleep_patch, contextlib.suppress(asyncio.CancelledError):
+            await prometheus_poller(MagicMock())
+
+    assert runs_before_release == [0]
+    mock_run.assert_called_once()
 
 
 @pytest.mark.asyncio
