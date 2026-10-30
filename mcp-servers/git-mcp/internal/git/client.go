@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	missingRefMessage = "Reference does not exist"
 	defaultBaseBranch = "main"
 	gitAccessToken    = "x-access-token"
 	redacted          = "[redacted]"
@@ -329,15 +330,22 @@ func (c *realGitClient) ClosePR(ctx context.Context, prNumber int) error {
 		return fmt.Errorf("close_pr: edit: %w", err)
 	}
 	if branch != "" {
-		if _, err := c.gh.Git.DeleteRef(ctx, c.owner, c.repo, "refs/heads/"+branch); err != nil {
+		if _, err := c.gh.Git.DeleteRef(ctx, c.owner, c.repo, "refs/heads/"+branch); err != nil && !isMissingRef(err) {
 			return fmt.Errorf("close_pr: delete branch %s: %w", branch, err)
 		}
 	}
 	return nil
 }
 
+func isMissingRef(err error) bool {
+	var ghErr *gogithub.ErrorResponse
+	return errors.As(err, &ghErr) && ghErr.Response != nil &&
+		ghErr.Response.StatusCode == http.StatusUnprocessableEntity &&
+		strings.Contains(ghErr.Message, missingRefMessage)
+}
+
 func (c *realGitClient) DeleteBranch(ctx context.Context, branch string) error {
-	if _, err := c.gh.Git.DeleteRef(ctx, c.owner, c.repo, "refs/heads/"+branch); err != nil {
+	if _, err := c.gh.Git.DeleteRef(ctx, c.owner, c.repo, "refs/heads/"+branch); err != nil && !isMissingRef(err) {
 		return fmt.Errorf("delete_branch: %w", err)
 	}
 	return nil

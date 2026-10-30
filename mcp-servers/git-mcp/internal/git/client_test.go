@@ -672,3 +672,53 @@ func TestGetCheckRunStatus_findsGateBeyondFirstPage(t *testing.T) {
 		t.Errorf("GetCheckRunStatus = (%v, %q, %q), want (true, \"failure\", %q)", failed, conclusion, headSHA, gateHeadSHA)
 	}
 }
+
+func branchServer(t *testing.T, status int, body string) *realGitClient {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/test/test/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"number":7,"head":{"ref":"remediation/run-1"}}`))
+	})
+	mux.HandleFunc("PATCH /repos/test/test/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"number":7,"state":"closed"}`))
+	})
+	mux.HandleFunc("DELETE /repos/test/test/git/refs/heads/remediation/run-1", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	gh := gogithub.NewClient(srv.Client())
+	baseURL, err := url.Parse(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh.BaseURL = baseURL
+	return &realGitClient{gh: gh, owner: "test", repo: "test"}
+}
+
+const missingRefBody = `{"message":"Reference does not exist"}`
+
+func TestDeleteBranch_alreadyDeletedIsSuccess(t *testing.T) {
+	c := branchServer(t, http.StatusUnprocessableEntity, missingRefBody)
+	if err := c.DeleteBranch(context.Background(), "remediation/run-1"); err != nil {
+		t.Errorf("DeleteBranch = %v, want nil", err)
+	}
+}
+
+func TestClosePR_branchAlreadyDeletedIsSuccess(t *testing.T) {
+	c := branchServer(t, http.StatusUnprocessableEntity, missingRefBody)
+	if err := c.ClosePR(context.Background(), 7); err != nil {
+		t.Errorf("ClosePR = %v, want nil", err)
+	}
+}
+
+func TestDeleteBranch_otherErrorsSurface(t *testing.T) {
+	c := branchServer(t, http.StatusForbidden, `{"message":"Resource not accessible"}`)
+	if err := c.DeleteBranch(context.Background(), "remediation/run-1"); err == nil {
+		t.Error("DeleteBranch with 403 = nil, want error")
+	}
+	if err := c.ClosePR(context.Background(), 7); err == nil {
+		t.Error("ClosePR with 403 = nil, want error")
+	}
+}
