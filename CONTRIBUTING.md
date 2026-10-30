@@ -43,7 +43,7 @@ for m in mcp-servers/*/; do (cd "$m" && go install .); done
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY_FILE` | GitHub App credentials; the agent acts as `<app-slug>[bot]` |
 | `VIGIL_HARNESS_APP_CLIENT_ID`, `VIGIL_HARNESS_APP_PRIVATE_KEY_FILE` | Eval harness GitHub App credentials, used by the harness credential helper for scenario pushes and branch setup |
 | `GITHUB_TOKEN` | Token for lab and local runs, used instead of the App credentials |
-| `GATE_WAIT_TIMEOUT_S` | Longest wait for the `remediation-gate` check and merge, 1 to 3600 seconds, default 480; the orchestrator derives its `git-mcp` call timeouts from it and checks their order at startup |
+| `GATE_WAIT_TIMEOUT_S` | Longest wait for the `remediation-gate` check and merge in seconds (1 to 3600), default 480; the orchestrator derives its `git-mcp` call timeouts from it and refuses to start unless one try fits the run deadline and a gated revert, reconcile and verification fit the 825 s rollback budget |
 | `KUBECTL_MCP_CMD`, `FLUX_MCP_CMD`, `NIXOS_MCP_CMD`, `GIT_MCP_CMD` | Optional override of each MCP server command |
 
 With the variables exported, start the orchestrator and check its health endpoint:
