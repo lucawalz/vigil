@@ -16,6 +16,8 @@ from common.constants import (
     LLM_REQUEST_TIMEOUT_S,
     MCP_CALL_TIMEOUT_S,
     POLLER_UNHEALTHY_AFTER,
+    ROLLBACK_TIMEOUT_S,
+    ROLLBACK_VERIFY_WINDOW_S,
 )
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -74,11 +76,11 @@ def _check_gate_wait_budget() -> None:
     remediation = ("REMEDIATION_TIMEOUT_S", REMEDIATION_TIMEOUT_S)
     attempt = (
         "DIAGNOSIS_TIMEOUT_S + REMEDIATION_TIMEOUT_S + GIT_MCP_READ_TIMEOUT_S + "
-        "MCP_CALL_TIMEOUT_S + WATCHDOG_WINDOW_S",
+        "2 * MCP_CALL_TIMEOUT_S + WATCHDOG_WINDOW_S",
         DIAGNOSIS_TIMEOUT_S
         + REMEDIATION_TIMEOUT_S
         + GIT_MCP_READ_TIMEOUT_S
-        + MCP_CALL_TIMEOUT_S
+        + 2 * MCP_CALL_TIMEOUT_S
         + WATCHDOG_WINDOW_S,
     )
     run = ("ORCHESTRATOR_RUN_TIMEOUT_S", ORCHESTRATOR_RUN_TIMEOUT_S)
@@ -92,6 +94,15 @@ def _check_gate_wait_budget() -> None:
             raise ValueError(
                 f"{shorter} ({shorter_s}s) must be below {longer} ({longer_s}s)"
             )
+    rollback_s = (
+        GATE_REVERT_CALL_TIMEOUT_S + MCP_CALL_TIMEOUT_S + ROLLBACK_VERIFY_WINDOW_S
+    )
+    if rollback_s > ROLLBACK_TIMEOUT_S:
+        raise ValueError(
+            "GATE_REVERT_CALL_TIMEOUT_S + MCP_CALL_TIMEOUT_S + "
+            f"ROLLBACK_VERIFY_WINDOW_S ({rollback_s}s) must not exceed "
+            f"ROLLBACK_TIMEOUT_S ({ROLLBACK_TIMEOUT_S}s)"
+        )
 
 
 @asynccontextmanager

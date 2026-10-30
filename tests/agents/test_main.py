@@ -25,6 +25,7 @@ from common.constants import (
     LLM_MAX_RETRIES,
     LLM_REQUEST_TIMEOUT_S,
     MCP_CALL_TIMEOUT_S,
+    ROLLBACK_VERIFY_WINDOW_S,
 )
 from fastapi import FastAPI
 from orchestrator import main as main_mod
@@ -160,7 +161,7 @@ def _attempt_s() -> float:
         main_mod.DIAGNOSIS_TIMEOUT_S
         + main_mod.REMEDIATION_TIMEOUT_S
         + GIT_MCP_READ_TIMEOUT_S
-        + MCP_CALL_TIMEOUT_S
+        + 2 * MCP_CALL_TIMEOUT_S
         + main_mod.WATCHDOG_WINDOW_S
     )
 
@@ -226,6 +227,22 @@ def test_gate_wait_budget_check_rejects_revert_call_not_above_read_timeout(
     monkeypatch.setattr(main_mod, "GATE_REVERT_CALL_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S)
     with pytest.raises(
         ValueError, match="GIT_MCP_READ_TIMEOUT_S.*GATE_REVERT_CALL_TIMEOUT_S"
+    ):
+        main_mod._check_gate_wait_budget()
+
+
+def test_gate_wait_budget_check_fits_the_rollback_in_its_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rollback_s = (
+        GATE_REVERT_CALL_TIMEOUT_S + MCP_CALL_TIMEOUT_S + ROLLBACK_VERIFY_WINDOW_S
+    )
+    monkeypatch.setattr(main_mod, "ROLLBACK_TIMEOUT_S", rollback_s)
+    main_mod._check_gate_wait_budget()
+
+    monkeypatch.setattr(main_mod, "ROLLBACK_TIMEOUT_S", rollback_s - 1)
+    with pytest.raises(
+        ValueError, match="ROLLBACK_VERIFY_WINDOW_S.*ROLLBACK_TIMEOUT_S"
     ):
         main_mod._check_gate_wait_budget()
 
