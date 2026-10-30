@@ -429,6 +429,7 @@ _NIXOS_MCP_TOOLS = (
     "stage_generation",
     "commit_generation",
     "trigger_reconcile",
+    "get_reconciled_revision",
 )
 
 
@@ -503,6 +504,7 @@ async def test_remediation_llm_is_not_offered_orchestrator_owned_git_tools(
         "get_pr_status",
     } <= offered
     assert "commit_generation" not in offered
+    assert "get_reconciled_revision" not in offered
 
 
 async def test_run_remediation_default_omits_human_review_block(

@@ -40,7 +40,9 @@ from .models import (
 REMEDIATION_REQUEST_LIMIT: int = int(os.environ.get("REMEDIATION_REQUEST_LIMIT", "20"))
 
 _COMMIT_TOOL_NAME = "commit_files"
-_COMMIT_GENERATION_TOOL_NAME = "commit_generation"
+_ORCHESTRATOR_OWNED_NIXOS_TOOLS = frozenset(
+    {"commit_generation", "get_reconciled_revision"}
+)
 _ORCHESTRATOR_OWNED_GIT_TOOLS = frozenset(
     {
         "wait_for_gate",
@@ -208,9 +210,6 @@ async def run_remediation(
     if refusal is not None:
         return refusal, RunUsage(), []
 
-    def _allow_nixos(tool_name: str) -> bool:
-        return tool_name != _COMMIT_GENERATION_TOOL_NAME
-
     git_toolset = FilteredToolset(
         CallBudgetToolset(
             wrapped=deps.git_mcp,
@@ -221,7 +220,8 @@ async def run_remediation(
         filter_func=lambda _ctx, td: td.name not in _ORCHESTRATOR_OWNED_GIT_TOOLS,
     )
     nixos_toolset = FilteredToolset(
-        deps.nixos_mcp, filter_func=lambda _ctx, td: _allow_nixos(td.name)
+        deps.nixos_mcp,
+        filter_func=lambda _ctx, td: td.name not in _ORCHESTRATOR_OWNED_NIXOS_TOOLS,
     )
 
     toolsets: list[object] = [git_toolset, deps.flux_mcp, nixos_toolset]
