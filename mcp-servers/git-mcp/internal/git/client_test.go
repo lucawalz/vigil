@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	gogithub "github.com/google/go-github/v86/github"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -406,5 +407,132 @@ func TestTruncateOutput_truncates(t *testing.T) {
 	got := truncateOutput(s, 10)
 	if !strings.Contains(got, "[TRUNCATED:") {
 		t.Errorf("truncateOutput did not truncate: %q", got)
+	}
+}
+
+const seedMessage = "chore: seed fixture"
+
+func gitOut(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func writeAndCommit(t *testing.T, dir, message string, files map[string]string) string {
+	t.Helper()
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mustRun(t, dir, "git", "add", name)
+	}
+	mustRun(t, dir, "git", "commit", "-m", message)
+	return gitOut(t, dir, "rev-parse", "HEAD")
+}
+
+func seededRemote(t *testing.T, files map[string]string) string {
+	t.Helper()
+	remoteDir := t.TempDir()
+	mustRun(t, remoteDir, "git", "init", "--initial-branch=main")
+	writeAndCommit(t, remoteDir, seedMessage, files)
+	return remoteDir
+}
+
+func TestRevertCommit_shallowBoundaryKeepsUnrelatedFiles(t *testing.T) {
+	remoteDir := seededRemote(t, map[string]string{"a.yaml": "replicas: 1\n", "b.yaml": "kind: ConfigMap\n"})
+	target := writeAndCommit(t, remoteDir, "chore: change replicas", map[string]string{"a.yaml": "replicas: 2\n"})
+
+	c := newTestClient("tok")
+	cloneDir, err := c.Clone(context.Background(), remoteDir, "main")
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(cloneDir) })
+
+	_, err = c.RevertCommit(context.Background(), cloneDir, target, "main", testRevertBranch)
+	if err == nil || !strings.Contains(err.Error(), "parent check") {
+		t.Errorf("RevertCommit error = %v, want a parent check error", err)
+	}
+	if gitOut(t, cloneDir, "ls-tree", "--name-only", "HEAD", "b.yaml") == "" {
+		t.Errorf("revert of shallow-boundary commit %s deleted b.yaml", target[:7])
+	}
+}
+
+func TestRevertCommit_conflictLeavesCleanClone(t *testing.T) {
+	remoteDir := seededRemote(t, map[string]string{"a.yaml": "replicas: 1\n"})
+	target := writeAndCommit(t, remoteDir, "chore: set replicas two", map[string]string{"a.yaml": "replicas: 2\n"})
+	writeAndCommit(t, remoteDir, "chore: set replicas three", map[string]string{"a.yaml": "replicas: 3\n"})
+	cloneDir := t.TempDir()
+	mustRun(t, cloneDir, "git", "clone", remoteDir, ".")
+
+	_, err := newTestClient("tok").RevertCommit(context.Background(), cloneDir, target, "main", testRevertBranch)
+	if err == nil {
+		t.Fatal("RevertCommit: expected a conflict error")
+	}
+	if _, statErr := os.Stat(filepath.Join(cloneDir, ".git", "REVERT_HEAD")); statErr == nil {
+		t.Errorf("clone left mid-revert after %q", err)
+	}
+	if status := gitOut(t, cloneDir, "status", "--porcelain"); status != "" {
+		t.Errorf("git status --porcelain = %q, want clean", status)
+	}
+}
+
+const (
+	revertStallSeconds = "30"
+	markerPollInterval = 10 * time.Millisecond
+)
+
+// The wrapper leaves the conflicted revert in place and then blocks, so the request is cancelled mid-step.
+const stallingRevertGit = `#!/bin/sh
+if [ "$3" = revert ] && [ "$4" = --no-edit ]; then
+	"$STALL_REAL_GIT" "$@"
+	: > "$STALL_MARKER"
+	exec sleep "$STALL_SECONDS"
+fi
+exec "$STALL_REAL_GIT" "$@"
+`
+
+func TestRevertCommit_cancelledRequestLeavesCleanClone(t *testing.T) {
+	remoteDir := seededRemote(t, map[string]string{"a.yaml": "replicas: 1\n"})
+	target := writeAndCommit(t, remoteDir, "chore: set replicas two", map[string]string{"a.yaml": "replicas: 2\n"})
+	writeAndCommit(t, remoteDir, "chore: set replicas three", map[string]string{"a.yaml": "replicas: 3\n"})
+	cloneDir := t.TempDir()
+	mustRun(t, cloneDir, "git", "clone", remoteDir, ".")
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	marker := filepath.Join(binDir, "revert-started")
+	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(stallingRevertGit), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("STALL_REAL_GIT", realGit)
+	t.Setenv("STALL_MARKER", marker)
+	t.Setenv("STALL_SECONDS", revertStallSeconds)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() {
+		for ctx.Err() == nil {
+			if _, statErr := os.Stat(marker); statErr == nil {
+				cancel()
+				return
+			}
+			time.Sleep(markerPollInterval)
+		}
+	}()
+
+	_, err = newTestClient("tok").RevertCommit(ctx, cloneDir, target, "main", testRevertBranch)
+	if err == nil || !strings.Contains(err.Error(), revertStepName) {
+		t.Fatalf("RevertCommit error = %v, want a %s error", err, revertStepName)
+	}
+	if _, statErr := os.Stat(filepath.Join(cloneDir, ".git", "REVERT_HEAD")); statErr == nil {
+		t.Errorf("clone left mid-revert after a cancelled request: %v", err)
 	}
 }

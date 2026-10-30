@@ -333,6 +333,10 @@ func (c *realGitClient) GetPRStatus(ctx context.Context, prNumber int) (string, 
 
 const remediationGateCheckName = "remediation-gate"
 
+const revertStepName = "git revert"
+
+const revertAbortTimeout = 10 * time.Second
+
 var gateFailedConclusions = map[string]bool{
 	"failure":         true,
 	"cancelled":       true,
@@ -456,13 +460,17 @@ func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitS
 	}{
 		{"fetch", []string{"fetch", "origin", baseBranch}},
 		{"reset", []string{"reset", "--hard", "origin/" + baseBranch}},
-		{"git revert", []string{"revert", "--no-edit", mergeCommitSHA}},
+		{"parent check", []string{"rev-parse", "--verify", "--quiet", mergeCommitSHA + "^"}},
+		{revertStepName, []string{"revert", "--no-edit", mergeCommitSHA}},
 		{"push", []string{"push", "origin", "HEAD:refs/heads/" + revertBranch}},
 	}
 	for _, step := range steps {
 		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", cloneDir}, step.args...)...)
 		cmd.Env = env
 		if out, err := cmd.CombinedOutput(); err != nil {
+			if step.name == revertStepName {
+				abortRevert(ctx, cloneDir, env)
+			}
 			return "", sanitiseAuthError(fmt.Errorf("revert_commit: %s: %w: %s", step.name, err, strings.TrimSpace(string(out))), token)
 		}
 	}
@@ -476,6 +484,15 @@ func (c *realGitClient) RevertCommit(ctx context.Context, cloneDir, mergeCommitS
 		return "", fmt.Errorf("revert_commit: read HEAD after revert: %w", err)
 	}
 	return head.Hash().String(), nil
+}
+
+// The abort runs detached from the request so a cancelled call never leaves the clone mid-revert.
+func abortRevert(ctx context.Context, cloneDir string, env []string) {
+	abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revertAbortTimeout)
+	defer cancel()
+	abort := exec.CommandContext(abortCtx, "git", "-C", cloneDir, "revert", "--abort")
+	abort.Env = env
+	_ = abort.Run()
 }
 
 func (c *realGitClient) gitEnv(token string) []string {
