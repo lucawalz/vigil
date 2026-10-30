@@ -10,11 +10,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import click
+from orchestrator.agent import MAX_TRIES, retry_run_id
 from orchestrator.models import eval_target_from_env
 
 from eval.campaign import combinations, completed_run_ids
-from eval.harness import DEFAULT_ORCHESTRATOR_URL, DEFAULT_TIMEOUT_S, run_one
+from eval.harness import DEFAULT_ORCHESTRATOR_URL, is_final_record, run_one
 from eval.scenario import load_scenarios
+
+_TIMEOUT_HELP = (
+    "Seconds to poll for each try's result file before exiting non-zero"
+    " (default: the agent's run timeout plus its shutdown drain and a buffer)."
+)
 
 
 @click.group()
@@ -31,11 +37,11 @@ def cli() -> None:
 @click.option(
     "--timeout",
     "timeout_s",
-    default=DEFAULT_TIMEOUT_S,
+    default=None,
     type=int,
     envvar="VIGIL_RUN_TIMEOUT_S",
     show_envvar=True,
-    help="Seconds to poll for the run result file before exiting non-zero.",
+    help=_TIMEOUT_HELP,
 )
 @click.option(
     "--orchestrator-url",
@@ -98,8 +104,11 @@ def run_cmd(
         )
     except TimeoutError as e:
         resolved_runs_dir = Path(runs_dir) if runs_dir else Path("eval/runs")
-        result_path = resolved_runs_dir / f"{_run_id_for(scenario, seed, model)}.json"
-        if result_path.exists():
+        pending_id, _ = _pending_try(
+            resolved_runs_dir, _run_id_for(scenario, seed, model)
+        )
+        result_path = resolved_runs_dir / f"{pending_id}.json"
+        if _final_record_exists(result_path):
             click.echo(
                 "NOTE: orchestrator result appeared after the wait deadline; using it",
                 err=True,
@@ -158,6 +167,24 @@ def _run_id_for(scenario_id: str, seed: int, model: str) -> str:
     return f"{scenario_id}_{seed}_{safe_model}_{sha7}"
 
 
+def _final_record_exists(path: Path) -> bool:
+    try:
+        return is_final_record(json.loads(path.read_text()))
+    except (FileNotFoundError, ValueError):
+        return False
+
+
+def _pending_try(runs_dir: Path, incident_id: str) -> tuple[str, int]:
+    for try_number in range(1, MAX_TRIES + 1):
+        run_id = (
+            incident_id if try_number == 1 else retry_run_id(incident_id, try_number)
+        )
+        path = runs_dir / f"{run_id}.json"
+        if not path.exists() or _final_record_exists(path):
+            return run_id, try_number
+    return retry_run_id(incident_id, MAX_TRIES + 1), MAX_TRIES + 1
+
+
 def _write_setup_error_record(
     scenario_id: str,
     seed: int,
@@ -168,15 +195,18 @@ def _write_setup_error_record(
     started_at: str | None = None,
 ) -> bool:
     target = eval_target_from_env()
-    run_id = _run_id_for(scenario_id, seed, model)
+    incident_id = _run_id_for(scenario_id, seed, model)
+    run_id, try_number = _pending_try(runs_dir, incident_id)
     result_path = runs_dir / f"{run_id}.json"
-    if result_path.exists():
+    if _final_record_exists(result_path):
         return False
 
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     runs_dir.mkdir(parents=True, exist_ok=True)
     record: dict = {
         "run_id": run_id,
+        "incident_id": incident_id,
+        "attempts": try_number,
         "scenario": scenario_id,
         "seed": seed,
         "model": model,
@@ -252,10 +282,11 @@ def _write_setup_error_record(
 @click.option(
     "--timeout",
     "timeout_s",
-    default=DEFAULT_TIMEOUT_S,
+    default=None,
     type=int,
     envvar="VIGIL_RUN_TIMEOUT_S",
     show_envvar=True,
+    help=_TIMEOUT_HELP,
 )
 @click.option(
     "--retry-failed",

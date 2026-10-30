@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import statistics
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -200,6 +201,24 @@ def _load_records(runs_dir: Path, index_path: Path) -> list[dict]:
             else:
                 log.warning("run JSON missing for %s; skipping", run_id)
     return records
+
+
+def _last_try_per_incident(records: list[dict]) -> list[dict]:
+    incidents: dict[str, list[dict]] = {}
+    for record in records:
+        key = record.get("incident_id") or record["run_id"]
+        incidents.setdefault(key, []).append(record)
+    kept: list[dict] = []
+    for tries in incidents.values():
+        last = next((r for r in tries if not r.get("retry_queued")), None) or max(
+            tries, key=lambda r: r.get("attempts", 1)
+        )
+        if len(tries) > 1:
+            first_started = min(datetime.fromisoformat(r["started_at"]) for r in tries)
+            ended = datetime.fromisoformat(last["ended_at"])
+            last = {**last, "MTTR_s": (ended - first_started).total_seconds()}
+        kept.append(last)
+    return kept
 
 
 def _mean_std(vals: list[float]) -> tuple[float | None, float | None]:
@@ -403,7 +422,7 @@ def aggregate_runs(
     seed_count: int | None = None,
 ) -> dict[str, Any]:
     """Compute per-model and per-scenario metric tables plus escalation accuracy."""
-    records = _load_records(runs_dir, index_path)
+    records = _last_try_per_incident(_load_records(runs_dir, index_path))
     target = _single_target(records)
     planned_scenarios: list[str] = (
         sorted(p.name for p in scenarios_dir.iterdir() if p.is_dir())
@@ -657,7 +676,7 @@ def write_step_summary(
     scenarios_dir: Path | None = None,
     seed_count: int | None = None,
 ) -> None:
-    records = _load_records(runs_dir, index_path)
+    records = _last_try_per_incident(_load_records(runs_dir, index_path))
     _single_target(records)
     if scenarios_dir is not None:
         _correct_escalation_success(records, scenarios_dir)

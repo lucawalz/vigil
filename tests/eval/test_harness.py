@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import eval.harness as harness_mod
 import httpx
 import pytest
+from common.constants import SHUTDOWN_DRAIN_S
 from eval.harness import DEFAULT_EVAL_BRANCH, eval_branch, run_one, trigger_and_wait
+from orchestrator.agent import MAX_TRIES, retry_run_id
 from orchestrator.models import RunRecord
 
 
@@ -1116,3 +1119,169 @@ def test_repo_head_is_none_without_repo_root(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.delenv("VIGIL_REPO_ROOT", raising=False)
 
     assert harness_mod._repo_head() is None
+
+
+_INCIDENT_RUN_ID = "k8s-rollback-1_1_test-model_abc1234"
+_AGENT_RUN_TIMEOUT_S = 60.0
+_PER_TRY_WAIT_S = (
+    _AGENT_RUN_TIMEOUT_S + SHUTDOWN_DRAIN_S + harness_mod._HARNESS_WAIT_BUFFER_S
+)
+_UNDER_DEADLINE_S = 10.0
+_FINAL_TRY = 2
+
+
+def _queued_record(attempts: int) -> str:
+    return json.dumps(
+        {
+            "run_id": _INCIDENT_RUN_ID,
+            "incident_id": _INCIDENT_RUN_ID,
+            "attempts": attempts,
+            "retry_queued": True,
+        }
+    )
+
+
+def _final_record(attempts: int) -> str:
+    return json.dumps(
+        {
+            "run_id": retry_run_id(_INCIDENT_RUN_ID, attempts),
+            "incident_id": _INCIDENT_RUN_ID,
+            "attempts": attempts,
+            "retry_queued": False,
+        }
+    )
+
+
+def _fake_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VIGIL_WEBHOOK_SECRET", "s")
+    monkeypatch.setattr(harness_mod, "_build_fault_event", lambda *a, **k: {})
+
+    def _response(body: dict) -> MagicMock:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = MagicMock(return_value=body)
+        return resp
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url, **kwargs):
+            return _response({"status": "ok", "run_timeout_s": _AGENT_RUN_TIMEOUT_S})
+
+        async def post(self, url, **kwargs):
+            return _response({"run_id": _INCIDENT_RUN_ID})
+
+    monkeypatch.setattr(harness_mod.httpx, "AsyncClient", FakeClient)
+
+
+def _fake_loop_clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    now = [0.0]
+
+    class FakeLoop:
+        def time(self) -> float:
+            return now[0]
+
+    monkeypatch.setattr(harness_mod.asyncio, "get_event_loop", lambda: FakeLoop())
+    return now
+
+
+async def _wait(runs_dir: Path) -> Path:
+    return await trigger_and_wait(
+        scenario_id="k8s-rollback-1",
+        seed=1,
+        orchestrator_url="http://localhost:9099",
+        runs_dir=runs_dir,
+        model="test-model",
+    )
+
+
+async def test_trigger_and_wait_follows_queued_tries_to_the_final_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_orchestrator(monkeypatch)
+    writes = [
+        (tmp_path / f"{_INCIDENT_RUN_ID}.json", _queued_record(1)),
+        (
+            tmp_path / f"{retry_run_id(_INCIDENT_RUN_ID, _FINAL_TRY)}.json",
+            _final_record(_FINAL_TRY),
+        ),
+    ]
+
+    async def fake_sleep(t):
+        if writes:
+            path, body = writes.pop(0)
+            path.write_text(body)
+
+    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
+
+    result = await _wait(tmp_path)
+
+    assert result == tmp_path / f"{retry_run_id(_INCIDENT_RUN_ID, _FINAL_TRY)}.json"
+
+
+async def test_trigger_and_wait_gives_each_try_its_own_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_orchestrator(monkeypatch)
+    now = _fake_loop_clock(monkeypatch)
+    first = tmp_path / f"{_INCIDENT_RUN_ID}.json"
+    final = tmp_path / f"{retry_run_id(_INCIDENT_RUN_ID, _FINAL_TRY)}.json"
+
+    async def fake_sleep(t):
+        now[0] += t
+        if not first.exists() and now[0] >= _PER_TRY_WAIT_S - _UNDER_DEADLINE_S:
+            first.write_text(_queued_record(1))
+        elif first.exists() and now[0] >= 2 * (_PER_TRY_WAIT_S - _UNDER_DEADLINE_S):
+            final.write_text(_final_record(_FINAL_TRY))
+
+    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
+
+    assert await _wait(tmp_path) == final
+
+
+async def test_trigger_and_wait_rereads_a_partly_written_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_orchestrator(monkeypatch)
+    result_file = tmp_path / f"{_INCIDENT_RUN_ID}.json"
+    bodies = ["{", json.dumps({"run_id": _INCIDENT_RUN_ID})]
+
+    async def fake_sleep(t):
+        if bodies:
+            result_file.write_text(bodies.pop(0))
+
+    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
+
+    assert await _wait(tmp_path) == result_file
+
+
+async def test_trigger_and_wait_removes_stale_retry_records_and_traces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_orchestrator(monkeypatch)
+    stale = [
+        tmp_path / f"{retry_run_id(_INCIDENT_RUN_ID, n)}{suffix}"
+        for n in range(_FINAL_TRY, MAX_TRIES + 1)
+        for suffix in (".json", "_trace.jsonl")
+    ]
+    for path in stale:
+        path.write_text(_final_record(_FINAL_TRY))
+    first = tmp_path / f"{_INCIDENT_RUN_ID}.json"
+    first.write_text(_final_record(_FINAL_TRY))
+    seen_on_first_poll: list[bool] = []
+
+    async def fake_sleep(t):
+        if not seen_on_first_poll:
+            seen_on_first_poll.extend(p.exists() for p in [first, *stale])
+            first.write_text(_queued_record(1))
+        else:
+            stale[0].write_text(_final_record(_FINAL_TRY))
+
+    monkeypatch.setattr(harness_mod.asyncio, "sleep", fake_sleep)
+
+    assert await _wait(tmp_path) == stale[0]
+    assert not any(seen_on_first_poll)

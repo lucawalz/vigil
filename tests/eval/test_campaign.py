@@ -46,6 +46,19 @@ def test_completed_run_ids_ignores_blank_lines(tmp_path: Path) -> None:
     assert result == {"k8s-1_1_m1_abc", "k8s-2_2_m1_abc"}
 
 
+def test_completed_run_ids_skips_incidents_with_a_queued_try(tmp_path: Path) -> None:
+    from eval.campaign import completed_run_ids
+
+    index = tmp_path / "runs_index.jsonl"
+    lines = [
+        {"run_id": "k8s-1_1_m1_abc1234", "retry_queued": True},
+        {"run_id": "k8s-2_1_m1_abc1234", "retry_queued": True},
+        {"run_id": "k8s-2_1_m1_abc1234-try-2", "retry_queued": False},
+    ]
+    index.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
+    assert completed_run_ids(index) == {"k8s-2_1_m1_abc1234-try-2"}
+
+
 def test_combinations_cartesian_product_size() -> None:
     from eval.campaign import combinations
 

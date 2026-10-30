@@ -15,14 +15,13 @@ from typing import Any
 
 import httpx
 import yaml
-from orchestrator.agent import _write_run_record, build_run_id
+from common.constants import SHUTDOWN_DRAIN_S
+from orchestrator.agent import MAX_TRIES, _write_run_record, build_run_id, retry_run_id
 from orchestrator.models import RunRecord
 
-_ORCHESTRATOR_RUN_TIMEOUT_S = float(
-    os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "1800")
-)
 _HARNESS_WAIT_BUFFER_S = 300
-DEFAULT_TIMEOUT_S = int(_ORCHESTRATOR_RUN_TIMEOUT_S + _HARNESS_WAIT_BUFFER_S)
+_RESULT_POLL_INTERVAL_S = 2
+_WAIT_LOG_INTERVAL_S = 30
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:9099"
 DEFAULT_EVAL_BRANCH = "chore/eval-cluster-baseline"
 BASELINE_KUSTOMIZATIONS = ("cluster-apps", "cluster-infrastructure")
@@ -600,7 +599,7 @@ def _build_fault_event(
     }
 
 
-async def _healthz_check(client: httpx.AsyncClient, orchestrator_url: str) -> None:
+async def _healthz_check(client: httpx.AsyncClient, orchestrator_url: str) -> float:
     try:
         r = await client.get(f"{orchestrator_url}/healthz", timeout=5)
         r.raise_for_status()
@@ -609,6 +608,7 @@ async def _healthz_check(client: httpx.AsyncClient, orchestrator_url: str) -> No
             f"Orchestrator not reachable at {orchestrator_url} - start it first "
             f"(uv run uvicorn orchestrator.main:app --port 9099). Underlying: {e}"
         ) from e
+    return float(r.json()["run_timeout_s"])
 
 
 def _emit_trace_line(line: str) -> None:
@@ -659,37 +659,14 @@ async def _tail_trace(trace_path: Path, stop: asyncio.Event) -> None:
         await asyncio.sleep(0.5)
 
 
-async def trigger_and_wait(
-    scenario_id: str,
-    seed: int,
-    orchestrator_url: str,
-    runs_dir: Path,
-    model: str,
-    timeout_s: int = DEFAULT_TIMEOUT_S,
-    verbose: bool = False,
-    target_host: str | None = None,
-) -> Path:
-    webhook_secret = os.environ.get("VIGIL_WEBHOOK_SECRET", "")
-    if not webhook_secret:
-        raise ValueError("VIGIL_WEBHOOK_SECRET is not set")
-    fault_event = _build_fault_event(scenario_id, target_host=target_host)
-    async with httpx.AsyncClient() as client:
-        await _healthz_check(client, orchestrator_url)
-        log.info("triggering orchestrator webhook for %s", scenario_id)
-        resp = await client.post(
-            f"{orchestrator_url}/webhook",
-            params={"scenario": scenario_id, "seed": seed, "model": model},
-            json=fault_event,
-            headers={"Authorization": f"Bearer {webhook_secret}"},
-            timeout=720,
-        )
-        resp.raise_for_status()
-        run_id = resp.json()["run_id"]
+def is_final_record(record: Mapping[str, Any]) -> bool:
+    return not record.get("retry_queued")
 
-    log.info("run_id=%s - polling for result", run_id)
+
+async def _wait_for_record(
+    runs_dir: Path, run_id: str, timeout_s: float, verbose: bool
+) -> dict[str, Any]:
     result_path = runs_dir / f"{run_id}.json"
-    result_path.unlink(missing_ok=True)
-
     stop = asyncio.Event()
     tail: asyncio.Task[None] | None = None
     if verbose:
@@ -698,19 +675,20 @@ async def trigger_and_wait(
         )
 
     loop = asyncio.get_event_loop()
-    deadline = loop.time() + timeout_s
-    last_log = loop.time()
+    started = loop.time()
+    last_log = started
     try:
-        while loop.time() < deadline:
+        while loop.time() - started < timeout_s:
             if result_path.exists():
-                return result_path
-            await asyncio.sleep(2)
+                try:
+                    return json.loads(result_path.read_text())
+                except ValueError:
+                    log.debug("record %s is still being written", result_path)
+            await asyncio.sleep(_RESULT_POLL_INTERVAL_S)
             now = loop.time()
-            if now - last_log >= 30:
+            if now - last_log >= _WAIT_LOG_INTERVAL_S:
                 log.debug(
-                    "still waiting for %s ... %.0fs elapsed",
-                    run_id,
-                    now - (deadline - timeout_s),
+                    "still waiting for %s ... %.0fs elapsed", run_id, now - started
                 )
                 last_log = now
         raise TimeoutError(
@@ -722,6 +700,54 @@ async def trigger_and_wait(
             await tail
 
 
+async def trigger_and_wait(
+    scenario_id: str,
+    seed: int,
+    orchestrator_url: str,
+    runs_dir: Path,
+    model: str,
+    timeout_s: int | None = None,
+    verbose: bool = False,
+    target_host: str | None = None,
+) -> Path:
+    webhook_secret = os.environ.get("VIGIL_WEBHOOK_SECRET", "")
+    if not webhook_secret:
+        raise ValueError("VIGIL_WEBHOOK_SECRET is not set")
+    fault_event = _build_fault_event(scenario_id, target_host=target_host)
+    async with httpx.AsyncClient() as client:
+        run_timeout_s = await _healthz_check(client, orchestrator_url)
+        log.info("triggering orchestrator webhook for %s", scenario_id)
+        resp = await client.post(
+            f"{orchestrator_url}/webhook",
+            params={"scenario": scenario_id, "seed": seed, "model": model},
+            json=fault_event,
+            headers={"Authorization": f"Bearer {webhook_secret}"},
+            timeout=720,
+        )
+        resp.raise_for_status()
+        run_id = resp.json()["run_id"]
+
+    per_try_s = (
+        timeout_s
+        if timeout_s is not None
+        else run_timeout_s + SHUTDOWN_DRAIN_S + _HARNESS_WAIT_BUFFER_S
+    )
+    log.info("run_id=%s - polling for result", run_id)
+    (runs_dir / f"{run_id}.json").unlink(missing_ok=True)
+    for try_number in range(2, MAX_TRIES + 1):
+        stale = retry_run_id(run_id, try_number)
+        (runs_dir / f"{stale}.json").unlink(missing_ok=True)
+        (runs_dir / f"{stale}_trace.jsonl").unlink(missing_ok=True)
+
+    current = run_id
+    while True:
+        record = await _wait_for_record(runs_dir, current, per_try_s, verbose)
+        if is_final_record(record):
+            return runs_dir / f"{current}.json"
+        current = retry_run_id(record["incident_id"], record["attempts"] + 1)
+        log.info("run_id=%s - polling for the next try", current)
+
+
 async def run_one(
     scenario_id: str,
     seed: int,
@@ -729,7 +755,7 @@ async def run_one(
     model: str,
     orchestrator_url: str = DEFAULT_ORCHESTRATOR_URL,
     runs_dir: Path | None = None,
-    timeout_s: int = DEFAULT_TIMEOUT_S,
+    timeout_s: int | None = None,
     verbose: bool = False,
 ) -> Path:
     if runs_dir is None:

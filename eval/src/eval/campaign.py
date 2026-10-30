@@ -15,7 +15,9 @@ def completed_run_ids(runs_index_path: Path) -> set[str]:
             line = line.strip()
             if not line:
                 continue
-            ids.add(json.loads(line)["run_id"])
+            entry = json.loads(line)
+            if not entry.get("retry_queued"):
+                ids.add(entry["run_id"])
     return ids
 
 

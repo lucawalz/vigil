@@ -27,6 +27,7 @@ def _write_run(
     rollback_triggered: bool = False,
     rollback_success: bool | None = None,
     target: str | None = None,
+    extra: dict | None = None,
 ) -> None:
     record = {
         "run_id": run_id,
@@ -56,6 +57,7 @@ def _write_run(
     }
     if target is not None:
         record["target"] = target
+    record.update(extra or {})
     (runs_dir / f"{run_id}.json").write_text(json.dumps(record))
     with index_path.open("a") as fh:
         fh.write(json.dumps({"run_id": run_id}) + "\n")
@@ -344,6 +346,85 @@ def test_aggregate_cmd_cli_writes_both_files(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert (output_dir / "summary.json").exists()
     assert (output_dir / "REPORT.md").exists()
+
+
+_INCIDENT_ID = "k8s-1_1_qwen_abc"
+_INCIDENT_OUTCOMES = ("rollback_succeeded", "rollback_succeeded", "success")
+_FIRST_TRY_STARTED_AT = "2026-04-23T10:00:00Z"
+_LAST_TRY_ENDED_AT = "2026-04-23T10:30:00Z"
+_LATER_TRY_STARTED_AT = "2026-04-23T10:20:00Z"
+_EARLY_TRY_ENDED_AT = "2026-04-23T10:10:00Z"
+_INCIDENT_MTTR_S = 1800.0
+_STANDALONE_RUNS = 2
+
+
+def _write_incident(runs_dir: Path, index_path: Path) -> None:
+    last_try = len(_INCIDENT_OUTCOMES)
+    for attempts, outcome in enumerate(_INCIDENT_OUTCOMES, start=1):
+        run_id = _INCIDENT_ID if attempts == 1 else f"{_INCIDENT_ID}-try-{attempts}"
+        _write_run(
+            runs_dir,
+            index_path,
+            run_id=run_id,
+            scenario="k8s-1",
+            seed=1,
+            model="qwen",
+            success=outcome == "success",
+            outcome=outcome,
+            extra={
+                "incident_id": _INCIDENT_ID,
+                "attempts": attempts,
+                "retry_queued": attempts < last_try,
+                "started_at": (
+                    _FIRST_TRY_STARTED_AT if attempts == 1 else _LATER_TRY_STARTED_AT
+                ),
+                "ended_at": (
+                    _LAST_TRY_ENDED_AT if attempts == last_try else _EARLY_TRY_ENDED_AT
+                ),
+            },
+        )
+
+
+def test_aggregate_scores_the_last_try_of_each_incident(tmp_path: Path) -> None:
+    from eval.aggregate import aggregate_runs
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    scenarios_dir = tmp_path / "scenarios"
+    _make_scenarios_dir(scenarios_dir, "k8s-1", "k8s")
+    _make_scenarios_dir(scenarios_dir, "k8s-2", "k8s")
+    _write_incident(runs_dir, index_path)
+    for seed in range(1, _STANDALONE_RUNS + 1):
+        _write_run(
+            runs_dir,
+            index_path,
+            run_id=f"k8s-2_{seed}_qwen_abc",
+            scenario="k8s-2",
+            seed=seed,
+            model="qwen",
+        )
+
+    summary = aggregate_runs(runs_dir, index_path, scenarios_dir)
+
+    incident = summary["by_scenario"]["k8s-1"]
+    assert incident["n_runs"] == 1
+    assert incident["success_rate"] == 1.0
+    assert summary["by_scenario"]["k8s-2"]["n_runs"] == _STANDALONE_RUNS
+
+
+def test_aggregate_measures_incident_mttr_from_the_first_try(tmp_path: Path) -> None:
+    from eval.aggregate import _last_try_per_incident, _load_records
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    index_path = tmp_path / "runs_index.jsonl"
+    _write_incident(runs_dir, index_path)
+
+    [record] = _last_try_per_incident(_load_records(runs_dir, index_path))
+
+    assert record["outcome"] == "success"
+    assert record["MTTR_s"] == _INCIDENT_MTTR_S
 
 
 def test_aggregate_handles_missing_per_run_json_gracefully(tmp_path: Path) -> None:
