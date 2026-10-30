@@ -1,3 +1,6 @@
+import contextlib
+import os
+import signal
 import subprocess
 from pathlib import Path
 
@@ -51,6 +54,55 @@ def test_spawn_records_a_live_pid_and_terminate_stops_it(tmp_path: Path) -> None
     assert pid_alive(pid_file)
     terminate(pid_file, timeout_s=TERMINATE_TEST_TIMEOUT_S)
     assert not pid_file.exists()
+
+
+LEADER_WITH_CHILD = (
+    f'sleep {SLEEP_SECONDS} & child=$!; echo "$child" > child.pid; '
+    "trap 'kill -0 \"$child\" && echo alive > marker; exit 0' TERM; "
+    "touch ready; wait"
+)
+
+
+def _process_gone(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def test_terminate_leader_only_spares_the_group_until_the_leader_exits(
+    tmp_path: Path,
+) -> None:
+    pid_file = tmp_path / "leader.pid"
+    spawn(
+        ["sh", "-c", LEADER_WITH_CHILD],
+        pid_file=pid_file,
+        log_file=tmp_path / "leader.log",
+        cwd=tmp_path,
+    )
+    wait_until(
+        lambda: (tmp_path / "ready").exists(),
+        timeout_s=TERMINATE_TEST_TIMEOUT_S,
+        description="the leader to trap TERM",
+        interval_s=SHORT_INTERVAL_S,
+    )
+    child = int((tmp_path / "child.pid").read_text())
+    try:
+        terminate(pid_file, timeout_s=TERMINATE_TEST_TIMEOUT_S, leader_only=True)
+
+        assert (tmp_path / "marker").read_text().strip() == "alive"
+        assert not pid_file.exists()
+        wait_until(
+            lambda: _process_gone(child),
+            timeout_s=TERMINATE_TEST_TIMEOUT_S,
+            description="the child to exit",
+            interval_s=SHORT_INTERVAL_S,
+        )
+    except BaseException:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(child, signal.SIGKILL)
+        raise
 
 
 def _stamp(pid: int) -> str:

@@ -139,17 +139,24 @@ def pid_alive(pid_file: Path) -> bool:
     return False
 
 
-def terminate(pid_file: Path, timeout_s: float = TERMINATE_TIMEOUT_S) -> None:
+def terminate(
+    pid_file: Path,
+    timeout_s: float = TERMINATE_TIMEOUT_S,
+    *,
+    leader_only: bool = False,
+) -> None:
     pid = _verified_pid(pid_file)
     if pid is not None:
         with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(pid, signal.SIGTERM)
+            if leader_only:
+                os.kill(pid, signal.SIGTERM)
+            else:
+                os.killpg(pid, signal.SIGTERM)
         deadline = time.monotonic() + timeout_s
         while _verified_pid(pid_file) is not None and time.monotonic() < deadline:
             time.sleep(SIGNAL_POLL_INTERVAL_S)
-        if _verified_pid(pid_file) is not None:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(pid, signal.SIGKILL)
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(pid, signal.SIGKILL)
     pid_file.unlink(missing_ok=True)
 
 

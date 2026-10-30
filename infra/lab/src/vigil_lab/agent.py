@@ -24,6 +24,7 @@ from vigil_lab.state import LabPaths, LabSettings, write_private
 AGENT = "agent"
 HEALTHZ_TIMEOUT_S = 180.0
 HEALTHZ_PROBE_TIMEOUT_S = 5.0
+AGENT_STOP_TIMEOUT_S = 1005.0
 LOG_TAIL_LINES = 20
 HTTP_OK = 200
 EXECUTABLE_MODE = 0o755
@@ -199,4 +200,4 @@ def start(
 
 
 def stop(paths: LabPaths) -> None:
-    terminate(paths.pid(AGENT))
+    terminate(paths.pid(AGENT), AGENT_STOP_TIMEOUT_S, leader_only=True)

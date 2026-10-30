@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from common.constants import SHUTDOWN_STOP_TIMEOUT_S
 from vigil_lab import agent
 from vigil_lab.addresses import parse_address_plan
 from vigil_lab.agent import (
@@ -123,6 +124,17 @@ def test_terraform_renders_the_agent_defaults_from_the_shared_file() -> None:
     assert "local.agent_env_defaults" in servers
     for key in SHARED_ENV_KEYS:
         assert f"{key}=" not in servers
+
+
+AGENT_UNIT = REPO_ROOT / "infra" / "nixos" / "hosts" / "vigil-agent" / "default.nix"
+
+
+def test_agent_stop_and_the_unit_outlast_the_shutdown_drain() -> None:
+    assert agent.AGENT_STOP_TIMEOUT_S == SHUTDOWN_STOP_TIMEOUT_S
+    unit = AGENT_UNIT.read_text()
+    assert f'TimeoutStopSec = "{SHUTDOWN_STOP_TIMEOUT_S}s";' in unit
+    assert 'KillMode = "mixed";' in unit
+    assert ".venv/bin/uvicorn orchestrator.main:app" in unit
 
 
 def test_lab_env_matches_the_agent_contract(tmp_path: Path) -> None:
