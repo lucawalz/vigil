@@ -121,7 +121,7 @@ def _strip_flux_revision(revision: str | None) -> str | None:
     return sha or None
 
 
-def _revision_matches(flux_revision: str | None, expected_revision: str) -> bool:
+def revision_matches(flux_revision: str | None, expected_revision: str) -> bool:
     sha = _strip_flux_revision(flux_revision)
     if not sha:
         return False
@@ -275,7 +275,7 @@ def is_workload_healthy(
     if snapshot.flux_ready is False:
         return False
     if expected_revision and snapshot.flux_revision:
-        if not _revision_matches(snapshot.flux_revision, expected_revision):
+        if not revision_matches(snapshot.flux_revision, expected_revision):
             return False
     return True
 
@@ -297,7 +297,7 @@ def _node_condition_satisfied(text: str, condition: str, expected: str) -> bool:
     return f"{condition}: {expected}" in text
 
 
-async def _os_target_healthy(deps: WatchdogDeps) -> bool:
+async def os_target_healthy(deps: WatchdogDeps) -> bool:
     """Report whether the NixOS host has converged to the declared OS state.
 
     systemd targets are healthy when the unit reports Active: active (running);
@@ -348,7 +348,7 @@ async def _run_os_watchdog(deps: WatchdogDeps) -> WatchdogResult:
     deadline = loop.time() + WINDOW_S
     healthy_streak = 0
     while loop.time() < deadline:
-        if await _os_target_healthy(deps):
+        if await os_target_healthy(deps):
             healthy_streak += 1
             if healthy_streak >= HEALTHY_STREAK_K:
                 return WatchdogResult(degraded=False, snapshot=None, reason="healthy")

@@ -8,6 +8,8 @@ from .agent import (
     WINDOW_S,
     capture_health_snapshot,
     is_workload_healthy,
+    os_target_healthy,
+    revision_matches,
     run_watchdog,
 )
 from .models import HealthSnapshot, WatchdogDeps, WatchdogResult
@@ -23,5 +25,7 @@ __all__ = [
     "WatchdogResult",
     "capture_health_snapshot",
     "is_workload_healthy",
+    "os_target_healthy",
+    "revision_matches",
     "run_watchdog",
 ]
