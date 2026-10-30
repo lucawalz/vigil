@@ -142,7 +142,7 @@ func (c *realGitClient) CreateBranch(ctx context.Context, cloneDir, branch, base
 	}
 	fetchErr := r.FetchContext(ctx, &git.FetchOptions{
 		RefSpecs: []gitconfig.RefSpec{
-			gitconfig.RefSpec("refs/heads/" + baseBranch + ":refs/remotes/origin/" + baseBranch),
+			gitconfig.RefSpec("+refs/heads/" + baseBranch + ":refs/remotes/origin/" + baseBranch),
 		},
 		Auth: basicAuth,
 	})
@@ -411,12 +411,15 @@ func (c *realGitClient) ReadFile(ctx context.Context, cloneDir, branch, path str
 	}
 	fetchErr := r.FetchContext(ctx, &git.FetchOptions{
 		RefSpecs: []gitconfig.RefSpec{
-			gitconfig.RefSpec("refs/heads/" + branch + ":refs/remotes/origin/" + branch),
+			gitconfig.RefSpec("+refs/heads/" + branch + ":refs/remotes/origin/" + branch),
 		},
 		Auth: basicAuth,
 	})
-	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+	if errors.Is(fetchErr, git.NoMatchingRefSpecError{}) {
 		return "", fmt.Errorf("branch not found: %s", branch)
+	}
+	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+		return "", sanitiseAuthError(fmt.Errorf("read_file: fetch %s: %w", branch, fetchErr), basicAuth.Password)
 	}
 	ref, err := r.Reference(plumbing.NewRemoteReferenceName("origin", branch), true)
 	if errors.Is(err, plumbing.ErrReferenceNotFound) {

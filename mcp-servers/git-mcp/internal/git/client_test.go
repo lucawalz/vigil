@@ -536,3 +536,62 @@ func TestRevertCommit_cancelledRequestLeavesCleanClone(t *testing.T) {
 		t.Errorf("clone left mid-revert after a cancelled request: %v", err)
 	}
 }
+
+func forceResetBase(t *testing.T) (cloneDir, rewritten string) {
+	t.Helper()
+	remoteDir := seededRemote(t, map[string]string{"a.yaml": "replicas: 1\n"})
+	writeAndCommit(t, remoteDir, "chore: set replicas two", map[string]string{"a.yaml": "replicas: 2\n"})
+
+	cloneDir, err := newTestClient("tok").Clone(context.Background(), remoteDir, "main")
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(cloneDir) })
+
+	mustRun(t, remoteDir, "git", "reset", "--hard", "HEAD~1")
+	rewritten = writeAndCommit(t, remoteDir, "chore: reset base fixture", map[string]string{"a.yaml": "replicas: 5\n"})
+	return cloneDir, rewritten
+}
+
+func TestReadFile_followsForceResetBase(t *testing.T) {
+	cloneDir, _ := forceResetBase(t)
+
+	got, err := newTestClient("tok").ReadFile(context.Background(), cloneDir, "main", "a.yaml")
+	if err != nil {
+		t.Fatalf("ReadFile after force-reset of existing branch main: %v", err)
+	}
+	if got != "replicas: 5\n" {
+		t.Errorf("ReadFile = %q, want the force-reset tip content", got)
+	}
+}
+
+func TestCreateBranch_followsForceResetBase(t *testing.T) {
+	cloneDir, rewritten := forceResetBase(t)
+
+	if err := newTestClient("tok").CreateBranch(context.Background(), cloneDir, "remediation/run-x", "main"); err != nil {
+		t.Fatalf("CreateBranch after force-reset of main: %v", err)
+	}
+	if head := gitOut(t, cloneDir, "rev-parse", "HEAD"); head != rewritten {
+		t.Errorf("HEAD = %s, want force-reset tip %s", head, rewritten)
+	}
+}
+
+func TestReadFile_fetchErrorIsNotBranchNotFound(t *testing.T) {
+	remoteDir := seededRemote(t, map[string]string{"a.yaml": "replicas: 1\n"})
+	cloneDir, err := newTestClient("tok").Clone(context.Background(), remoteDir, "main")
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(cloneDir) })
+	if err := os.RemoveAll(remoteDir); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = newTestClient("tok").ReadFile(context.Background(), cloneDir, "main", "a.yaml")
+	if err == nil {
+		t.Fatal("ReadFile: expected a fetch error")
+	}
+	if strings.HasPrefix(err.Error(), "branch not found") {
+		t.Errorf("error = %q, want a fetch error", err)
+	}
+}
