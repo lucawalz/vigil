@@ -1906,7 +1906,7 @@ func TestReadFileHandler_Success(t *testing.T) {
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
 	)
-	handler := git.HandleReadFile(fake, state, "", testMaxBytes)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
 		"branch": "chore/eval-cluster-baseline",
@@ -1932,7 +1932,7 @@ func TestReadFileHandler_BranchNotFound(t *testing.T) {
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
 	)
-	handler := git.HandleReadFile(fake, state, "", testMaxBytes)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
 		"branch": "missing-branch",
@@ -1958,7 +1958,7 @@ func TestReadFileHandler_PathNotFound(t *testing.T) {
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
 	)
-	handler := git.HandleReadFile(fake, state, "", testMaxBytes)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
 		"branch": "chore/eval-cluster-baseline",
@@ -1984,7 +1984,7 @@ func TestReadFileHandler_MissingBranch(t *testing.T) {
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
 	)
-	handler := git.HandleReadFile(fake, state, "", testMaxBytes)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
 		"path": "infra/k8s/cm.yaml",
@@ -2009,7 +2009,7 @@ func TestReadFileHandler_MissingPath(t *testing.T) {
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
 	)
-	handler := git.HandleReadFile(fake, state, "", testMaxBytes)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
 		"branch": "chore/eval-cluster-baseline",
@@ -2033,7 +2033,7 @@ func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
 	)
-	handler := git.HandleReadFile(fake, state, "", testMaxBytes)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
 		"branch": "chore/eval-cluster-baseline",
@@ -2051,43 +2051,14 @@ func TestReadFileHandler_SessionNotInitialised(t *testing.T) {
 	}
 }
 
-func TestReadFileHandler_AutoClone_Success(t *testing.T) {
-	cloneDir := t.TempDir()
-	fake := &fakeGitClient{cloneDir: cloneDir, readFileOut: "apiVersion: v1\nkind: Deployment\n"}
+func TestReadFileHandler_withoutSessionIsError(t *testing.T) {
+	fake := &fakeGitClient{cloneDir: t.TempDir(), readFileOut: "apiVersion: v1\n"}
 	state := &fakeSessionState{}
 	tool := mcp.NewTool("read_file",
 		mcp.WithString("branch", mcp.Required()),
 		mcp.WithString("path", mcp.Required()),
 	)
-	handler := git.HandleReadFile(fake, state, "https://token@github.com/org/repo", testMaxBytes)
-
-	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
-		"branch": "main",
-		"path":   "infra/k8s/deploy.yaml",
-	})
-	if err != nil {
-		t.Fatalf("CallTool error: %v", err)
-	}
-	if result.IsError {
-		t.Errorf("expected success with auto-clone, got error: %v", result.Content)
-	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "apiVersion: v1") {
-		t.Errorf("expected file content in response, got: %s", text)
-	}
-	if state.CloneDir() != cloneDir {
-		t.Errorf("expected session to be initialised after auto-clone, cloneDir=%s", state.CloneDir())
-	}
-}
-
-func TestReadFileHandler_AutoClone_CloneFails(t *testing.T) {
-	fake := &fakeGitClient{err: errors.New("authentication failed")}
-	state := &fakeSessionState{}
-	tool := mcp.NewTool("read_file",
-		mcp.WithString("branch", mcp.Required()),
-		mcp.WithString("path", mcp.Required()),
-	)
-	handler := git.HandleReadFile(fake, state, "https://bad-token@github.com/org/repo", testMaxBytes)
+	handler := git.HandleReadFile(fake, state, testMaxBytes)
 
 	result, err := callHandler(t, "read_file", tool, handler, map[string]any{
 		"branch": "main",
@@ -2097,11 +2068,13 @@ func TestReadFileHandler_AutoClone_CloneFails(t *testing.T) {
 		t.Fatalf("CallTool error: %v", err)
 	}
 	if !result.IsError {
-		t.Error("expected IsError=true when auto-clone fails")
+		t.Error("expected IsError=true without a session")
 	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "auto-clone") {
-		t.Errorf("expected 'auto-clone' in error, got: %s", text)
+	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "clone_repo") {
+		t.Errorf("expected 'clone_repo' in error, got: %s", text)
+	}
+	if state.CloneDir() != "" {
+		t.Errorf("read_file opened a session: %q", state.CloneDir())
 	}
 }
 

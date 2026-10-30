@@ -242,12 +242,12 @@ func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *s
 
 	mcpServer.AddTool(
 		mcp.NewTool("read_file",
-			mcp.WithDescription("Read a file from the repository at a given branch tip; auto-initialises the session if needed"),
+			mcp.WithDescription("Read a file from the repository at a given branch tip; requires a prior clone_repo call"),
 			mcp.WithString("branch", mcp.Required(), mcp.Description("Branch name to read from")),
 			mcp.WithString("path", mcp.Required(), mcp.Description("Repo-relative file path")),
 			mcp.WithOutputSchema[git.ReadFileResult](),
 		),
-		git.HandleReadFile(client, s, cfg.RepoURL, cfg.MaxOutputBytes),
+		git.HandleReadFile(client, s, cfg.MaxOutputBytes),
 	)
 
 	mcpServer.AddTool(
