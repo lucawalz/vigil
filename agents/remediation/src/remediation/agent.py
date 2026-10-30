@@ -1,7 +1,7 @@
 """Remediation agent: executes K8s repairs via GitOps and OS repairs via NixOS rebuilds.
 
-K8s path: branch the repo, write the corrected manifest, commit, push, open a PR,
-wait for the CI gate, then trigger Flux reconciliation. OS path: stage the target
+K8s and NixOS git paths: write the corrected manifest, commit, push and open a PR;
+the orchestrator waits for the CI gate, merges and reconciles. OS path: stage the target
 generation so the running system activates it without changing the bootloader default;
 the orchestrator commits the generation durably only after health is confirmed.
 
@@ -32,6 +32,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from .models import (
     GitCommitBudgetExceeded,
     RemediationDeps,
+    RemediationOutput,
     RemediationOutputRetryExhausted,
     RemediationResult,
 )
@@ -40,7 +41,16 @@ REMEDIATION_REQUEST_LIMIT: int = int(os.environ.get("REMEDIATION_REQUEST_LIMIT",
 
 _COMMIT_TOOL_NAME = "commit_files"
 _COMMIT_GENERATION_TOOL_NAME = "commit_generation"
-_GATE_TOOL_NAMES = frozenset({"wait_for_gate", "revert_commit"})
+_ORCHESTRATOR_OWNED_GIT_TOOLS = frozenset(
+    {
+        "wait_for_gate",
+        "close_pr",
+        "delete_branch",
+        "revert_commit",
+        "clone_repo",
+        "create_branch",
+    }
+)
 
 _SYSTEM_PROMPT = """\
 You are the Remediation stage of the vigil fault-response pipeline. Execute one of
@@ -62,12 +72,10 @@ If recommended_action == "git_commit_k8s":
     - affected_resources -- list of affected Kubernetes resources
 
   The remediation branch has already been created and checked out for this run.
-  Do NOT call create_branch. The branch name is provided in the task as
-  agent_branch; record that value into RemediationResult.agent_branch.
+  The branch name is provided in the task as agent_branch; record that value
+  into RemediationResult.agent_branch.
 
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
-    0. clone_repo(run_id=<run_id>, base_branch=<source_branch>)
-       -- initialises the git-mcp session; idempotent if diagnosis already ran.
     1. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
        the current declared content. If the returned content is identical to
        DiagnosisReport.patch_body, the fix is already in git; escalate
@@ -78,27 +86,12 @@ If recommended_action == "git_commit_k8s":
        -- record the SHA from 'commit: <sha>' into RemediationResult.agent_commits.
     4. push_branch()
     5. create_pr(title='<short summary>', body='<root cause + evidence>')
-       -- base branch is taken from clone_repo. the PR is merged by wait_for_gate
-          once the gate passes.
-    6. wait_for_gate(pr_number=<pr_number from create_pr response>)
-       -- on success, including a merge that lands as the wait ends, the response
-          is 'gate passed: merged sha=<sha>'.
-       -- extract <sha> after 'sha=' and record into RemediationResult.merge_commit_sha.
-       -- record RemediationResult.gate_status='merged'.
-       -- on any wait_for_gate error (PR closed without merge, gate check failed,
-          PR unmergeable, or gate wait ended without merge):
-         a. call close_pr(pr_number=<pr_number>)
-         b. call delete_branch(branch=<the provided agent_branch>)
-         c. record RemediationResult.gate_status='closed' and merge_commit_sha=None
-         d. return success=False with the action trace and STOP.
-    7. flux-mcp.reconcile_kustomization(namespace='flux-system', name='cluster-apps')
-       -- triggers Flux to pull the merged commit immediately.
+       -- opens the PR into the session's base branch.
+          Then STOP: the orchestrator waits for the CI gate, merges, and reconciles.
 
   BUDGET / NO-RETRY (GIT_COMMIT_BUDGET=1):
-    Once push_branch and create_pr have been called, do NOT call
-    write_manifest or commit_files again in this run. If the gate fails or
-    reconcile_kustomization errors, return RemediationResult with the trace
-    so far and STOP. The orchestrator decides the terminal outcome.
+    Once push_branch and create_pr have been called, do NOT call write_manifest
+    or commit_files again. If any step errors, return the trace so far and STOP.
 
 If recommended_action == "nixos_rebuild":
   1. Skip git and flux tooling entirely -- this is an OS-only repair.
@@ -123,12 +116,10 @@ If recommended_action == "git_commit_nix":
     - DiagnosisReport.target_host -- NixOS hostname for nixos-mcp calls
 
   The remediation branch has already been created and checked out for this run.
-  Do NOT call create_branch. The branch name is provided in the task as
-  agent_branch; record that value into RemediationResult.agent_branch.
+  The branch name is provided in the task as agent_branch; record that value
+  into RemediationResult.agent_branch.
 
   Execute the following sequence EXACTLY ONCE (GIT_COMMIT_BUDGET=1):
-    0. clone_repo(run_id=<run_id>, base_branch=<source_branch>)
-       -- idempotent if diagnosis already ran.
     1. read_file(branch=<source_branch>, path=DiagnosisReport.manifest_path) to fetch
        the current declared content. If identical to DiagnosisReport.patch_body,
        escalate.
@@ -137,20 +128,8 @@ If recommended_action == "git_commit_nix":
     3. commit_files(message='fix(remediation): <short root cause summary>')
     4. push_branch()
     5. create_pr(title='<short summary>', body='<root cause + evidence>')
-       -- base branch is taken from clone_repo.
-    6. wait_for_gate(pr_number=<pr_number from create_pr response>)
-       -- on any wait_for_gate error (PR closed without merge, gate check failed,
-          PR unmergeable, or gate wait ended without merge): call close_pr,
-          delete_branch(branch=<the provided agent_branch>),
-          record gate_status='closed' and merge_commit_sha=None,
-          return success=False and STOP.
-       -- on 'gate passed: merged sha=<sha>', including a merge that lands as the
-          wait ends: extract merge sha, record merge_commit_sha and gate_status.
-    7. After wait_for_gate returns 'gate passed', call
-       nixos-mcp.trigger_reconcile(host=target_host)
-       to force the on-host NixOS rebuild without waiting for the auto-reconciler timer.
-  8. Return RemediationResult(success=True, ...) if trigger_reconcile completes
-     without error.
+       -- opens the PR into the session's base branch.
+          Then STOP: the orchestrator waits for the CI gate, merges, and reconciles.
 
   BUDGET / NO-RETRY (GIT_COMMIT_BUDGET=1):
     Same budget constraint as git_commit_k8s -- do not retry git operations.
@@ -161,28 +140,23 @@ Return a RemediationResult with:
   - tool_calls_count: total tool calls.
   - mutation_attempted: True if any mutation tool was invoked (any git-mcp write
     tool, stage_generation, or trigger_reconcile).
-  - merge_commit_sha: parsed from 'gate passed: merged sha=<sha>' on git_commit_k8s
-    or git_commit_nix success; None otherwise.
   - agent_branch: the agent_branch value provided in the task, on git paths;
     None otherwise.
   - agent_commits: list of commit SHAs from commit_files responses on git paths;
     None otherwise.
-  - gate_status: 'merged' on gate success, 'closed' on gate failure, None on
-    non-git paths.
 
 If recommended_action is anything other than the four above (including "escalate"),
 return RemediationResult(success=False, actions_taken=[], tool_calls_count=0,
-mutation_attempted=False, merge_commit_sha=None, agent_branch=None,
-agent_commits=None, gate_status=None) immediately with
+mutation_attempted=False, agent_branch=None, agent_commits=None) immediately with
 error="unexpected_action: <value>" in actions_taken. Do not call any tools.
 The orchestrator handles "escalate" before run_remediation is ever called;
 this guard exists for unexpected values only."""
 
 
-remediation_agent: Agent[RemediationDeps, RemediationResult] = Agent(
+remediation_agent: Agent[RemediationDeps, RemediationOutput] = Agent(
     build_model(),
     deps_type=RemediationDeps,
-    output_type=RemediationResult,
+    output_type=RemediationOutput,
     retries=1,
     system_prompt=_SYSTEM_PROMPT,
 )
@@ -208,13 +182,10 @@ def _build_review_block(require_human_review: bool) -> str:
         return ""
     return (
         " HUMAN-REVIEW MODE OVERRIDE (applies only to git_commit_k8s and"
-        " git_commit_nix): open the PR for a human to merge, do not gate or"
-        " reconcile. After push_branch, call create_pr(...)."
-        " Then STOP: do NOT call wait_for_gate and do NOT call"
-        " reconcile_kustomization or trigger_reconcile. Record the provided"
-        " agent_branch and agent_commits, set gate_status='awaiting_review', set"
-        " merge_commit_sha=None, and return success=True because the PR was"
-        " opened successfully for human review."
+        " git_commit_nix): the PR stays open for a human to merge. After"
+        " create_pr(...), STOP: do NOT call reconcile_kustomization or"
+        " trigger_reconcile. Record the provided agent_branch and agent_commits"
+        " and return success=True once the PR is open."
     )
 
 
@@ -240,16 +211,15 @@ async def run_remediation(
     def _allow_nixos(tool_name: str) -> bool:
         return tool_name != _COMMIT_GENERATION_TOOL_NAME
 
-    git_toolset = CallBudgetToolset(
-        wrapped=deps.git_mcp,
-        tool_name=_COMMIT_TOOL_NAME,
-        budget=GIT_COMMIT_BUDGET,
-        on_exceeded=GitCommitBudgetExceeded,
+    git_toolset = FilteredToolset(
+        CallBudgetToolset(
+            wrapped=deps.git_mcp,
+            tool_name=_COMMIT_TOOL_NAME,
+            budget=GIT_COMMIT_BUDGET,
+            on_exceeded=GitCommitBudgetExceeded,
+        ),
+        filter_func=lambda _ctx, td: td.name not in _ORCHESTRATOR_OWNED_GIT_TOOLS,
     )
-    if require_human_review:
-        git_toolset = FilteredToolset(
-            git_toolset, filter_func=lambda _ctx, td: td.name not in _GATE_TOOL_NAMES
-        )
     nixos_toolset = FilteredToolset(
         deps.nixos_mcp, filter_func=lambda _ctx, td: _allow_nixos(td.name)
     )
@@ -280,6 +250,8 @@ async def run_remediation(
         ) as agent_run:
             async for _ in agent_run:
                 pass
+        if agent_run.result is None:
+            raise UnexpectedModelBehavior("remediation run ended without a result")
     except GitCommitBudgetExceeded:
         _persist_partial_trace(run_id, agent_run.all_messages())
         budget_refused = RemediationResult(
@@ -287,6 +259,7 @@ async def run_remediation(
             actions_taken=["commit_budget_exceeded"],
             tool_calls_count=0,
             mutation_attempted=False,
+            budget_refused=True,
         )
         return budget_refused, agent_run.usage, agent_run.all_messages()
     except UnexpectedModelBehavior as exc:
@@ -301,4 +274,8 @@ async def run_remediation(
     except CircuitBreakerTripped:
         _persist_partial_trace(run_id, agent_run.all_messages())
         raise
-    return agent_run.result.output, agent_run.usage, agent_run.all_messages()
+    return (
+        RemediationResult(**agent_run.result.output.model_dump()),
+        agent_run.usage,
+        agent_run.all_messages(),
+    )

@@ -3541,6 +3541,35 @@ async def test_merge_before_close_counts_as_merged(
     assert "reconcile_kustomization" in _tool_names(servers.flux)
 
 
+async def test_budget_refusal_after_create_pr_closes_without_gating(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refused = RemediationResult(
+        success=False,
+        actions_taken=["commit_budget_exceeded"],
+        tool_calls_count=0,
+        mutation_attempted=False,
+        budget_refused=True,
+    )
+    _stub_stages(
+        monkeypatch, tmp_path, messages=_create_pr_return(7), remediation=refused
+    )
+
+    record = await _orchestrate(sample_fault_event, servers)
+
+    git_calls = _tool_calls(servers.git)
+    assert "wait_for_gate" not in _tool_names(servers.git)
+    close_index = git_calls.index(("close_pr", {"pr_number": 7}))
+    assert close_index < git_calls.index(("get_pr_status", {"pr_number": 7}))
+    assert record.gate_status == "closed"
+    assert record.merge_commit_sha is None
+    assert record.remediation_success is False
+    assert "reconcile_kustomization" not in _tool_names(servers.flux)
+
+
 async def test_gate_uses_the_last_successful_create_pr(
     sample_fault_event: FaultEvent,
     servers: SimpleNamespace,

@@ -20,14 +20,16 @@ import remediation.agent as _rem_agent_mod
 from common.constants import GIT_COMMIT_BUDGET, PROTECTED_BRANCHES
 from common.toolset_guards import CallBudgetToolset
 from diagnosis.models import DiagnosisReport
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.test import TestModel
-from pydantic_ai.toolsets import FunctionToolset
-from pydantic_ai.usage import RunUsage
+from mcp import types as mcp_types
+from pydantic_ai import Agent
+from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from remediation.agent import remediation_agent, run_remediation
 from remediation.models import (
     GitCommitBudgetExceeded,
     RemediationDeps,
+    RemediationOutput,
     RemediationResult,
 )
 
@@ -83,7 +85,6 @@ def test_remediation_prompt_mandates_git_commit_sequence() -> None:
     assert "commit_files" in mod_source
     assert "push_branch" in mod_source
     assert "create_pr" in mod_source
-    assert "wait_for_gate" in mod_source
     assert "reconcile_kustomization" in mod_source
     has_emphasis = any(
         kw in mod_source for kw in ("FIRST", "MANDATORY", "MUST", "exactly once")
@@ -100,23 +101,24 @@ def test_remediation_prompt_no_suspend_or_apply() -> None:
     assert "rollout_undo" not in mod_source
 
 
-def test_remediation_prompt_gate_failure_cleanup() -> None:
-    """Every unsuccessful gate wait on each git path takes the cleanup path."""
+def test_remediation_prompt_git_paths_end_at_create_pr() -> None:
+    """Both git paths stop at create_pr; the orchestrator owns the gate."""
     prompt = _rem_agent_mod._SYSTEM_PROMPT
-    assert "close_pr" in prompt
-    assert "delete_branch" in prompt
+    for orchestrator_owned in (
+        "wait_for_gate",
+        "close_pr",
+        "delete_branch",
+        "clone_repo",
+        "create_branch",
+        "merge_commit_sha",
+        "gate_status",
+    ):
+        assert orchestrator_owned not in prompt
     git_commit_actions = ("git_commit_k8s", "git_commit_nix")
-    assert prompt.count("on any wait_for_gate error") == len(git_commit_actions)
-    assert prompt.count("gate_status='closed' and merge_commit_sha=None") == len(
+    assert prompt.count("create_pr(") == len(git_commit_actions)
+    assert prompt.count("the orchestrator waits for the CI gate") == len(
         git_commit_actions
     )
-    for unsuccessful_wait in (
-        "PR closed without merge",
-        "gate check failed",
-        "PR unmergeable",
-        "gate wait ended without merge",
-    ):
-        assert unsuccessful_wait in prompt
 
 
 def test_remediation_prompt_references_affected_resources() -> None:
@@ -141,18 +143,22 @@ def test_run_remediation_signature() -> None:
 
 
 def test_remediation_result_fields_stable() -> None:
-    """Guard: RemediationResult schema must not drift."""
-    fields = set(RemediationResult.model_fields.keys())
-    assert fields == {
+    """Guard: the LLM output and result schemas must not drift."""
+    output_fields = {
         "success",
         "actions_taken",
         "tool_calls_count",
         "mutation_attempted",
-        "merge_commit_sha",
         "agent_branch",
         "agent_commits",
-        "gate_status",
     }
+    assert set(RemediationOutput.model_fields) == output_fields
+    assert set(RemediationResult.model_fields) == output_fields | {
+        "merge_commit_sha",
+        "gate_status",
+        "budget_refused",
+    }
+    assert remediation_agent.output_type is RemediationOutput
 
 
 def test_run_remediation_returns_tuple_with_usage() -> None:
@@ -284,6 +290,7 @@ async def test_run_remediation_surfaces_budget_exceeded(
     assert isinstance(result, RemediationResult)
     assert result.success is False
     assert "commit_budget_exceeded" in result.actions_taken
+    assert result.budget_refused is True
 
 
 def test_protected_branches_default_includes_main_and_master() -> None:
@@ -344,14 +351,13 @@ async def test_run_remediation_human_review_overrides_gate_waiting(
 ) -> None:
     """require_human_review=True opens a PR for a human and skips gate-waiting."""
     captured: dict[str, str] = {}
-    reached = RemediationResult(
+    reached = RemediationOutput(
         success=True,
-        actions_taken=["clone_repo", "create_pr"],
+        actions_taken=["commit_files", "create_pr"],
         tool_calls_count=2,
         mutation_attempted=True,
         agent_branch="remediation/run-x",
         agent_commits=["abc1234"],
-        gate_status="awaiting_review",
     )
 
     class _FakeRun:
@@ -394,55 +400,109 @@ async def test_run_remediation_human_review_overrides_gate_waiting(
     task = captured["task"]
     assert "create_pr(" in task
     assert "auto_merge" not in task
-    assert "awaiting_review" in task
     assert "HUMAN-REVIEW MODE" in task
-    assert result.gate_status == "awaiting_review"
+    assert result.gate_status is None
 
 
-_GATE_TOOLS = ("wait_for_gate", "revert_commit")
+_GIT_MCP_TOOLS = (
+    "clone_repo",
+    "close_pr",
+    "commit_files",
+    "create_branch",
+    "create_pr",
+    "delete_branch",
+    "get_pr_status",
+    "push_branch",
+    "read_file",
+    "resolve_manifest_path",
+    "revert_commit",
+    "wait_for_gate",
+    "write_manifest",
+)
+_FLUX_MCP_TOOLS = (
+    "reconcile_kustomization",
+    "get_kustomization_status",
+    "get_gitrepository_status",
+)
+_NIXOS_MCP_TOOLS = (
+    "get_generations",
+    "stage_generation",
+    "commit_generation",
+    "trigger_reconcile",
+)
 
 
-def _stub_git_toolset() -> FunctionToolset[None]:
-    toolset: FunctionToolset[None] = FunctionToolset()
-    for name in ("create_pr", *_GATE_TOOLS):
-        toolset.add_function(lambda: None, name=name)
-    return toolset
+class _OfflineMCP(MCPServerStdio):
+    """MCP boundary fake: the real MCPServer.get_tools over a canned tools/list."""
+
+    def __init__(self, tools: tuple[str, ...]) -> None:
+        super().__init__(command="false", args=[])
+        self._names = tools
+
+    async def __aenter__(self) -> "_OfflineMCP":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def list_tools(self) -> list[mcp_types.Tool]:
+        return [
+            mcp_types.Tool(name=n, inputSchema={"type": "object", "properties": {}})
+            for n in self._names
+        ]
+
+    async def direct_call_tool(
+        self, name: str, args: dict[str, object], metadata: object = None
+    ) -> str:
+        return "ok"
 
 
 @pytest.mark.parametrize("require_human_review", [True, False])
-async def test_run_remediation_human_review_hides_gate_and_revert_tools(
+async def test_remediation_llm_is_not_offered_orchestrator_owned_git_tools(
     require_human_review: bool,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    offered: set[str] = set()
 
-    def _fake_iter(task: str, *a: object, **k: object) -> object:
-        captured["git_toolset"] = k["toolsets"][0]
-        raise _StopBeforeRun
-
-    monkeypatch.setattr(_rem_agent_mod.remediation_agent, "iter", _fake_iter)
-
-    with pytest.raises(_StopBeforeRun):
-        await run_remediation(
-            deps=RemediationDeps(
-                git_mcp=_stub_git_toolset(),
-                flux_mcp=AsyncMock(),
-                nixos_mcp=AsyncMock(),
-            ),
-            report=_git_commit_report(),
-            source_branch="remediation/run-x",
-            require_human_review=require_human_review,
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        offered.update(t.name for t in info.function_tools)
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "success": True,
+                        "actions_taken": [],
+                        "tool_calls_count": 0,
+                        "mutation_attempted": False,
+                    },
+                )
+            ]
         )
 
-    ctx = RunContext(deps=None, model=TestModel(), usage=RunUsage())
-    offered = await captured["git_toolset"].get_tools(ctx)
-    assert "create_pr" in offered
-    for name in _GATE_TOOLS:
-        assert (name in offered) is not require_human_review
+    await run_remediation(
+        deps=RemediationDeps(
+            git_mcp=_OfflineMCP(_GIT_MCP_TOOLS),
+            flux_mcp=_OfflineMCP(_FLUX_MCP_TOOLS),
+            nixos_mcp=_OfflineMCP(_NIXOS_MCP_TOOLS),
+        ),
+        report=_git_commit_report(),
+        source_branch="remediation/run-x",
+        model=FunctionModel(model_fn),
+        agent_branch="remediation/run-x",
+        require_human_review=require_human_review,
+    )
 
-
-class _StopBeforeRun(Exception):
-    pass
+    assert offered & _rem_agent_mod._ORCHESTRATOR_OWNED_GIT_TOOLS == set()
+    assert {
+        "read_file",
+        "resolve_manifest_path",
+        "write_manifest",
+        "commit_files",
+        "push_branch",
+        "create_pr",
+        "get_pr_status",
+    } <= offered
+    assert "commit_generation" not in offered
 
 
 async def test_run_remediation_default_omits_human_review_block(
@@ -474,7 +534,14 @@ async def test_run_remediation_default_omits_human_review_block(
 
         @property
         def result(self) -> object:
-            return MagicMock(output=MagicMock())
+            return MagicMock(
+                output=RemediationOutput(
+                    success=True,
+                    actions_taken=[],
+                    tool_calls_count=0,
+                    mutation_attempted=False,
+                )
+            )
 
     def _fake_iter(task: str, *a: object, **k: object) -> _FakeRun:
         captured["task"] = task
@@ -497,9 +564,9 @@ async def test_run_remediation_allows_non_protected_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A remediation/run-* branch must pass the guard and reach the agent loop."""
-    reached = RemediationResult(
+    reached = RemediationOutput(
         success=True,
-        actions_taken=["clone_repo"],
+        actions_taken=["read_file"],
         tool_calls_count=1,
         mutation_attempted=False,
     )
@@ -537,5 +604,5 @@ async def test_run_remediation_allows_non_protected_branch(
         report=_escalate_report(),
         source_branch="remediation/run-x",
     )
-    assert result is reached
-    assert result.actions_taken != ["refused_protected_branch"]
+    assert isinstance(result, RemediationResult)
+    assert result.actions_taken == reached.actions_taken

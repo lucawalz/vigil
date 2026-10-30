@@ -238,14 +238,6 @@
                     "endColumn": 29,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 28,
-                    "endColumn": 34,
-                    "lineCount": 1
-                }
             }
         ],
         "./agents/watchdog/src/watchdog/agent.py": [

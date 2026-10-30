@@ -501,6 +501,23 @@ async def _gate_and_reconcile(
         return result.model_copy(
             update={"success": False, "merge_commit_sha": None, "gate_status": None}
         )
+    if result.budget_refused:
+        gate_status, sha = await _close_and_read_pr_uncancellable(
+            deps.git_mcp, pr_number, run_id
+        )
+        log.info(
+            "run %s: commit budget refused; pr #%d ended %s",
+            run_id,
+            pr_number,
+            gate_status,
+        )
+        return result.model_copy(
+            update={
+                "success": False,
+                "merge_commit_sha": sha,
+                "gate_status": gate_status,
+            }
+        )
     gate_status, sha = await _await_gate(deps.git_mcp, pr_number, run_id)
     merged = gate_status == _GATE_MERGED
     if merged:

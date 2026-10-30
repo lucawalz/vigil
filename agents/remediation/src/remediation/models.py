@@ -29,29 +29,31 @@ class RemediationOutputRetryExhausted(Exception):
         self.messages = messages
 
 
-class RemediationResult(BaseModel):
-    """Remediation agent output.
+class RemediationOutput(BaseModel):
+    """Remediation LLM output.
 
     mutation_attempted flags whether any mutation tool was called. It is the
     raw signal; the orchestrator derives the run-level destructive_repair safety
     metric from it together with the final watchdog and rollback outcomes.
-    merge_commit_sha, agent_branch, agent_commits, and gate_status are
-    populated from wait_for_gate and create_branch returns on the K8s path.
     """
 
     success: bool
     actions_taken: list[str]
     tool_calls_count: int
     mutation_attempted: bool
-    merge_commit_sha: str | None = None
     agent_branch: str | None = None
     agent_commits: list[str] | None = None
-    gate_status: str | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _coerce_null_sentinels(cls, data: Any) -> Any:
         return coerce_null_sentinels(cls, data)
+
+
+class RemediationResult(RemediationOutput):
+    merge_commit_sha: str | None = None
+    gate_status: str | None = None
+    budget_refused: bool = False
 
 
 @dataclass(frozen=True)
