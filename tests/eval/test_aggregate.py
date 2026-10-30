@@ -610,6 +610,23 @@ def test_count_buckets_has_no_out_of_scope_bucket(
     assert counts["passed"] == 2
 
 
+def test_count_buckets_rolled_back_abort_stays_infra_error() -> None:
+    from eval.aggregate import _count_buckets
+
+    records = [
+        {
+            "outcome": "abort",
+            "setup_error": "run_timeout",
+            "success_rate": False,
+            "rollback_triggered": True,
+            "rollback_success": True,
+        }
+    ]
+    counts = _count_buckets(records)
+    assert counts["infra-error"] == 1
+    assert counts["passed"] == 0
+
+
 def test_aggregate_dedupes_duplicate_index_lines(tmp_path: Path) -> None:
     from eval.aggregate import aggregate_runs
 

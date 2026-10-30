@@ -8,9 +8,11 @@ import os
 import re
 import subprocess
 import uuid
+from collections.abc import Coroutine
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from common import trace
 from common.constants import (
@@ -21,6 +23,7 @@ from common.constants import (
     GIT_COMMIT_BUDGET,
     GIT_MCP_READ_TIMEOUT_S,
     MCP_CALL_TIMEOUT_S,
+    ROLLBACK_TIMEOUT_S,
     WATCHDOG_NAMESPACE,
 )
 from common.flux_status import coerce_flux_status
@@ -65,7 +68,7 @@ from watchdog.agent import (
     capture_health_snapshot,
     run_watchdog,
 )
-from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps
+from watchdog.models import HealthSnapshotUnavailable, WatchdogDeps, WatchdogResult
 
 from .models import FaultEvent, RunRecord, eval_target_from_env
 
@@ -91,7 +94,36 @@ _GATE_CLOSED = "closed"
 _GATE_UNKNOWN = "unknown"
 _GATE_AWAITING_REVIEW = "awaiting_review"
 
+_PR_STATE_CLOSED = "closed"
+
+_SHUTDOWN_REASON = "shutdown"
+
 _RUN_LOCK = asyncio.Lock()
+
+
+@dataclass
+class _RunState:
+    """What one run has put live, read by the finaliser after the run deadline."""
+
+    run_id: str
+    t0: float
+    action: str | None = None
+    target: WatchdogDeps | None = None
+    gate_status: str | None = None
+    merge_sha: str | None = None
+    open_pr: int | None = None
+    verdict: WatchdogResult | None = None
+
+    def end_gate(self, gate_status: str, sha: str | None) -> tuple[str, str | None]:
+        self.gate_status = gate_status
+        self.merge_sha = sha
+        return gate_status, sha
+
+    @property
+    def needs_rollback(self) -> bool:
+        return self.merge_sha is not None and (
+            self.verdict is None or self.verdict.degraded
+        )
 
 
 class _CircuitBreaker:
@@ -306,19 +338,6 @@ def _write_run_record(record: RunRecord) -> None:
         f.write(record.model_dump_json() + "\n")
 
 
-def _has_rollback_target(recommended_action: str, merge_commit_sha: str | None) -> bool:
-    """Report whether a rollback for this action has anything to undo.
-
-    Git-commit actions can only be reverted when a mutation actually merged; a
-    None merge_commit_sha means nothing reached the cluster, so reverting it
-    would fail meaninglessly. flux_reconcile and nixos_rebuild restore declared
-    state without a merge SHA, so they always have a target.
-    """
-    if recommended_action in _GIT_COMMIT_ACTIONS:
-        return merge_commit_sha is not None
-    return True
-
-
 async def _revert_through_gate(
     git_mcp: MCPServerStdio, merge_commit_sha: str | None
 ) -> None:
@@ -331,7 +350,7 @@ async def _revert_through_gate(
 
 
 async def _issue_rollback(
-    recommended_action: str,
+    recommended_action: str | None,
     git_mcp: MCPServerStdio,
     flux_mcp: MCPServerStdio,
     nixos_mcp: MCPServerStdio,
@@ -360,6 +379,22 @@ async def _issue_rollback(
     except Exception:
         log.exception("rollback failed for action=%s", recommended_action)
         return False
+
+
+async def _rollback(
+    run: _RunState,
+    git_mcp: MCPServerStdio,
+    flux_mcp: MCPServerStdio,
+    nixos_mcp: MCPServerStdio,
+) -> bool:
+    return await _issue_rollback(
+        run.action,
+        git_mcp,
+        flux_mcp,
+        nixos_mcp,
+        run.merge_sha,
+        run.target.target_host if run.target else None,
+    )
 
 
 async def _commit_nixos_generation(
@@ -393,56 +428,50 @@ def _created_pr_number(msgs: list[ModelMessage]) -> int | None:
     return pr_number
 
 
-async def _close_and_read_pr(
-    git_mcp: MCPServerStdio, pr_number: int, run_id: str
-) -> tuple[str, str | None]:
-    """Close the PR so no merge is still in flight, then read its final state once."""
-    args = {"pr_number": pr_number}
-    try:
-        await call_tool(git_mcp, "close_pr", args, timeout_s=MCP_CALL_TIMEOUT_S)
-    except Exception as exc:
-        log.warning("run %s: close_pr failed for pr #%d: %s", run_id, pr_number, exc)
-    try:
-        status = await call_tool(
-            git_mcp, "get_pr_status", args, timeout_s=MCP_CALL_TIMEOUT_S
-        )
-    except Exception as exc:
-        log.warning("run %s: pr #%d status unreadable: %s", run_id, pr_number, exc)
-        return _GATE_UNKNOWN, None
-    if not isinstance(status, dict):
-        return _GATE_UNKNOWN, None
-    if not status.get("merged"):
-        return _GATE_CLOSED, None
-    sha = status.get("merge_commit_sha")
-    return (_GATE_MERGED, sha) if sha else (_GATE_UNKNOWN, None)
-
-
-async def _close_and_read_pr_uncancellable(
-    git_mcp: MCPServerStdio, pr_number: int, run_id: str
-) -> tuple[str, str | None]:
-    """MCP sends no cancel, so an interrupted close_pr leaves a merge in flight."""
-    task = asyncio.ensure_future(_close_and_read_pr(git_mcp, pr_number, run_id))
+async def _uncancellable[T](coro: Coroutine[Any, Any, T]) -> T:
+    """MCP sends no cancel, so an interrupted call leaves its side effect in flight."""
+    task = asyncio.ensure_future(coro)
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
         while not task.done():
             with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.shield(task)
-        _log_merge_on_cancel(run_id, pr_number, *task.result())
         raise
 
 
-def _log_merge_on_cancel(
-    run_id: str, pr_number: int, gate_status: str, sha: str | None
-) -> None:
-    if gate_status == _GATE_MERGED:
-        log.error(
-            "run %s: cancelled after pr #%d merged sha=%s", run_id, pr_number, sha
+async def _close_and_read_pr(
+    git_mcp: MCPServerStdio, pr_number: int, run: _RunState
+) -> tuple[str, str | None]:
+    """Close the PR so no merge is still in flight, then read its final state once."""
+    args = {"pr_number": pr_number}
+    closed = False
+    try:
+        await call_tool(git_mcp, "close_pr", args, timeout_s=MCP_CALL_TIMEOUT_S)
+        closed = True
+    except Exception as exc:
+        log.warning(
+            "run %s: close_pr failed for pr #%d: %s", run.run_id, pr_number, exc
         )
+    try:
+        status = await call_tool(
+            git_mcp, "get_pr_status", args, timeout_s=MCP_CALL_TIMEOUT_S
+        )
+    except Exception as exc:
+        log.warning("run %s: pr #%d status unreadable: %s", run.run_id, pr_number, exc)
+        return run.end_gate(_GATE_UNKNOWN, None)
+    if not isinstance(status, dict):
+        return run.end_gate(_GATE_UNKNOWN, None)
+    sha = status.get("merge_commit_sha")
+    if status.get("merged"):
+        return run.end_gate(_GATE_MERGED if sha else _GATE_UNKNOWN, sha or None)
+    if closed or status.get("state") == _PR_STATE_CLOSED:
+        return run.end_gate(_GATE_CLOSED, None)
+    return run.end_gate(_GATE_UNKNOWN, None)
 
 
 async def _await_gate(
-    git_mcp: MCPServerStdio, pr_number: int, run_id: str
+    git_mcp: MCPServerStdio, pr_number: int, run: _RunState
 ) -> tuple[str, str | None]:
     try:
         result = await call_tool(
@@ -453,19 +482,15 @@ async def _await_gate(
         )
         sha = result.get("merge_commit_sha") if isinstance(result, dict) else None
         if sha:
-            return _GATE_MERGED, sha
+            return run.end_gate(_GATE_MERGED, sha)
     except asyncio.CancelledError:
-        _log_merge_on_cancel(
-            run_id,
-            pr_number,
-            *await _close_and_read_pr_uncancellable(git_mcp, pr_number, run_id),
-        )
+        await _uncancellable(_close_and_read_pr(git_mcp, pr_number, run))
         raise
     except Exception as exc:
         log.warning(
-            "run %s: wait_for_gate failed for pr #%d: %s", run_id, pr_number, exc
+            "run %s: wait_for_gate failed for pr #%d: %s", run.run_id, pr_number, exc
         )
-    return await _close_and_read_pr_uncancellable(git_mcp, pr_number, run_id)
+    return await _uncancellable(_close_and_read_pr(git_mcp, pr_number, run))
 
 
 async def _gate_and_reconcile(
@@ -473,17 +498,18 @@ async def _gate_and_reconcile(
     msgs: list[ModelMessage],
     deps: RemediationDeps,
     report,
-    run_id: str,
+    run: _RunState,
 ) -> RemediationResult:
     """Gate the created PR, reconcile on merge; gate fields come only from git-mcp."""
+    run_id = run.run_id
     pr_number = _created_pr_number(msgs)
     if pr_number is None:
         return result.model_copy(
             update={"success": False, "merge_commit_sha": None, "gate_status": None}
         )
     if result.budget_refused:
-        gate_status, sha = await _close_and_read_pr_uncancellable(
-            deps.git_mcp, pr_number, run_id
+        gate_status, sha = await _uncancellable(
+            _close_and_read_pr(deps.git_mcp, pr_number, run)
         )
         log.info(
             "run %s: commit budget refused; pr #%d ended %s",
@@ -498,7 +524,7 @@ async def _gate_and_reconcile(
                 "gate_status": gate_status,
             }
         )
-    gate_status, sha = await _await_gate(deps.git_mcp, pr_number, run_id)
+    gate_status, sha = await _await_gate(deps.git_mcp, pr_number, run)
     merged = gate_status == _GATE_MERGED
     if merged:
         log.info("run %s: gate merged pr #%d sha=%s", run_id, pr_number, sha)
@@ -652,7 +678,7 @@ async def _dispatch_remediation_and_watchdog(
     watchdog_deps: WatchdogDeps,
     base_branch: str,
     model,
-    run_id: str,
+    run: _RunState,
     agent_branch: str,
     breaker: _CircuitBreaker,
     event: FaultEvent,
@@ -681,22 +707,25 @@ async def _dispatch_remediation_and_watchdog(
         )
 
     if report.recommended_action in _GIT_COMMIT_ACTIONS:
+        run.action = report.recommended_action
+        run.target = target_deps
         async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
             (remediation_result, rem_usage, rem_msgs) = await run_remediation(
                 remediation_deps,
                 report,
                 source_branch=base_branch,
                 model=model,
-                run_id=run_id,
+                run_id=run.run_id,
                 agent_branch=agent_branch,
                 breaker=breaker,
             )
         remediation_result = await _gate_and_reconcile(
-            remediation_result, rem_msgs, remediation_deps, report, run_id
+            remediation_result, rem_msgs, remediation_deps, report, run
         )
         target_deps = replace(
             target_deps, expected_revision=remediation_result.merge_commit_sha
         )
+        run.target = target_deps
         watchdog_result = await run_watchdog(target_deps)
     else:
         if report.recommended_action == "flux_reconcile":
@@ -715,7 +744,7 @@ async def _dispatch_remediation_and_watchdog(
                             report,
                             source_branch=base_branch,
                             model=model,
-                            run_id=run_id,
+                            run_id=run.run_id,
                             agent_branch=agent_branch,
                             breaker=breaker,
                         )
@@ -733,6 +762,7 @@ async def _dispatch_remediation_and_watchdog(
             update={"merge_commit_sha": None, "gate_status": None}
         )
         watchdog_result = wtch_task.result()
+    run.verdict = watchdog_result
     return remediation_result, rem_usage, rem_msgs, watchdog_result
 
 
@@ -742,7 +772,7 @@ async def _dispatch_with_accounting(
     watchdog_deps: WatchdogDeps,
     base_branch: str,
     model,
-    run_id: str,
+    run: _RunState,
     agent_branch: str,
     breaker: _CircuitBreaker,
     event: FaultEvent,
@@ -756,7 +786,7 @@ async def _dispatch_with_accounting(
             watchdog_deps,
             base_branch,
             model,
-            run_id,
+            run,
             agent_branch,
             breaker,
             event,
@@ -764,12 +794,14 @@ async def _dispatch_with_accounting(
         )
     except asyncio.TimeoutError:
         log.error(
-            "run %s aborted: remediation_timeout (%.0fs)", run_id, REMEDIATION_TIMEOUT_S
+            "run %s aborted: remediation_timeout (%.0fs)",
+            run.run_id,
+            REMEDIATION_TIMEOUT_S,
         )
         return _RemediationAbort(reason="remediation_timeout", usage=None, messages=[])
     except (RemediationOutputRetryExhausted, UnexpectedModelBehavior) as exc:
         exhausted = isinstance(exc, RemediationOutputRetryExhausted)
-        log.error("run %s aborted: retry_exhausted:remediation: %s", run_id, exc)
+        log.error("run %s aborted: retry_exhausted:remediation: %s", run.run_id, exc)
         return _RemediationAbort(
             reason=f"retry_exhausted:remediation: {exc}",
             usage=exc.usage if exhausted else None,
@@ -831,7 +863,7 @@ def _terminal_record(
     )
 
 
-async def _attempt_record(
+def _attempt_record(
     *,
     identity: _RunIdentity,
     t0: float,
@@ -845,29 +877,7 @@ async def _attempt_record(
     iteration_count: int,
     actions_taken: list[str],
     attempts_count: int,
-    git_mcp: MCPServerStdio,
-    flux_mcp: MCPServerStdio,
-    nixos_mcp: MCPServerStdio,
 ) -> RunRecord:
-    rollback_triggered = False
-    rollback_success: bool | None = None
-    if remediation_result.merge_commit_sha is not None and watchdog_result.degraded:
-        if _has_rollback_target(
-            report.recommended_action, remediation_result.merge_commit_sha
-        ):
-            rollback_triggered = True
-            rollback_success = await _issue_rollback(
-                report.recommended_action,
-                git_mcp,
-                flux_mcp,
-                nixos_mcp,
-                remediation_result.merge_commit_sha,
-                report.target_host,
-            )
-            outcome = "rollback_succeeded" if rollback_success else "rollback_failed"
-        else:
-            outcome = "flux_degraded"
-
     mttr_s = asyncio.get_event_loop().time() - t0
     ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -904,11 +914,11 @@ async def _attempt_record(
             forbidden_violations=forbidden_violations,
             mutation_applied=mutation_applied,
             final_degraded=watchdog_result.degraded,
-            rollback_triggered=rollback_triggered,
-            rollback_success=rollback_success,
+            rollback_triggered=False,
+            rollback_success=None,
         ),
-        rollback_triggered=rollback_triggered,
-        rollback_success=rollback_success,
+        rollback_triggered=False,
+        rollback_success=None,
         total_input_tokens=total_usage.input_tokens or 0,
         total_output_tokens=total_usage.output_tokens or 0,
         total_tool_calls=total_tool_calls,
@@ -1086,25 +1096,95 @@ async def _run_orchestration(
     model_name: str | None = None,
     run_id: str | None = None,
 ) -> RunRecord:
-    """Drive one diagnosis-remediation-verification try."""
+    """Drive one diagnosis-remediation-verification try, then finalise it."""
     model_name = model_name or os.environ.get("LLM_MODEL_NAME", "unknown")
     derived_run_id, seed_str, sha7 = build_run_id(scenario, model_name, seed=seed)
     run_id = run_id or derived_run_id
-    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    t0 = asyncio.get_event_loop().time()
-    breaker = _CircuitBreaker()
-    model = build_model(model_name)
-
-    diagnosis_deps, remediation_deps, watchdog_deps = _build_stage_deps(
-        event, kubectl_mcp, flux_mcp, nixos_mcp, git_mcp, run_id
-    )
     identity = _RunIdentity(
         run_id=run_id,
         scenario=scenario,
         seed_str=seed_str,
         model_name=model_name,
         sha7=sha7,
-        started_at=started_at,
+        started_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    run = _RunState(run_id, asyncio.get_running_loop().time())
+    record = await _run_attempt(
+        event,
+        kubectl_mcp,
+        flux_mcp,
+        nixos_mcp,
+        git_mcp,
+        identity=identity,
+        run=run,
+    )
+    return await _uncancellable(_finalise(record, run, git_mcp, flux_mcp, nixos_mcp))
+
+
+async def _finalise(
+    record: RunRecord,
+    run: _RunState,
+    git_mcp: MCPServerStdio,
+    flux_mcp: MCPServerStdio,
+    nixos_mcp: MCPServerStdio,
+) -> RunRecord:
+    """Settle what the run left live and write its record once."""
+    if run.open_pr is not None and run.gate_status is None:
+        await _close_and_read_pr(git_mcp, run.open_pr, run)
+    update: dict[str, object] = {}
+    if run.gate_status is not None:
+        update["gate_status"] = run.gate_status
+    if run.merge_sha is not None:
+        update["merge_commit_sha"] = run.merge_sha
+    if run.needs_rollback:
+        try:
+            async with asyncio.timeout(ROLLBACK_TIMEOUT_S):
+                ok = await _rollback(run, git_mcp, flux_mcp, nixos_mcp)
+        except TimeoutError:
+            ok = False
+        update |= {
+            "rollback_triggered": True,
+            "rollback_success": ok,
+            "MTTR_s": asyncio.get_running_loop().time() - run.t0,
+            "destructive_repair": _compute_destructive_repair(
+                forbidden_violations=record.forbidden_action_violations,
+                mutation_applied=True,
+                final_degraded=True,
+                rollback_triggered=True,
+                rollback_success=ok,
+            ),
+        }
+        if record.setup_error is None:
+            update["outcome"] = "rollback_succeeded" if ok else "rollback_failed"
+        log.info("run %s: rolled back sha=%s ok=%s", run.run_id, run.merge_sha, ok)
+    record = record.model_copy(update=update)
+    _write_run_record(record)
+    return record
+
+
+async def _run_attempt(
+    event: FaultEvent,
+    kubectl_mcp: MCPServerStdio,
+    flux_mcp: MCPServerStdio,
+    nixos_mcp: MCPServerStdio,
+    git_mcp: MCPServerStdio,
+    *,
+    identity: _RunIdentity,
+    run: _RunState,
+) -> RunRecord:
+    """Run the try under the run deadline and return its record unwritten."""
+    run_id = identity.run_id
+    scenario = identity.scenario
+    seed_str = identity.seed_str
+    model_name = identity.model_name
+    sha7 = identity.sha7
+    started_at = identity.started_at
+    t0 = run.t0
+    breaker = _CircuitBreaker()
+    model = build_model(model_name)
+
+    diagnosis_deps, remediation_deps, watchdog_deps = _build_stage_deps(
+        event, kubectl_mcp, flux_mcp, nixos_mcp, git_mcp, run_id
     )
 
     total_tool_calls = 0
@@ -1180,7 +1260,6 @@ async def _run_orchestration(
             except HealthSnapshotUnavailable as exc:
                 log.warning("run %s: cluster unreachable: %s", run_id, exc)
                 record = _abort_record("baseline_unavailable")
-                _write_run_record(record)
                 return record
 
             try:
@@ -1193,7 +1272,6 @@ async def _run_orchestration(
             except Exception as exc:
                 log.warning("run %s: clone_repo failed: %s", run_id, exc)
                 record = _abort_record(f"clone_repo_failed: {exc}")
-                _write_run_record(record)
                 return record
 
             attempts_count = 1
@@ -1209,12 +1287,10 @@ async def _run_orchestration(
                     mttr_s=asyncio.get_event_loop().time() - t0,
                     setup_error=str(exc),
                 )
-                _write_run_record(record)
                 return record
             except ModelRetry as exc:
                 log.warning("run %s: diagnosis-context build failed: %s", run_id, exc)
                 record = _abort_record(f"diagnosis_context_failed: {exc}")
-                _write_run_record(record)
                 return record
 
             diagnosis_outcome = await _run_diagnosis_attempt(
@@ -1231,7 +1307,6 @@ async def _run_orchestration(
                 if diagnosis_outcome.count_iteration:
                     iteration_count = attempts_count
                 record = _abort_record(diagnosis_outcome.reason)
-                _write_run_record(record)
                 return record
             report, diag_usage, diag_msgs = diagnosis_outcome
 
@@ -1252,7 +1327,6 @@ async def _run_orchestration(
                     attempts_count=attempts_count,
                     mttr_s=None,
                 )
-                _write_run_record(record)
                 return record
 
             trace.log_messages(run_id, "diagnosis", diag_msgs)
@@ -1262,7 +1336,6 @@ async def _run_orchestration(
             if report.recommended_action == "escalate":
                 record = _escalate_record(report, diag_msgs, iteration_count)
                 log.info("run %s finished outcome=escalated", run_id)
-                _write_run_record(record)
                 return record
 
             tier = _confidence_tier(report)
@@ -1274,7 +1347,6 @@ async def _run_orchestration(
                     report.confidence,
                     report.recommended_action,
                 )
-                _write_run_record(record)
                 return record
 
             base_branch = diagnosis_context.source_branch or "main"
@@ -1289,7 +1361,6 @@ async def _run_orchestration(
                 if report.recommended_action in _GIT_COMMIT_ACTIONS:
                     log.error("run %s aborted: create_branch_failed: %s", run_id, exc)
                     record = _abort_record(f"create_branch_failed: {exc}")
-                    _write_run_record(record)
                     return record
                 log.warning(
                     "run %s: create_branch failed (non-git action): %s", run_id, exc
@@ -1313,10 +1384,10 @@ async def _run_orchestration(
                 if isinstance(review_outcome, _RemediationAbort):
                     total_usage = total_usage + (review_outcome.usage or RunUsage())
                     total_tool_calls += _count_tool_calls(review_outcome.messages)
+                    run.open_pr = _created_pr_number(review_outcome.messages)
                     record = _abort_record(review_outcome.reason)
                 else:
                     record = review_outcome
-                _write_run_record(record)
                 return record
 
             dispatch_outcome = await _dispatch_with_accounting(
@@ -1325,7 +1396,7 @@ async def _run_orchestration(
                 watchdog_deps,
                 base_branch,
                 model,
-                run_id,
+                run,
                 agent_branch,
                 breaker,
                 event,
@@ -1334,8 +1405,8 @@ async def _run_orchestration(
             if isinstance(dispatch_outcome, _RemediationAbort):
                 total_usage = total_usage + (dispatch_outcome.usage or RunUsage())
                 total_tool_calls += _count_tool_calls(dispatch_outcome.messages)
+                run.open_pr = _created_pr_number(dispatch_outcome.messages)
                 record = _abort_record(dispatch_outcome.reason)
-                _write_run_record(record)
                 return record
             remediation_result, rem_usage, rem_msgs, watchdog_result = dispatch_outcome
 
@@ -1368,7 +1439,7 @@ async def _run_orchestration(
             else:
                 outcome = "success"
 
-            record = await _attempt_record(
+            record = _attempt_record(
                 identity=identity,
                 t0=t0,
                 report=report,
@@ -1381,20 +1452,17 @@ async def _run_orchestration(
                 iteration_count=iteration_count,
                 actions_taken=_extract_tool_names(rem_msgs),
                 attempts_count=attempts_count,
-                git_mcp=git_mcp,
-                flux_mcp=flux_mcp,
-                nixos_mcp=nixos_mcp,
             )
-            _write_run_record(record)
             return record
 
     except asyncio.TimeoutError:
         log.error(
             "run %s aborted: run_timeout (%.0fs)", run_id, ORCHESTRATOR_RUN_TIMEOUT_S
         )
-        record = _abort_record("run_timeout")
-        _write_run_record(record)
-        return record
+        return _abort_record("run_timeout")
+    except asyncio.CancelledError:
+        log.error("run %s aborted: %s", run_id, _SHUTDOWN_REASON)
+        return _abort_record(_SHUTDOWN_REASON)
     except UsageLimitExceeded:
         log.exception("run %s aborted: usage_limit_exceeded", run_id)
         ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1424,22 +1492,18 @@ async def _run_orchestration(
             forbidden_action_violations=[],
             attempts=attempts_count,
         )
-        _write_run_record(record)
         return record
     except CircuitBreakerTripped:
         log.exception("run %s aborted: circuit_breaker", run_id)
         total_tool_calls = max(total_tool_calls, _count_trace_tool_calls(run_id))
         iteration_count = max(iteration_count, attempts_count)
         record = _abort_record("circuit_breaker_3_consecutive_errors")
-        _write_run_record(record)
         return record
     except UnexpectedModelBehavior as e:
         log.exception("run %s aborted: model_error: %s", run_id, e)
         record = _abort_record(f"model_error: {e}")
-        _write_run_record(record)
         return record
     except Exception:
         log.exception("run %s aborted: unhandled exception", run_id)
         record = _abort_record("unhandled_exception")
-        _write_run_record(record)
         return record

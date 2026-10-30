@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
 import re
 import time
@@ -1346,7 +1345,7 @@ async def test_os_sysctl_dispatch_threads_expected_value_to_watchdog(
         watchdog_deps,
         "main",
         MagicMock(),
-        "run-os-1",
+        orch_mod._RunState("run-os-1", 0.0),
         "remediation/run-os-1",
         _CircuitBreaker(),
         event,
@@ -3375,6 +3374,7 @@ async def test_unreadable_status_after_failed_gate_records_unknown(
 
 
 _LOOP_TURNS = 5
+_TEST_WAIT_S = 5.0
 
 
 async def _cancel_twice_during_close(
@@ -3383,7 +3383,7 @@ async def _cancel_twice_during_close(
     *,
     cancel_during_wait: bool,
     status: dict | None = None,
-) -> None:
+) -> orch_mod._RunState:
     gate_started = asyncio.Event()
     close_started = asyncio.Event()
     release_close = asyncio.Event()
@@ -3407,11 +3407,12 @@ async def _cancel_twice_during_close(
             "get_pr_status": status or dict(_OPEN_PR_STATUS),
         }
     )
-    task = asyncio.create_task(orch_mod._await_gate(git_mcp, 7, "run-1"))
-    await gate_started.wait()
+    run = orch_mod._RunState("run-1", 0.0)
+    task = asyncio.create_task(orch_mod._await_gate(git_mcp, 7, run))
+    await asyncio.wait_for(gate_started.wait(), _TEST_WAIT_S)
     if cancel_during_wait:
         task.cancel()
-    await close_started.wait()
+    await asyncio.wait_for(close_started.wait(), _TEST_WAIT_S)
     task.cancel()
     task.cancel()
     for _ in range(_LOOP_TURNS):
@@ -3420,12 +3421,13 @@ async def _cancel_twice_during_close(
     release_close.set()
 
     with pytest.raises(asyncio.CancelledError):
-        await task
+        await asyncio.wait_for(task, _TEST_WAIT_S)
     assert _tool_calls(git_mcp) == [
         ("wait_for_gate", {"pr_number": 7}),
         ("close_pr", {"pr_number": 7}),
         ("get_pr_status", {"pr_number": 7}),
     ]
+    return run
 
 
 async def test_run_deadline_during_gate_closes_the_pr(
@@ -3449,26 +3451,19 @@ _MERGED_PR_STATUS = {
 }
 
 
-def _assert_merge_logged(caplog: pytest.LogCaptureFixture) -> None:
-    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
-    assert any("run-1" in m and "#7" in m and "late1234567890" in m for m in errors), (
-        errors
+async def test_merge_found_during_cancelled_close_reaches_the_run_state(
+    mock_git_mcp: AsyncMock,
+) -> None:
+    run = await _cancel_twice_during_close(
+        mock_git_mcp, None, cancel_during_wait=True, status=_MERGED_PR_STATUS
     )
 
-
-async def test_merge_found_during_cancelled_close_is_logged(
-    mock_git_mcp: AsyncMock, caplog: pytest.LogCaptureFixture
-) -> None:
-    with caplog.at_level(logging.ERROR, logger="vigil.orchestrator.agent"):
-        await _cancel_twice_during_close(
-            mock_git_mcp, None, cancel_during_wait=True, status=_MERGED_PR_STATUS
-        )
-
-    _assert_merge_logged(caplog)
+    assert run.merge_sha == "late1234567890"
+    assert run.gate_status == "merged"
 
 
-async def test_merge_found_after_cancelled_gate_is_logged(
-    mock_git_mcp: AsyncMock, caplog: pytest.LogCaptureFixture
+async def test_merge_found_after_cancelled_gate_reaches_the_run_state(
+    mock_git_mcp: AsyncMock,
 ) -> None:
     gate_started = asyncio.Event()
 
@@ -3480,15 +3475,16 @@ async def test_merge_found_after_cancelled_gate_is_logged(
     mock_git_mcp.direct_call_tool = _git_tools(
         {"wait_for_gate": gate, "get_pr_status": dict(_MERGED_PR_STATUS)}
     )
-    task = asyncio.create_task(orch_mod._await_gate(mock_git_mcp, 7, "run-1"))
-    await gate_started.wait()
+    run = orch_mod._RunState("run-1", 0.0)
+    task = asyncio.create_task(orch_mod._await_gate(mock_git_mcp, 7, run))
+    await asyncio.wait_for(gate_started.wait(), _TEST_WAIT_S)
 
-    with caplog.at_level(logging.ERROR, logger="vigil.orchestrator.agent"):
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, _TEST_WAIT_S)
 
-    _assert_merge_logged(caplog)
+    assert run.merge_sha == "late1234567890"
+    assert run.gate_status == "merged"
 
 
 @pytest.mark.parametrize(
@@ -3641,3 +3637,246 @@ async def test_review_tier_leaves_the_pull_request_open(
     assert not gate_tools & set(_tool_names(servers.git))
     assert record.gate_status == gate_status
     assert record.merge_commit_sha is None
+
+
+_RUN_DEADLINE_S = 0.2
+_SLOW_REVERT_S = 0.3
+_REMEDIATION_CUT_S = 0.01
+
+
+async def _block_forever(*_args, **_kwargs) -> None:
+    await asyncio.Event().wait()
+
+
+def _answer_rollbacks(
+    servers: SimpleNamespace, events: list[str], git_answers: dict[str, object]
+) -> None:
+    git = _git_tools({"revert_commit": dict(_REVERTED), **git_answers})
+
+    async def git_tool(tool: str, args: dict) -> object:
+        events.append(tool)
+        return await git(tool, args)
+
+    async def flux_tool(tool: str, _args: dict) -> dict:
+        events.append(tool)
+        if tool == "get_kustomization_status":
+            return dict(_FLUX_AT_REVERT)
+        return {"content": "ok"}
+
+    servers.git.direct_call_tool = AsyncMock(side_effect=git_tool)
+    servers.flux.direct_call_tool = AsyncMock(side_effect=flux_tool)
+
+
+def _reverts(server: AsyncMock) -> list[dict]:
+    return [args for name, args in _tool_calls(server) if name == "revert_commit"]
+
+
+def _written_record(tmp_path: Path) -> dict:
+    (path,) = (tmp_path / "runs").glob("*.json")
+    return json.loads(path.read_text())
+
+
+async def test_run_deadline_after_merge_rolls_back_outside_the_deadline(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=_create_pr_return())
+    monkeypatch.setattr(orch_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", _RUN_DEADLINE_S)
+    monkeypatch.setattr(orch_mod, "run_watchdog", _block_forever)
+    events: list[str] = []
+
+    async def slow_revert(_args: dict) -> dict:
+        await asyncio.sleep(_SLOW_REVERT_S)
+        return dict(_REVERTED)
+
+    _answer_rollbacks(servers, events, {"revert_commit": slow_revert})
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert _reverts(servers.git) == [{"merge_commit_sha": _MERGE_SHA}]
+    assert "reconcile_kustomization" in events[events.index("revert_commit") :]
+    assert record.outcome == "abort"
+    assert record.setup_error == "run_timeout"
+    assert record.rollback_success is True
+    assert record.gate_status == "merged"
+    assert record.MTTR_s is not None
+    assert record.destructive_repair is False
+    index_lines = (tmp_path / "runs_index.jsonl").read_text().splitlines()
+    assert len(index_lines) == 1
+
+
+async def test_merge_found_when_the_deadline_cuts_the_gate_is_rolled_back(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=_create_pr_return(7))
+    monkeypatch.setattr(orch_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", _RUN_DEADLINE_S)
+    events: list[str] = []
+    _answer_rollbacks(
+        servers,
+        events,
+        {"wait_for_gate": _block_forever, "get_pr_status": dict(_MERGED_PR_STATUS)},
+    )
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    names = _tool_names(servers.git)
+    assert names.index("close_pr") < names.index("get_pr_status")
+    assert record.merge_commit_sha == "late1234567890"
+    assert _reverts(servers.git) == [{"merge_commit_sha": "late1234567890"}]
+    assert record.outcome == "abort"
+
+
+async def test_watchdog_error_after_merge_rolls_back(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=_create_pr_return())
+    monkeypatch.setattr(
+        orch_mod, "run_watchdog", AsyncMock(side_effect=RuntimeError("probe crashed"))
+    )
+    _answer_rollbacks(servers, [], {})
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert record.outcome == "abort"
+    assert record.setup_error == "unhandled_exception"
+    assert _reverts(servers.git) == [{"merge_commit_sha": _MERGE_SHA}]
+    assert record.rollback_success is True
+
+
+async def test_shutdown_during_watchdog_rolls_back_and_records_abort(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=_create_pr_return())
+    watchdog_started = asyncio.Event()
+
+    async def blocked_watchdog(_deps: WatchdogDeps) -> WatchdogResult:
+        watchdog_started.set()
+        await asyncio.Event().wait()
+        return _watchdog_ok()
+
+    monkeypatch.setattr(orch_mod, "run_watchdog", blocked_watchdog)
+    _answer_rollbacks(servers, [], {})
+
+    task = asyncio.create_task(_orchestrate(sample_fault_event, servers))
+    await asyncio.wait_for(watchdog_started.wait(), _TEST_WAIT_S)
+    task.cancel()
+    record = await asyncio.wait_for(task, _TEST_WAIT_S)
+
+    assert record.setup_error == "shutdown"
+    assert record.rollback_triggered is True
+    assert _reverts(servers.git) == [{"merge_commit_sha": _MERGE_SHA}]
+
+
+async def test_shutdown_during_rollback_finishes_the_rollback(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=_create_pr_return())
+    monkeypatch.setattr(orch_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", _RUN_DEADLINE_S)
+    monkeypatch.setattr(orch_mod, "run_watchdog", _block_forever)
+    revert_started = asyncio.Event()
+    release_revert = asyncio.Event()
+
+    async def held_revert(_args: dict) -> dict:
+        revert_started.set()
+        await release_revert.wait()
+        return dict(_REVERTED)
+
+    _answer_rollbacks(servers, [], {"revert_commit": held_revert})
+
+    task = asyncio.create_task(_orchestrate(sample_fault_event, servers))
+    await asyncio.wait_for(revert_started.wait(), _TEST_WAIT_S)
+    task.cancel()
+    task.cancel()
+    for _ in range(_LOOP_TURNS):
+        await asyncio.sleep(0)
+    assert not task.done()
+    release_revert.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, _TEST_WAIT_S)
+    assert _written_record(tmp_path)["rollback_success"] is True
+    assert len(_reverts(servers.git)) == 1
+
+
+async def test_remediation_cut_after_create_pr_closes_the_pull_request(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=[])
+    exhausted = RemediationOutputRetryExhausted(
+        RunUsage(), _create_pr_return(7), UnexpectedModelBehavior("bad output")
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(side_effect=exhausted))
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    git_calls = _tool_calls(servers.git)
+    close_index = git_calls.index(("close_pr", {"pr_number": 7}))
+    assert close_index < git_calls.index(("get_pr_status", {"pr_number": 7}))
+    assert record.outcome == "abort"
+    assert record.gate_status == "closed"
+
+
+async def test_remediation_cut_without_its_messages_leaves_the_pull_request_open(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=[])
+    monkeypatch.setattr(orch_mod, "REMEDIATION_TIMEOUT_S", _REMEDIATION_CUT_S)
+    monkeypatch.setattr(orch_mod, "run_remediation", _block_forever)
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert "close_pr" not in _tool_names(servers.git)
+    assert record.setup_error == "remediation_timeout"
+
+
+async def test_open_pr_after_failed_close_records_unknown(
+    sample_fault_event: FaultEvent,
+    servers: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_stages(monkeypatch, tmp_path, messages=_create_pr_return(7))
+    servers.git.direct_call_tool = _git_tools(
+        {
+            "wait_for_gate": _GATE_FAILURE,
+            "close_pr": ModelRetry("rate limited"),
+            "get_pr_status": dict(_OPEN_PR_STATUS),
+        }
+    )
+
+    record = await asyncio.wait_for(
+        _orchestrate(sample_fault_event, servers), _TEST_WAIT_S
+    )
+
+    assert record.gate_status == "unknown"
+    assert record.outcome == "gate_failed"
