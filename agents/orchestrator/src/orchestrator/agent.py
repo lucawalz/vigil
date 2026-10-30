@@ -33,6 +33,7 @@ from diagnosis.context import (
     extract_alert_name,
     extract_alert_namespace,
     extract_systemd_unit,
+    resolve_source_branch,
 )
 from diagnosis.models import (
     DiagnosisDeps,
@@ -1090,6 +1091,19 @@ async def _run_orchestration(
             except HealthSnapshotUnavailable as exc:
                 log.warning("run %s: cluster unreachable: %s", run_id, exc)
                 record = _abort_record("baseline_unavailable")
+                _write_run_record(record)
+                return record
+
+            try:
+                source_branch = await resolve_source_branch(diagnosis_deps)
+                await call_tool(
+                    git_mcp,
+                    "clone_repo",
+                    {"run_id": run_id, "base_branch": source_branch},
+                )
+            except Exception as exc:
+                log.warning("run %s: clone_repo failed: %s", run_id, exc)
+                record = _abort_record(f"clone_repo_failed: {exc}")
                 _write_run_record(record)
                 return record
 

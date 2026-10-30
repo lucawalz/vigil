@@ -36,7 +36,11 @@ from orchestrator.agent import (
     run_orchestration,
 )
 from orchestrator.models import CircuitBreakerTripped, FaultEvent, RunRecord
-from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+from pydantic_ai.exceptions import (
+    ModelRetry,
+    UnexpectedModelBehavior,
+    UsageLimitExceeded,
+)
 from pydantic_ai.usage import RunUsage
 from remediation.models import RemediationOutputRetryExhausted, RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogDeps, WatchdogResult
@@ -2631,6 +2635,114 @@ async def test_retry_succeeds_on_second_attempt(
     hint = second_kwargs.get("retry_hint")
     assert hint is not None
     assert "git_commit_k8s" in hint
+
+
+async def test_git_session_opens_once_per_run_before_diagnosis(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    events: list[str] = []
+
+    async def kubectl_tool(tool: str, args: dict) -> dict:
+        if tool == "get_resource_yaml" and args.get("kind") == "GitRepository":
+            return {"content": "spec:\n  ref:\n    branch: eval/lab\n"}
+        return {"content": ""}
+
+    async def git_tool(tool: str, args: dict) -> dict:
+        events.append(tool)
+        return {"content": "ok"}
+
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (_canned_remediation(), RunUsage(input_tokens=100, output_tokens=30), [])
+
+    async def diagnose(*_args, **_kwargs):
+        events.append("run_diagnosis")
+        return diag_rv
+
+    run_diagnosis_mock = AsyncMock(side_effect=diagnose)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_rv = WatchdogResult(
+        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "run_watchdog",
+        AsyncMock(side_effect=[degraded_rv, _watchdog_ok()]),
+    )
+    mock_kubectl_mcp.direct_call_tool = AsyncMock(side_effect=kubectl_tool)
+    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=git_tool)
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.attempts == 2
+    git_calls = mock_git_mcp.direct_call_tool.call_args_list
+    clone_calls = [c for c in git_calls if c.args[0] == "clone_repo"]
+    assert len(clone_calls) == 1
+    assert clone_calls[0].args[1] == {
+        "run_id": record.run_id,
+        "base_branch": "eval/lab",
+    }
+    git_tools = [c.args[0] for c in git_calls]
+    clone_index = git_tools.index("clone_repo")
+    assert all(
+        clone_index < i for i, tool in enumerate(git_tools) if tool == "create_branch"
+    )
+    assert events.index("clone_repo") < events.index("run_diagnosis")
+
+
+async def test_clone_failure_aborts_before_diagnosis(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs_dir = tmp_path / "runs"
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(runs_dir))
+
+    async def git_tool(tool: str, args: dict) -> dict:
+        if tool == "clone_repo":
+            raise ModelRetry("authentication failed")
+        return {"content": "ok"}
+
+    run_diagnosis_mock = AsyncMock()
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    mock_git_mcp.direct_call_tool = AsyncMock(side_effect=git_tool)
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert record.outcome == "abort"
+    assert record.setup_error is not None
+    assert record.setup_error.startswith("clone_repo_failed:")
+    run_diagnosis_mock.assert_not_awaited()
+    assert (runs_dir / f"{record.run_id}.json").exists()
 
 
 async def test_all_retries_exhausted_triggers_rollback_on_last_attempt(

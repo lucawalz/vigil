@@ -89,7 +89,7 @@ def _extract_text(result: object) -> str:
     return str(result)
 
 
-async def _resolve_source_branch(deps: DiagnosisDeps) -> str:
+async def resolve_source_branch(deps: DiagnosisDeps) -> str:
     result = await call_tool(
         deps.kubectl_mcp,
         "get_resource_yaml",
@@ -1002,7 +1002,7 @@ async def _build_workload_context(
 async def build_diagnosis_context(
     deps: DiagnosisDeps, fault: FaultEvent
 ) -> DiagnosisContext:
-    source_branch = await _resolve_source_branch(deps)
+    source_branch = await resolve_source_branch(deps)
     await call_tool(
         deps.git_mcp,
         "clone_repo",
