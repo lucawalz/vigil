@@ -106,10 +106,12 @@ in
     };
     serviceConfig = {
       WorkingDirectory = "/root/vigil";
-      ExecStart = "${pkgs.uv}/bin/uv run --frozen --package vigil-orchestrator uvicorn orchestrator.main:app --host 0.0.0.0 --port 9099";
+      ExecStart = "/root/vigil/.venv/bin/uvicorn orchestrator.main:app --host 0.0.0.0 --port 9099";
       EnvironmentFile = "/etc/vigil/env";
       Restart = "on-failure";
       RestartSec = "5s";
+      KillMode = "mixed";
+      TimeoutStopSec = "1005s";
     };
   };
 
