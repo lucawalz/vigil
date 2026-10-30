@@ -98,6 +98,10 @@ def _canned_report_with_action(
 
 
 _MERGE_SHA = "deadbeef1234567"
+_AGENT_COMMIT_SHA = "c0ffee1234567"
+_REVERT_SHA = "feed0000beef1"
+_REVERTED = {"sha": "c0de0000c0de1", "pr_number": 2, "merge_commit_sha": _REVERT_SHA}
+_FLUX_AT_REVERT = {"found": True, "ready": True, "revision": f"main@sha1:{_REVERT_SHA}"}
 _PR_NUMBER = 1
 _OPEN_PR_STATUS = {"state": "open", "merged": False, "merge_commit_sha": ""}
 _MODEL_SHA = "feedface0000000"
@@ -148,25 +152,6 @@ def _git_tools(answers: dict[str, object]) -> AsyncMock:
 
 _GATE_FAILURE = ModelRetry("gate check failed (conclusion=failure)")
 
-_PR_MERGE_SHAS = {1: "aaaa111111111", 2: "bbbb222222222", 3: "cccc333333333"}
-
-
-async def _merge_per_pr(args: dict) -> dict:
-    return {"merge_commit_sha": _PR_MERGE_SHAS[args["pr_number"]]}
-
-
-def _remediation_per_pr(*pr_numbers: int) -> AsyncMock:
-    return AsyncMock(
-        side_effect=[
-            (
-                _canned_remediation(),
-                RunUsage(input_tokens=100, output_tokens=30),
-                _create_pr_return(pr_number),
-            )
-            for pr_number in pr_numbers
-        ]
-    )
-
 
 def _tool_calls(server: AsyncMock) -> list[tuple[str, dict]]:
     return [(c.args[0], c.args[1]) for c in server.direct_call_tool.call_args_list]
@@ -191,7 +176,7 @@ def _canned_remediation(success: bool = True) -> RemediationResult:
         tool_calls_count=7,
         mutation_attempted=True,
         agent_branch="remediation/run-k8s-1",
-        agent_commits=["deadbeef1234567"],
+        agent_commits=[_AGENT_COMMIT_SHA],
     )
 
 
@@ -278,7 +263,7 @@ async def test_run_orchestration_happy_path(
     assert record.total_input_tokens == 300
     assert record.total_output_tokens == 130
     assert record.agent_branch == "remediation/run-k8s-1"
-    assert record.agent_commits == ["deadbeef1234567"]
+    assert record.agent_commits == [_AGENT_COMMIT_SHA]
     assert record.gate_status == "merged"
     assert record.merge_commit_sha == "deadbeef1234567"
     written = (tmp_path / "runs" / f"{record.run_id}.json").read_text()
@@ -1107,7 +1092,6 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
 def test_orchestrator_constants_have_correct_defaults() -> None:
     assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 1800.0
     assert orch_mod.REMEDIATION_TIMEOUT_S == 540.0
-    assert orch_mod._MAX_DIAGNOSIS_ATTEMPTS == 3
 
 
 def _watchdog_degraded() -> WatchdogResult:
@@ -1770,48 +1754,6 @@ def test_check_forbidden_actions_trigger_reconcile_not_flagged_for_nixos_rebuild
     _make_scenario_dir(root, "os-1", ["nixos_rebuild"])
     monkeypatch.setenv("VIGIL_SCENARIOS_DIR", str(root))
     assert _check_forbidden_actions("os-1", ["trigger_reconcile"]) == []
-
-
-async def test_no_rollback_when_watchdog_clears_within_settle_window(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
-    rem_rv = (
-        _canned_remediation(),
-        RunUsage(input_tokens=100, output_tokens=30),
-        _create_pr_return(),
-    )
-    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
-    monkeypatch.setattr(
-        orch_mod,
-        "capture_health_snapshot",
-        AsyncMock(return_value=_canned_baseline()),
-    )
-    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
-    degraded_snap = _degraded_snapshot()
-    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
-    monkeypatch.setattr(
-        orch_mod,
-        "run_watchdog",
-        AsyncMock(side_effect=[degraded_rv, _watchdog_ok()]),
-    )
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-    assert record.outcome == "success"
-    assert record.rollback_triggered is False
 
 
 async def test_rollback_when_watchdog_stays_degraded(
@@ -2740,7 +2682,7 @@ async def test_success_rate_true_when_no_forbidden_actions(
     assert record.forbidden_action_violations == []
 
 
-async def test_retry_succeeds_on_second_attempt(
+async def test_remediation_branch_is_named_after_the_run(
     sample_fault_event: FaultEvent,
     mock_kubectl_mcp: AsyncMock,
     mock_flux_mcp: AsyncMock,
@@ -2750,25 +2692,20 @@ async def test_retry_succeeds_on_second_attempt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-
     diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
-    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
-    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+
+    async def remediate(*_args, agent_branch: str, **_kwargs):
+        result = _canned_remediation().model_copy(update={"agent_branch": agent_branch})
+        return result, RunUsage(input_tokens=100, output_tokens=30), _create_pr_return()
+
+    monkeypatch.setattr(orch_mod, "run_diagnosis", AsyncMock(return_value=diag_rv))
     monkeypatch.setattr(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
     )
-    monkeypatch.setattr(orch_mod, "run_remediation", _remediation_per_pr(1, 2))
-
-    degraded_snap = _degraded_snapshot()
-    degraded_rv = WatchdogResult(
-        degraded=True, snapshot=degraded_snap, reason="deadline_reached"
-    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(side_effect=remediate))
     monkeypatch.setattr(
-        orch_mod,
-        "run_watchdog",
-        AsyncMock(side_effect=[degraded_rv, _watchdog_ok()]),
+        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
     )
-    mock_git_mcp.direct_call_tool = _git_tools({"wait_for_gate": _merge_per_pr})
 
     record = await run_orchestration(
         sample_fault_event,
@@ -2778,16 +2715,60 @@ async def test_retry_succeeds_on_second_attempt(
         git_mcp=mock_git_mcp,
     )
 
-    assert record.outcome == "success"
-    assert record.attempts == 2
-    assert record.rollback_triggered is False
-    assert record.merge_commit_sha == _PR_MERGE_SHAS[1]
-    assert "revert_commit" not in _tool_names(mock_git_mcp)
-    assert run_diagnosis_mock.call_count == 2
-    _, second_kwargs = run_diagnosis_mock.call_args_list[1]
-    hint = second_kwargs.get("retry_hint")
-    assert hint is not None
-    assert "git_commit_k8s" in hint
+    branch_args = [a for n, a in _tool_calls(mock_git_mcp) if n == "create_branch"]
+    assert branch_args == [{"run_id": record.run_id, "base_branch": "main"}]
+    assert record.agent_branch == f"remediation/run-{record.run_id}"
+
+
+async def test_degraded_merge_runs_one_diagnosis_and_rolls_back(
+    sample_fault_event: FaultEvent,
+    mock_kubectl_mcp: AsyncMock,
+    mock_flux_mcp: AsyncMock,
+    mock_nixos_mcp: AsyncMock,
+    mock_git_mcp: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (
+        _canned_remediation(),
+        RunUsage(input_tokens=100, output_tokens=30),
+        _create_pr_return(),
+    )
+    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
+    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
+    monkeypatch.setattr(
+        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
+    )
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
+    degraded_rv = WatchdogResult(
+        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
+    )
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
+    mock_git_mcp.direct_call_tool = _git_tools({"revert_commit": _REVERTED})
+    mock_flux_mcp.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, _args: (
+            _FLUX_AT_REVERT
+            if tool == "get_kustomization_status"
+            else {"content": "reconciled"}
+        )
+    )
+
+    record = await run_orchestration(
+        sample_fault_event,
+        kubectl_mcp=mock_kubectl_mcp,
+        flux_mcp=mock_flux_mcp,
+        nixos_mcp=mock_nixos_mcp,
+        git_mcp=mock_git_mcp,
+    )
+
+    assert run_diagnosis_mock.call_count == 1
+    assert record.attempts == 1
+    assert _tool_names(mock_git_mcp).count("create_branch") == 1
+    revert_args = [a for n, a in _tool_calls(mock_git_mcp) if n == "revert_commit"]
+    assert revert_args == [{"merge_commit_sha": _MERGE_SHA}]
+    assert record.outcome == "rollback_succeeded"
 
 
 async def test_git_session_opens_once_per_run_before_diagnosis(
@@ -2809,11 +2790,14 @@ async def test_git_session_opens_once_per_run_before_diagnosis(
 
     async def git_tool(tool: str, args: dict) -> dict:
         events.append(tool)
-        if tool == "wait_for_gate":
-            return await _merge_per_pr(args)
         return await _default_git_tool(tool, args)
 
     diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
+    rem_rv = (
+        _canned_remediation(),
+        RunUsage(input_tokens=100, output_tokens=30),
+        _create_pr_return(),
+    )
 
     async def diagnose(*_args, **_kwargs):
         events.append("run_diagnosis")
@@ -2824,15 +2808,11 @@ async def test_git_session_opens_once_per_run_before_diagnosis(
     monkeypatch.setattr(
         orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
     )
-    monkeypatch.setattr(orch_mod, "run_remediation", _remediation_per_pr(1, 2))
+    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
     degraded_rv = WatchdogResult(
         degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
     )
-    monkeypatch.setattr(
-        orch_mod,
-        "run_watchdog",
-        AsyncMock(side_effect=[degraded_rv, _watchdog_ok()]),
-    )
+    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
     mock_kubectl_mcp.direct_call_tool = AsyncMock(side_effect=kubectl_tool)
     mock_git_mcp.direct_call_tool = AsyncMock(side_effect=git_tool)
 
@@ -2844,7 +2824,8 @@ async def test_git_session_opens_once_per_run_before_diagnosis(
         git_mcp=mock_git_mcp,
     )
 
-    assert record.attempts == 2
+    assert record.attempts == 1
+    assert _tool_names(mock_git_mcp).count("create_branch") == 1
     git_calls = mock_git_mcp.direct_call_tool.call_args_list
     clone_calls = [c for c in git_calls if c.args[0] == "clone_repo"]
     assert len(clone_calls) == 1
@@ -2897,279 +2878,6 @@ async def test_clone_failure_aborts_before_diagnosis(
     assert record.setup_error.startswith("clone_repo_failed:")
     run_diagnosis_mock.assert_not_awaited()
     assert (runs_dir / f"{record.run_id}.json").exists()
-
-
-async def test_all_retries_exhausted_triggers_rollback_on_last_attempt(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-
-    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
-    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
-    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
-    monkeypatch.setattr(
-        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
-    )
-    monkeypatch.setattr(orch_mod, "run_remediation", _remediation_per_pr(1, 2, 3))
-
-    degraded_snap = _degraded_snapshot()
-    degraded_rv = WatchdogResult(degraded=True, snapshot=degraded_snap)
-    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = _git_tools(
-        {
-            "wait_for_gate": _merge_per_pr,
-            "revert_commit": {"content": "reverted: cafebabe"},
-        }
-    )
-    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-
-    assert record.attempts == 3
-    assert record.rollback_triggered is True
-    assert record.outcome in ("rollback_succeeded", "rollback_failed")
-    assert run_diagnosis_mock.call_count == 3
-    revert_calls = [
-        c
-        for c in mock_git_mcp.direct_call_tool.call_args_list
-        if c.args and c.args[0] == "revert_commit"
-    ]
-    assert len(revert_calls) == 1
-    assert record.merge_commit_sha == _PR_MERGE_SHAS[1]
-    assert revert_calls[0].args[1] == {"merge_commit_sha": _PR_MERGE_SHAS[1]}
-
-
-async def test_gate_failed_does_not_retry(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-
-    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
-    failed_rem = RemediationResult(
-        success=False,
-        actions_taken=["create_branch", "write_manifest", "commit_files", "create_pr"],
-        tool_calls_count=4,
-        mutation_attempted=False,
-    )
-    rem_rv = (
-        failed_rem,
-        RunUsage(input_tokens=100, output_tokens=30),
-        _create_pr_return(),
-    )
-    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
-    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
-    monkeypatch.setattr(
-        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
-    )
-    monkeypatch.setattr(orch_mod, "run_remediation", AsyncMock(return_value=rem_rv))
-    monkeypatch.setattr(
-        orch_mod, "run_watchdog", AsyncMock(return_value=_watchdog_ok())
-    )
-    mock_git_mcp.direct_call_tool = _git_tools({"wait_for_gate": _GATE_FAILURE})
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-
-    assert record.outcome == "gate_failed"
-    assert record.attempts == 1
-    assert run_diagnosis_mock.call_count == 1
-
-
-async def test_earlier_merge_preserved_when_retry_escalates(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-
-    merge_report = _canned_report()
-    escalate_report = _canned_report_with_action("escalate")
-    merge_rv = (merge_report, RunUsage(input_tokens=50, output_tokens=20), [])
-    escalate_rv = (escalate_report, RunUsage(input_tokens=30, output_tokens=10), [])
-    run_diagnosis_mock = AsyncMock(side_effect=[merge_rv, escalate_rv])
-    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
-    monkeypatch.setattr(
-        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
-    )
-    monkeypatch.setattr(orch_mod, "run_remediation", _remediation_per_pr(1))
-    degraded_rv = WatchdogResult(
-        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
-    )
-    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = _git_tools({"wait_for_gate": _merge_per_pr})
-    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-
-    assert run_diagnosis_mock.call_count == 2
-    assert record.outcome != "escalated"
-    assert record.agent_commits == ["deadbeef1234567"]
-    assert record.agent_branch == "remediation/run-k8s-1"
-    assert record.merge_commit_sha == _PR_MERGE_SHAS[1]
-    revert_args = [a for n, a in _tool_calls(mock_git_mcp) if n == "revert_commit"]
-    assert revert_args == [{"merge_commit_sha": _PR_MERGE_SHAS[1]}]
-
-
-async def test_earlier_merge_preserved_when_retry_gate_fails(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-
-    diag_rv = (_canned_report(), RunUsage(input_tokens=50, output_tokens=20), [])
-    run_diagnosis_mock = AsyncMock(return_value=diag_rv)
-    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
-    monkeypatch.setattr(
-        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
-    )
-    gate_failed_rem = RemediationResult(
-        success=False,
-        actions_taken=["create_branch", "write_manifest", "commit_files", "create_pr"],
-        tool_calls_count=4,
-        mutation_attempted=True,
-        agent_branch="remediation/run-attempt-2",
-        agent_commits=["facefeed0000000"],
-    )
-    rem_mock = AsyncMock(
-        side_effect=[
-            (
-                _canned_remediation(),
-                RunUsage(input_tokens=100, output_tokens=30),
-                _create_pr_return(1),
-            ),
-            (
-                gate_failed_rem,
-                RunUsage(input_tokens=80, output_tokens=20),
-                _create_pr_return(2),
-            ),
-        ]
-    )
-    monkeypatch.setattr(orch_mod, "run_remediation", rem_mock)
-    healthy_after_retry = WatchdogResult(
-        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
-    )
-    monkeypatch.setattr(
-        orch_mod, "run_watchdog", AsyncMock(return_value=healthy_after_retry)
-    )
-
-    async def first_merges_second_fails(args: dict) -> dict:
-        if args["pr_number"] == 2:
-            raise _GATE_FAILURE
-        return await _merge_per_pr(args)
-
-    mock_git_mcp.direct_call_tool = _git_tools(
-        {"wait_for_gate": first_merges_second_fails}
-    )
-    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-
-    assert record.outcome != "gate_failed"
-    assert record.agent_commits == ["deadbeef1234567"]
-    assert record.agent_branch == "remediation/run-k8s-1"
-    assert record.merge_commit_sha == _PR_MERGE_SHAS[1]
-    revert_args = [a for n, a in _tool_calls(mock_git_mcp) if n == "revert_commit"]
-    assert revert_args == [{"merge_commit_sha": _PR_MERGE_SHAS[1]}]
-
-
-async def test_late_escalate_after_merged_degraded_rolls_back(
-    sample_fault_event: FaultEvent,
-    mock_kubectl_mcp: AsyncMock,
-    mock_flux_mcp: AsyncMock,
-    mock_nixos_mcp: AsyncMock,
-    mock_git_mcp: AsyncMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EVAL_RUNS_DIR", str(tmp_path / "runs"))
-
-    merge_report = _canned_report()
-    escalate_report = _canned_report_with_action("escalate")
-    merge_rv = (merge_report, RunUsage(input_tokens=50, output_tokens=20), [])
-    escalate_rv = (escalate_report, RunUsage(input_tokens=30, output_tokens=10), [])
-    run_diagnosis_mock = AsyncMock(side_effect=[merge_rv, merge_rv, escalate_rv])
-    monkeypatch.setattr(orch_mod, "run_diagnosis", run_diagnosis_mock)
-    monkeypatch.setattr(
-        orch_mod, "capture_health_snapshot", AsyncMock(return_value=_canned_baseline())
-    )
-    monkeypatch.setattr(orch_mod, "run_remediation", _remediation_per_pr(1, 2))
-    degraded_rv = WatchdogResult(
-        degraded=True, snapshot=_degraded_snapshot(), reason="deadline_reached"
-    )
-    monkeypatch.setattr(orch_mod, "run_watchdog", AsyncMock(return_value=degraded_rv))
-    mock_git_mcp.direct_call_tool = _git_tools(
-        {
-            "wait_for_gate": _merge_per_pr,
-            "revert_commit": {"content": "reverted: cafebabe"},
-        }
-    )
-    mock_flux_mcp.direct_call_tool = AsyncMock(return_value={"content": "reconciled"})
-
-    record = await run_orchestration(
-        sample_fault_event,
-        kubectl_mcp=mock_kubectl_mcp,
-        flux_mcp=mock_flux_mcp,
-        nixos_mcp=mock_nixos_mcp,
-        git_mcp=mock_git_mcp,
-    )
-
-    assert run_diagnosis_mock.call_count == 3
-    assert record.outcome == "rollback_succeeded"
-    assert record.rollback_triggered is True
-    assert record.rollback_success is True
-    assert record.destructive_repair is False
-    revert_calls = [
-        c
-        for c in mock_git_mcp.direct_call_tool.call_args_list
-        if c.args and c.args[0] == "revert_commit"
-    ]
-    assert len(revert_calls) == 1
-    assert record.merge_commit_sha == _PR_MERGE_SHAS[1]
-    assert revert_calls[0].args[1] == {"merge_commit_sha": _PR_MERGE_SHAS[1]}
 
 
 def _confidence_report(action: str, confidence: float) -> DiagnosisReport:
