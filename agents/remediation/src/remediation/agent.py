@@ -40,6 +40,7 @@ REMEDIATION_REQUEST_LIMIT: int = int(os.environ.get("REMEDIATION_REQUEST_LIMIT",
 
 _COMMIT_TOOL_NAME = "commit_files"
 _COMMIT_GENERATION_TOOL_NAME = "commit_generation"
+_GATE_TOOL_NAMES = frozenset({"wait_for_gate", "revert_commit"})
 
 _SYSTEM_PROMPT = """\
 You are the Remediation stage of the vigil fault-response pipeline. Execute one of
@@ -77,7 +78,8 @@ If recommended_action == "git_commit_k8s":
        -- record the SHA from 'commit: <sha>' into RemediationResult.agent_commits.
     4. push_branch()
     5. create_pr(title='<short summary>', body='<root cause + evidence>')
-       -- base branch is taken from clone_repo. auto-merge is enabled by git-mcp.
+       -- base branch is taken from clone_repo. the PR is merged by wait_for_gate
+          once the gate passes.
     6. wait_for_gate(pr_number=<pr_number from create_pr response>)
        -- on success, including a merge that lands as the wait ends, the response
           is 'gate passed: merged sha=<sha>'.
@@ -207,7 +209,7 @@ def _build_review_block(require_human_review: bool) -> str:
     return (
         " HUMAN-REVIEW MODE OVERRIDE (applies only to git_commit_k8s and"
         " git_commit_nix): open the PR for a human to merge, do not gate or"
-        " reconcile. After push_branch, call create_pr(..., auto_merge=false)."
+        " reconcile. After push_branch, call create_pr(...)."
         " Then STOP: do NOT call wait_for_gate and do NOT call"
         " reconcile_kustomization or trigger_reconcile. Record the provided"
         " agent_branch and agent_commits, set gate_status='awaiting_review', set"
@@ -244,6 +246,10 @@ async def run_remediation(
         budget=GIT_COMMIT_BUDGET,
         on_exceeded=GitCommitBudgetExceeded,
     )
+    if require_human_review:
+        git_toolset = FilteredToolset(
+            git_toolset, filter_func=lambda _ctx, td: td.name not in _GATE_TOOL_NAMES
+        )
     nixos_toolset = FilteredToolset(
         deps.nixos_mcp, filter_func=lambda _ctx, td: _allow_nixos(td.name)
     )

@@ -20,7 +20,10 @@ import remediation.agent as _rem_agent_mod
 from common.constants import GIT_COMMIT_BUDGET, PROTECTED_BRANCHES
 from common.toolset_guards import CallBudgetToolset
 from diagnosis.models import DiagnosisReport
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.usage import RunUsage
 from remediation.agent import remediation_agent, run_remediation
 from remediation.models import (
     GitCommitBudgetExceeded,
@@ -389,10 +392,57 @@ async def test_run_remediation_human_review_overrides_gate_waiting(
     )
 
     task = captured["task"]
-    assert "auto_merge=false" in task
+    assert "create_pr(" in task
+    assert "auto_merge" not in task
     assert "awaiting_review" in task
     assert "HUMAN-REVIEW MODE" in task
     assert result.gate_status == "awaiting_review"
+
+
+_GATE_TOOLS = ("wait_for_gate", "revert_commit")
+
+
+def _stub_git_toolset() -> FunctionToolset[None]:
+    toolset: FunctionToolset[None] = FunctionToolset()
+    for name in ("create_pr", *_GATE_TOOLS):
+        toolset.add_function(lambda: None, name=name)
+    return toolset
+
+
+@pytest.mark.parametrize("require_human_review", [True, False])
+async def test_run_remediation_human_review_hides_gate_and_revert_tools(
+    require_human_review: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_iter(task: str, *a: object, **k: object) -> object:
+        captured["git_toolset"] = k["toolsets"][0]
+        raise _StopBeforeRun
+
+    monkeypatch.setattr(_rem_agent_mod.remediation_agent, "iter", _fake_iter)
+
+    with pytest.raises(_StopBeforeRun):
+        await run_remediation(
+            deps=RemediationDeps(
+                git_mcp=_stub_git_toolset(),
+                flux_mcp=AsyncMock(),
+                nixos_mcp=AsyncMock(),
+            ),
+            report=_git_commit_report(),
+            source_branch="remediation/run-x",
+            require_human_review=require_human_review,
+        )
+
+    ctx = RunContext(deps=None, model=TestModel(), usage=RunUsage())
+    offered = await captured["git_toolset"].get_tools(ctx)
+    assert "create_pr" in offered
+    for name in _GATE_TOOLS:
+        assert (name in offered) is not require_human_review
+
+
+class _StopBeforeRun(Exception):
+    pass
 
 
 async def test_run_remediation_default_omits_human_review_block(
@@ -439,7 +489,7 @@ async def test_run_remediation_default_omits_human_review_block(
     )
 
     assert "HUMAN-REVIEW MODE" not in captured["task"]
-    assert "auto_merge=false" not in captured["task"]
+    assert "auto_merge" not in captured["task"]
 
 
 async def test_run_remediation_allows_non_protected_branch(
