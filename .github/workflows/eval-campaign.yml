@@ -242,7 +242,7 @@ jobs:
         with:
           terraform_version: "~1.15"
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           prune-cache: true
@@ -531,7 +531,7 @@ jobs:
         with:
           persist-credentials: true
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           prune-cache: true
