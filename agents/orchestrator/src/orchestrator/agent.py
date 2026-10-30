@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -18,6 +19,8 @@ from common.constants import (
     CONFIDENCE_REVIEW_THRESHOLD,
     GATE_REVERT_CALL_TIMEOUT_S,
     GIT_COMMIT_BUDGET,
+    GIT_MCP_READ_TIMEOUT_S,
+    MCP_CALL_TIMEOUT_S,
     WATCHDOG_NAMESPACE,
 )
 from common.flux_status import coerce_flux_status
@@ -38,6 +41,7 @@ from diagnosis.context import (
 from diagnosis.models import (
     DiagnosisDeps,
     DiagnosisOutputRetryExhausted,
+    DiagnosisReport,
     DiagnosisRequestBudgetExceeded,
 )
 from pydantic_ai.exceptions import (
@@ -46,10 +50,14 @@ from pydantic_ai.exceptions import (
     UsageLimitExceeded,
 )
 from pydantic_ai.mcp import MCPServerStdio
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ToolReturnPart
 from pydantic_ai.usage import RunUsage
 from remediation.agent import run_remediation
-from remediation.models import RemediationDeps, RemediationOutputRetryExhausted
+from remediation.models import (
+    RemediationDeps,
+    RemediationOutputRetryExhausted,
+    RemediationResult,
+)
 from watchdog.agent import (
     OS_CHECK_NODE_CONDITION,
     OS_CHECK_SYSCTL,
@@ -76,6 +84,13 @@ _REMEDIATION_BRANCH_PREFIX = "remediation/run-"
 _GIT_COMMIT_ACTIONS: frozenset[str] = frozenset({"git_commit_k8s", "git_commit_nix"})
 
 _COMMIT_GENERATION_FAILED_OUTCOME = "commit_generation_failed"
+
+_FLUX_APPS = {"namespace": "flux-system", "name": "cluster-apps"}
+
+_GATE_MERGED = "merged"
+_GATE_CLOSED = "closed"
+_GATE_UNKNOWN = "unknown"
+_GATE_AWAITING_REVIEW = "awaiting_review"
 
 _RUN_LOCK = asyncio.Lock()
 
@@ -346,18 +361,10 @@ async def _issue_rollback(
     """Dispatch rollback by recommended_action class. Returns True on full success."""
     try:
         if recommended_action == "flux_reconcile":
-            await call_tool(
-                flux_mcp,
-                "reconcile_kustomization",
-                {"namespace": "flux-system", "name": "cluster-apps"},
-            )
+            await call_tool(flux_mcp, "reconcile_kustomization", _FLUX_APPS)
         elif recommended_action == "git_commit_k8s":
             await _revert_through_gate(git_mcp, merge_commit_sha)
-            await call_tool(
-                flux_mcp,
-                "reconcile_kustomization",
-                {"namespace": "flux-system", "name": "cluster-apps"},
-            )
+            await call_tool(flux_mcp, "reconcile_kustomization", _FLUX_APPS)
         elif recommended_action == "nixos_rebuild":
             return True
         elif recommended_action == "git_commit_nix":
@@ -391,6 +398,127 @@ async def _commit_nixos_generation(
     except Exception:
         log.exception("commit_generation failed for host=%s", target_host)
         return False
+
+
+def _created_pr_number(msgs: list[ModelMessage]) -> int | None:
+    pr_number = None
+    for msg in msgs:
+        for part in getattr(msg, "parts", []):
+            if not isinstance(part, ToolReturnPart) or part.tool_name != "create_pr":
+                continue
+            content = part.content
+            number = content.get("pr_number") if isinstance(content, dict) else None
+            if isinstance(number, int) and not isinstance(number, bool):
+                pr_number = number
+    return pr_number
+
+
+async def _close_and_read_pr(
+    git_mcp: MCPServerStdio, pr_number: int, run_id: str
+) -> tuple[str, str | None]:
+    """Close the PR so no merge is still in flight, then read its final state once."""
+    args = {"pr_number": pr_number}
+    try:
+        await call_tool(git_mcp, "close_pr", args, timeout_s=MCP_CALL_TIMEOUT_S)
+    except Exception as exc:
+        log.warning("run %s: close_pr failed for pr #%d: %s", run_id, pr_number, exc)
+    try:
+        status = await call_tool(
+            git_mcp, "get_pr_status", args, timeout_s=MCP_CALL_TIMEOUT_S
+        )
+    except Exception as exc:
+        log.warning("run %s: pr #%d status unreadable: %s", run_id, pr_number, exc)
+        return _GATE_UNKNOWN, None
+    if not isinstance(status, dict):
+        return _GATE_UNKNOWN, None
+    if not status.get("merged"):
+        return _GATE_CLOSED, None
+    sha = status.get("merge_commit_sha")
+    return (_GATE_MERGED, sha) if sha else (_GATE_UNKNOWN, None)
+
+
+async def _close_and_read_pr_uncancellable(
+    git_mcp: MCPServerStdio, pr_number: int, run_id: str
+) -> tuple[str, str | None]:
+    """MCP sends no cancel, so an interrupted close_pr leaves a merge in flight."""
+    task = asyncio.ensure_future(_close_and_read_pr(git_mcp, pr_number, run_id))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.shield(task)
+        _log_merge_on_cancel(run_id, pr_number, *task.result())
+        raise
+
+
+def _log_merge_on_cancel(
+    run_id: str, pr_number: int, gate_status: str, sha: str | None
+) -> None:
+    if gate_status == _GATE_MERGED:
+        log.error(
+            "run %s: cancelled after pr #%d merged sha=%s", run_id, pr_number, sha
+        )
+
+
+async def _await_gate(
+    git_mcp: MCPServerStdio, pr_number: int, run_id: str
+) -> tuple[str, str | None]:
+    try:
+        result = await call_tool(
+            git_mcp,
+            "wait_for_gate",
+            {"pr_number": pr_number},
+            timeout_s=GIT_MCP_READ_TIMEOUT_S,
+        )
+        sha = result.get("merge_commit_sha") if isinstance(result, dict) else None
+        if sha:
+            return _GATE_MERGED, sha
+    except asyncio.CancelledError:
+        _log_merge_on_cancel(
+            run_id,
+            pr_number,
+            *await _close_and_read_pr_uncancellable(git_mcp, pr_number, run_id),
+        )
+        raise
+    except Exception as exc:
+        log.warning(
+            "run %s: wait_for_gate failed for pr #%d: %s", run_id, pr_number, exc
+        )
+    return await _close_and_read_pr_uncancellable(git_mcp, pr_number, run_id)
+
+
+async def _gate_and_reconcile(
+    result: RemediationResult,
+    msgs: list[ModelMessage],
+    deps: RemediationDeps,
+    report,
+    run_id: str,
+) -> RemediationResult:
+    """Gate the created PR, reconcile on merge; gate fields come only from git-mcp."""
+    pr_number = _created_pr_number(msgs)
+    if pr_number is None:
+        return result.model_copy(
+            update={"success": False, "merge_commit_sha": None, "gate_status": None}
+        )
+    gate_status, sha = await _await_gate(deps.git_mcp, pr_number, run_id)
+    merged = gate_status == _GATE_MERGED
+    if merged:
+        log.info("run %s: gate merged pr #%d sha=%s", run_id, pr_number, sha)
+        try:
+            if report.recommended_action == "git_commit_k8s":
+                await call_tool(deps.flux_mcp, "reconcile_kustomization", _FLUX_APPS)
+            else:
+                await call_tool(
+                    deps.nixos_mcp, "trigger_reconcile", {"host": report.target_host}
+                )
+        except Exception:
+            log.exception("run %s: reconcile request after merge failed", run_id)
+    else:
+        log.info("run %s: gate ended without merge for pr #%d", run_id, pr_number)
+    return result.model_copy(
+        update={"success": merged, "merge_commit_sha": sha, "gate_status": gate_status}
+    )
 
 
 def _build_retry_hint(
@@ -501,7 +629,7 @@ async def _run_diagnosis_attempt(
     retry_hint: str | None,
     breaker: _CircuitBreaker,
     run_id: str,
-) -> tuple[object, RunUsage, list[ModelMessage]] | _DiagnosisAbort:
+) -> tuple[DiagnosisReport, RunUsage, list[ModelMessage]] | _DiagnosisAbort:
     """Run one diagnosis pass; return its result or a terminal abort signal."""
     try:
         async with asyncio.timeout(DIAGNOSIS_TIMEOUT_S):
@@ -579,7 +707,7 @@ async def _dispatch_remediation_and_watchdog(
             os_check_expected=os_check_expected,
         )
 
-    if report.recommended_action == "git_commit_k8s":
+    if report.recommended_action in _GIT_COMMIT_ACTIONS:
         async with asyncio.timeout(REMEDIATION_TIMEOUT_S):
             (remediation_result, rem_usage, rem_msgs) = await run_remediation(
                 remediation_deps,
@@ -590,6 +718,9 @@ async def _dispatch_remediation_and_watchdog(
                 agent_branch=agent_branch,
                 breaker=breaker,
             )
+        remediation_result = await _gate_and_reconcile(
+            remediation_result, rem_msgs, remediation_deps, report, run_id
+        )
         target_deps = replace(
             target_deps, expected_revision=remediation_result.merge_commit_sha
         )
@@ -625,6 +756,9 @@ async def _dispatch_remediation_and_watchdog(
             ) as eg:
                 raise eg.exceptions[0]
         remediation_result, rem_usage, rem_msgs = rem_task.result()
+        remediation_result = remediation_result.model_copy(
+            update={"merge_commit_sha": None, "gate_status": None}
+        )
         watchdog_result = wtch_task.result()
     return remediation_result, rem_usage, rem_msgs, watchdog_result
 
@@ -915,6 +1049,14 @@ async def _run_review_remediation(
     total_usage = total_usage + rem_usage
     trace.log_messages(identity.run_id, "remediation", rem_msgs)
     trace.write_trace(identity.run_id, "remediation", rem_msgs)
+    pr_created = _created_pr_number(rem_msgs) is not None
+    remediation_result = remediation_result.model_copy(
+        update={
+            "success": pr_created,
+            "merge_commit_sha": None,
+            "gate_status": _GATE_AWAITING_REVIEW if pr_created else None,
+        }
+    )
     mttr_s = asyncio.get_event_loop().time() - t0
     ended_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     record = RunRecord(
@@ -1311,9 +1453,8 @@ async def _run_orchestration(
                         report, remediation_result, watchdog_result
                     )
 
-                if (
-                    report.recommended_action == "git_commit_k8s"
-                    and remediation_result.gate_status == "closed"
+                if report.recommended_action in _GIT_COMMIT_ACTIONS and (
+                    remediation_result.gate_status in (_GATE_CLOSED, _GATE_UNKNOWN)
                 ):
                     if merged_attempt is not None:
                         break

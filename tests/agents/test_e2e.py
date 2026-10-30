@@ -20,11 +20,15 @@ from diagnosis.models import DiagnosisReport
 from fastapi import FastAPI
 from orchestrator import agent as orch_mod
 from orchestrator import main as main_mod
+from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.usage import RunUsage
 from remediation.models import RemediationResult
 from watchdog.models import HealthSnapshot, WatchdogResult
 
 pytestmark = pytest.mark.slow
+
+_PR_NUMBER = 1
+_MERGE_SHA = "deadbeef1234567"
 
 
 def _canned_report() -> DiagnosisReport:
@@ -102,6 +106,15 @@ async def test_webhook_to_audit_log_end_to_end(
         "capture_health_snapshot",
         AsyncMock(return_value=_canned_snap()),
     )
+    create_pr_return = ModelRequest(
+        parts=[
+            ToolReturnPart(
+                tool_name="create_pr",
+                content={"pr_number": _PR_NUMBER},
+                tool_call_id="create-pr",
+            )
+        ]
+    )
     monkeypatch.setattr(
         orch_mod,
         "run_remediation",
@@ -109,7 +122,7 @@ async def test_webhook_to_audit_log_end_to_end(
             return_value=(
                 _canned_remediation(),
                 RunUsage(input_tokens=200, output_tokens=80),
-                [],
+                [create_pr_return],
             )
         ),
     )
@@ -135,7 +148,15 @@ async def test_webhook_to_audit_log_end_to_end(
     )
     test_app.state.flux_mcp = flux_mock
     test_app.state.nixos_mcp = AsyncMock()
-    test_app.state.git_mcp = AsyncMock()
+    git_mock = AsyncMock()
+    git_mock.direct_call_tool = AsyncMock(
+        side_effect=lambda tool, _args: (
+            {"merge_commit_sha": _MERGE_SHA}
+            if tool == "wait_for_gate"
+            else {"content": "ok"}
+        )
+    )
+    test_app.state.git_mcp = git_mock
 
     payload = {
         "version": "4",
@@ -177,8 +198,10 @@ async def test_webhook_to_audit_log_end_to_end(
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
 
-    written = (tmp_path / "runs" / f"{run_id}.json").read_text()
-    assert json.loads(written)["outcome"] == "success"
+    written = json.loads((tmp_path / "runs" / f"{run_id}.json").read_text())
+    assert written["outcome"] == "success"
+    assert written["merge_commit_sha"] == _MERGE_SHA
+    assert written["gate_status"] == "merged"
 
     index_lines = (tmp_path / "runs_index.jsonl").read_text().strip().splitlines()
     assert len(index_lines) == 1
