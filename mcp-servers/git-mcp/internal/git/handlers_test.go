@@ -62,6 +62,7 @@ type fakeGitClient struct {
 	checkRunFailed      bool
 	checkRunConclusion  string
 	checkRunErr         error
+	checkRunHeadSHA     string
 }
 
 var _ git.GitClient = &fakeGitClient{}
@@ -139,8 +140,8 @@ func (f *fakeGitClient) ResolveManifestPath(_ context.Context, _, _, _, _, _ str
 	return f.readFileOut, "", f.readFileErr
 }
 
-func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, string, error) {
-	return f.checkRunFailed, f.checkRunConclusion, f.checkRunErr
+func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, string, string, error) {
+	return f.checkRunFailed, f.checkRunConclusion, f.checkRunHeadSHA, f.checkRunErr
 }
 
 func (f *fakeGitClient) GetMergeableState(_ context.Context, _ int) (string, error) {
@@ -1243,22 +1244,14 @@ func TestWaitForGateHandler_Success(t *testing.T) {
 
 func TestWaitForGateHandler_DomainError(t *testing.T) {
 	fake := &fakeGitClient{err: fmt.Errorf("API unreachable")}
-	state := &fakeSessionState{}
-	tool := mcp.NewTool("wait_for_gate",
-		mcp.WithNumber("pr_number", mcp.Required()),
-		mcp.WithNumber("timeout_seconds"),
-	)
-	handler := git.HandleWaitForGate(fake, state, time.Millisecond, testMaxWaitSeconds)
 
-	result, err := callHandler(t, "wait_for_gate", tool, handler, map[string]any{
-		"pr_number":       float64(42),
-		"timeout_seconds": float64(30),
-	})
-	if err != nil {
-		t.Fatalf("CallTool error: %v", err)
-	}
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
+
 	if !result.IsError {
-		t.Error("expected IsError=true for domain error on poll")
+		t.Error("expected IsError=true when every poll errors")
+	}
+	if text := resultText(result); !strings.Contains(text, "gate wait ended after 1 seconds") {
+		t.Errorf("expected the wait to run to its deadline, got: %s", text)
 	}
 }
 
@@ -1511,7 +1504,7 @@ func TestWaitForGateHandler_ClosedWithoutMergeReportsFinalState(t *testing.T) {
 func TestWaitForGateHandler_PollFailureDisablesAutoMergeAndReportsState(t *testing.T) {
 	fake := &fakeGitClient{prState: "open", err: errors.New("502 bad gateway"), onDisable: func(f *fakeGitClient) { f.err = nil }}
 
-	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
 
 	if !result.IsError {
 		t.Fatal("expected IsError=true when a poll fails and the PR is not merged")
@@ -1529,7 +1522,7 @@ func TestWaitForGateHandler_PollFailureWithMergeInFinalReadSucceeds(t *testing.T
 		f.err, f.prState, f.prMerged, f.prMergeSHA = nil, "closed", true, "1a7e5ha"
 	}}
 
-	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
 
 	if result.IsError {
 		t.Fatalf("expected success for a merge seen in the final read, got: %s", resultText(result))
@@ -1542,7 +1535,7 @@ func TestWaitForGateHandler_PollFailureWithMergeInFinalReadSucceeds(t *testing.T
 func TestWaitForGateHandler_DisableAndFinalReadFailureNamesBothErrors(t *testing.T) {
 	fake := &fakeGitClient{prState: "open", err: errors.New("api down"), disableErr: errors.New("graphql unavailable")}
 
-	result := runWaitForGate(t, fake, testMaxWaitSeconds, testMaxWaitSeconds)
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
 
 	text := resultText(result)
 	if !result.IsError || !strings.Contains(text, "graphql unavailable") || !strings.Contains(text, "api down") || !strings.Contains(text, "PR #42 may still merge") {
@@ -2509,5 +2502,72 @@ func TestRealGitClient_RevertCommitFetchError(t *testing.T) {
 	}
 	if !strings.HasPrefix(err.Error(), "revert_commit: fetch:") {
 		t.Errorf("expected 'revert_commit: fetch:' prefix, got: %v", err)
+	}
+}
+
+func TestWaitForGate_reportsLastErrorAtDeadline(t *testing.T) {
+	const lastError = "get_pr_status: 502 Bad Gateway"
+	fake := &fakeGitClient{err: errors.New(lastError)}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
+
+	if !result.IsError {
+		t.Fatal("expected IsError=true when every poll errors")
+	}
+	text := resultText(result)
+	if !strings.Contains(text, lastError) || !strings.Contains(text, "gate wait ended after 1 seconds") {
+		t.Errorf("expected last error and deadline end in result, got: %s", text)
+	}
+	if fake.getPRCalls <= minPollsBeforeDeadline {
+		t.Errorf("expected polling to continue past errors, got %d status reads", fake.getPRCalls)
+	}
+}
+
+func TestWaitForGate_reportsCheckRunErrorAtDeadline(t *testing.T) {
+	const checkRunError = "get_check_run_status: list runs: 403 Resource not accessible by integration"
+	fake := &fakeGitClient{prState: "open", checkRunErr: errors.New(checkRunError)}
+
+	result := runWaitForGate(t, fake, testMaxWaitSeconds, 1)
+
+	if text := resultText(result); !result.IsError || !strings.Contains(text, "gate wait ended after 1 seconds ("+checkRunError+")") {
+		t.Errorf("expected the check run error named at the deadline, got: %s", text)
+	}
+}
+
+const minPollsBeforeDeadline = 2
+
+const (
+	transientFailures    = 1
+	openPollsBeforeMerge = 3
+)
+
+type flakyStatusClient struct {
+	*fakeGitClient
+	calls int
+}
+
+func (f *flakyStatusClient) GetPRStatus(_ context.Context, _ int) (string, bool, string, error) {
+	f.calls++
+	switch {
+	case f.calls <= transientFailures:
+		return "", false, "", errors.New("get_pr_status: GET .../pulls/42: 502 Bad Gateway")
+	case f.calls <= transientFailures+openPollsBeforeMerge:
+		return "open", false, "", nil
+	}
+	return "closed", true, "deadbeef", nil
+}
+
+func TestWaitForGate_survivesTransientStatusError(t *testing.T) {
+	client := &flakyStatusClient{fakeGitClient: &fakeGitClient{}}
+	handler := git.HandleWaitForGate(client, &fakeSessionState{}, time.Millisecond, testMaxWaitSeconds)
+	result, err := callHandler(t, "wait_for_gate", waitForGateTool(), handler, map[string]any{"pr_number": float64(42)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError {
+		t.Fatalf("a transient status error ended the wait: %s", resultText(result))
+	}
+	if structured, ok := result.StructuredContent.(map[string]any); !ok || structured["merge_commit_sha"] != "deadbeef" {
+		t.Errorf("structured result = %#v, want merge_commit_sha deadbeef", result.StructuredContent)
 	}
 }

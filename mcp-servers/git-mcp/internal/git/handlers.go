@@ -413,7 +413,7 @@ func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeab
 	if prState == "closed" {
 		return "", true, errors.New("PR closed without merge")
 	}
-	gateFailed, conclusion, checkErr := client.GetCheckRunStatus(ctx, prNumber)
+	gateFailed, conclusion, _, checkErr := client.GetCheckRunStatus(ctx, prNumber)
 	if checkErr == nil && gateFailed {
 		return "", true, fmt.Errorf("gate check failed (conclusion=%s)", conclusion)
 	}
@@ -428,7 +428,7 @@ func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeab
 	} else {
 		*unmergeableProbes = 0
 	}
-	return "", false, nil
+	return "", false, checkErr
 }
 
 func waitForMerge(ctx context.Context, client GitClient, prNumber int, start time.Time, timeoutSecs int, pollInterval time.Duration) (string, error) {
@@ -438,22 +438,24 @@ func waitForMerge(ctx context.Context, client GitClient, prNumber int, start tim
 	defer ticker.Stop()
 
 	unmergeableProbes := 0
+	var lastErr error
 
 	for {
 		select {
 		case <-waitCtx.Done():
-			return finaliseGateWait(ctx, client, prNumber, time.Since(start), nil)
+			return finaliseGateWait(ctx, client, prNumber, time.Since(start), lastErr)
 		case <-ticker.C:
 			mergeCommitSHA, done, err := pollGateOnce(waitCtx, client, prNumber, &unmergeableProbes)
-			if done && err == nil {
-				return mergeCommitSHA, nil
+			if waitCtx.Err() != nil {
+				continue
 			}
-			if err != nil {
-				if waitCtx.Err() != nil {
-					err = nil
-				}
+			switch {
+			case done && err == nil:
+				return mergeCommitSHA, nil
+			case done:
 				return finaliseGateWait(ctx, client, prNumber, time.Since(start), err)
 			}
+			lastErr = err
 		}
 	}
 }

@@ -43,7 +43,7 @@ type GitClient interface {
 	EnableAutoMerge(ctx context.Context, prNumber int) error
 	DisableAutoMerge(ctx context.Context, prNumber int) error
 	GetPRStatus(ctx context.Context, prNumber int) (state string, merged bool, mergeCommitSHA string, err error)
-	GetCheckRunStatus(ctx context.Context, prNumber int) (gateFailed bool, conclusion string, err error)
+	GetCheckRunStatus(ctx context.Context, prNumber int) (gateFailed bool, conclusion string, headSHA string, err error)
 	GetMergeableState(ctx context.Context, prNumber int) (string, error)
 	RevertCommit(ctx context.Context, cloneDir, mergeCommitSHA, baseBranch, revertBranch string) (revertSHA string, err error)
 	ClosePR(ctx context.Context, prNumber int) error
@@ -344,26 +344,27 @@ var gateFailedConclusions = map[string]bool{
 	"action_required": true,
 }
 
-func (c *realGitClient) GetCheckRunStatus(ctx context.Context, prNumber int) (bool, string, error) {
+func (c *realGitClient) GetCheckRunStatus(ctx context.Context, prNumber int) (bool, string, string, error) {
 	pr, _, err := c.gh.PullRequests.Get(ctx, c.owner, c.repo, prNumber)
 	if err != nil {
-		return false, "", fmt.Errorf("get_check_run_status: get pr: %w", err)
+		return false, "", "", fmt.Errorf("get_check_run_status: get pr: %w", err)
 	}
 	headSHA := pr.GetHead().GetSHA()
 	if headSHA == "" {
-		return false, "", nil
+		return false, "", "", nil
 	}
-	runs, _, err := c.gh.Checks.ListCheckRunsForRef(ctx, c.owner, c.repo, headSHA, &gogithub.ListCheckRunsOptions{})
+	opts := &gogithub.ListCheckRunsOptions{CheckName: gogithub.Ptr(remediationGateCheckName)}
+	runs, _, err := c.gh.Checks.ListCheckRunsForRef(ctx, c.owner, c.repo, headSHA, opts)
 	if err != nil {
-		return false, "", fmt.Errorf("get_check_run_status: list runs: %w", err)
+		return false, "", headSHA, fmt.Errorf("get_check_run_status: list runs: %w", err)
 	}
 	for _, run := range runs.CheckRuns {
 		if run.GetName() == remediationGateCheckName {
 			conclusion := run.GetConclusion()
-			return gateFailedConclusions[conclusion], conclusion, nil
+			return gateFailedConclusions[conclusion], conclusion, headSHA, nil
 		}
 	}
-	return false, "", nil
+	return false, "", headSHA, nil
 }
 
 func (c *realGitClient) GetMergeableState(ctx context.Context, prNumber int) (string, error) {

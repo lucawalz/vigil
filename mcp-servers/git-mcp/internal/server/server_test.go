@@ -32,8 +32,8 @@ func (f *fakeGitClient) ReadFile(_ context.Context, _, _, _ string) (string, err
 func (f *fakeGitClient) ResolveManifestPath(_ context.Context, _, _, _, _, _ string) (string, string, error) {
 	return "", "", nil
 }
-func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, string, error) {
-	return false, "", nil
+func (f *fakeGitClient) GetCheckRunStatus(_ context.Context, _ int) (bool, string, string, error) {
+	return false, "", "", nil
 }
 func (f *fakeGitClient) GetMergeableState(_ context.Context, _ int) (string, error) {
 	return "", nil

@@ -3,7 +3,9 @@ package git
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +26,8 @@ import (
 const (
 	testRepoURL      = "https://github.com/test/test.git"
 	testRevertBranch = "remediation/revert-test"
+	checkRunPageSize = 30
+	gateHeadSHA      = "abc123"
 )
 
 func newTestClient(token string) GitClient {
@@ -593,5 +597,63 @@ func TestReadFile_fetchErrorIsNotBranchNotFound(t *testing.T) {
 	}
 	if strings.HasPrefix(err.Error(), "branch not found") {
 		t.Errorf("error = %q, want a fetch error", err)
+	}
+}
+
+func checkRunServer(t *testing.T, runs []map[string]any) *realGitClient {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/test/test/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"number":7,"head":{"sha":"` + gateHeadSHA + `"}}`))
+	})
+	var srvURL string
+	mux.HandleFunc("GET /repos/test/test/commits/"+gateHeadSHA+"/check-runs", func(w http.ResponseWriter, r *http.Request) {
+		matching := runs
+		if name := r.URL.Query().Get("check_name"); name != "" {
+			matching = nil
+			for _, run := range runs {
+				if run["name"] == name {
+					matching = append(matching, run)
+				}
+			}
+		}
+		page := 1
+		_, _ = fmt.Sscan(r.URL.Query().Get("page"), &page)
+		lo := min((page-1)*checkRunPageSize, len(matching))
+		hi := min(lo+checkRunPageSize, len(matching))
+		if hi < len(matching) {
+			next := *r.URL
+			q := next.Query()
+			q.Set("page", fmt.Sprint(page+1))
+			next.RawQuery = q.Encode()
+			w.Header().Set("Link", fmt.Sprintf(`<%s%s>; rel="next"`, srvURL, next.RequestURI()))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": len(matching), "check_runs": matching[lo:hi]})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	srvURL = srv.URL
+	gh := gogithub.NewClient(srv.Client())
+	baseURL, err := url.Parse(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh.BaseURL = baseURL
+	return &realGitClient{gh: gh, owner: "test", repo: "test"}
+}
+
+func TestGetCheckRunStatus_findsGateBeyondFirstPage(t *testing.T) {
+	runs := make([]map[string]any, 0, checkRunPageSize+1)
+	for i := range checkRunPageSize {
+		runs = append(runs, map[string]any{"name": fmt.Sprintf("lint-%d", i), "conclusion": "success"})
+	}
+	runs = append(runs, map[string]any{"name": remediationGateCheckName, "conclusion": "failure"})
+
+	failed, conclusion, headSHA, err := checkRunServer(t, runs).GetCheckRunStatus(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetCheckRunStatus: %v", err)
+	}
+	if !failed || conclusion != "failure" || headSHA != gateHeadSHA {
+		t.Errorf("GetCheckRunStatus = (%v, %q, %q), want (true, \"failure\", %q)", failed, conclusion, headSHA, gateHeadSHA)
 	}
 }
