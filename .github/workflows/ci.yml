@@ -268,7 +268,7 @@ jobs:
       ROLLBACK_RETURN_TIMEOUT_S: 600
       ROLLBACK_BUILD_TIMEOUT_S: 900
       MCP_INIT_TIMEOUT_S: 60
-      MCP_CALL_TIMEOUT_S: 300
+      SMOKE_MCP_CALL_TIMEOUT_S: 300
       ALERTMANAGER_LOCAL_PORT: 19093
       IPERF_PORT: 5201
     steps:
@@ -400,7 +400,7 @@ jobs:
           echo "$INIT" | jq -e '.result.serverInfo.name == "nixos-mcp"'
           printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&"${MCP[1]}"
           printf '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"stage_generation","arguments":{"host":"vigil-worker-1","generation":%s}}}\n' "$GEN" >&"${MCP[1]}"
-          read -r -t "$MCP_CALL_TIMEOUT_S" RESULT <&"${MCP[0]}"
+          read -r -t "$SMOKE_MCP_CALL_TIMEOUT_S" RESULT <&"${MCP[0]}"
           kill "$MCP_PID"
           echo "$RESULT" | jq -e '.result.isError != true'
           S vigil-worker-1 test -f /etc/vigil-smoke-marker
