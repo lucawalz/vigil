@@ -81,14 +81,15 @@ func HandleCloneRepo(client GitClient, state SessionState, repoURL string, maxBy
 			return mcp.NewToolResultError("run_id: must match ^[a-zA-Z0-9_-]+$"), nil
 		}
 
-		if state.CloneDir() != "" {
-			return mcp.NewToolResultText(truncateOutput("already initialised", maxBytes)), nil
-		}
-
 		base, _ := args["base_branch"].(string)
 		if base == "" {
 			base = defaultBaseBranch
 		}
+
+		if previous := state.CloneDir(); previous != "" {
+			_ = os.RemoveAll(previous)
+		}
+		state.BeginSession("", "")
 
 		cloneDir, err := client.Clone(ctx, repoURL, base)
 		if err != nil {

@@ -119,3 +119,21 @@ func TestGitServer_sessionFields(t *testing.T) {
 		t.Errorf("cloneDir mismatch")
 	}
 }
+
+func TestGitServer_beginSessionResetsRunState(t *testing.T) {
+	s := &GitServer{
+		currentBranch: "remediation/run-a",
+		baseBranch:    "old",
+		lastCommitSHA: "deadbeef",
+		runID:         "a",
+		cloneDir:      "/tmp/a",
+		prNumber:      7,
+	}
+	s.BeginSession("b", "/tmp/b")
+	if s.runID != "b" || s.cloneDir != "/tmp/b" {
+		t.Errorf("session identity not set: %q %q", s.runID, s.cloneDir)
+	}
+	if s.currentBranch != "" || s.baseBranch != "" || s.lastCommitSHA != "" || s.prNumber != 0 {
+		t.Errorf("run state not reset: %+v", s)
+	}
+}

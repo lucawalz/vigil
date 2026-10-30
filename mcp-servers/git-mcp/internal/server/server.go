@@ -25,6 +25,10 @@ func (s *GitServer) BeginSession(runID, cloneDir string) {
 	defer s.mu.Unlock()
 	s.runID = runID
 	s.cloneDir = cloneDir
+	s.currentBranch = ""
+	s.baseBranch = ""
+	s.lastCommitSHA = ""
+	s.prNumber = 0
 }
 
 func (s *GitServer) Branch() (string, string) {
@@ -96,7 +100,7 @@ func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *s
 
 	mcpServer.AddTool(
 		mcp.NewTool("clone_repo",
-			mcp.WithDescription("Clone the repository and initialise the git-mcp session; idempotent"),
+			mcp.WithDescription("Clone the repository into a fresh session; any previous session and its clone are discarded"),
 			mcp.WithString("run_id",
 				mcp.Required(),
 				mcp.Description("Run identifier; must match ^[a-zA-Z0-9_-]+$"),

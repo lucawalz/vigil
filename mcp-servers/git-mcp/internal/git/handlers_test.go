@@ -188,6 +188,10 @@ func (s *fakeSessionState) BeginSession(runID, cloneDir string) {
 	defer s.mu.Unlock()
 	s.runID = runID
 	s.cloneDir = cloneDir
+	s.currentBranch = ""
+	s.baseBranch = ""
+	s.lastCommitSHA = ""
+	s.prNumber = 0
 }
 
 func (s *fakeSessionState) Branch() (string, string) {
@@ -277,27 +281,73 @@ func TestCloneRepoHandler_Success(t *testing.T) {
 	}
 }
 
-func TestCloneRepoHandler_Idempotent(t *testing.T) {
-	cloneDir := t.TempDir()
-	fake := &fakeGitClient{cloneDir: cloneDir}
-	state := preloadedState(cloneDir, "")
-	state.SetBaseBranch("main")
+func staleSession(t *testing.T) (*fakeSessionState, string) {
+	t.Helper()
+	oldDir := filepath.Join(t.TempDir(), "old-clone")
+	if err := os.MkdirAll(oldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDir, "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state := preloadedState(oldDir, "remediation/run-old")
+	state.SetBaseBranch("old")
+	state.SetPRNumber(7)
+	return state, oldDir
+}
+
+func TestCloneRepoHandler_startsFreshSession(t *testing.T) {
+	newDir := t.TempDir()
+	fake := &fakeGitClient{cloneDir: newDir}
+	state, oldDir := staleSession(t)
 	tool := mcp.NewTool("clone_repo",
 		mcp.WithString("run_id", mcp.Required()),
 		mcp.WithString("base_branch"),
 	)
 	handler := git.HandleCloneRepo(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
 
-	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "abc123"})
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "abc", "base_branch": "main"})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
 	}
 	if result.IsError {
-		t.Errorf("expected success on second call, got error: %v", result.Content)
+		t.Fatalf("expected success, got error: %v", result.Content)
 	}
-	text := result.Content[0].(mcp.TextContent).Text
-	if !strings.Contains(text, "already initialised") {
-		t.Errorf("expected 'already initialised', got: %s", text)
+	if text := result.Content[0].(mcp.TextContent).Text; !strings.Contains(text, "cloned: main") {
+		t.Errorf("expected 'cloned: main', got: %s", text)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Errorf("previous clone dir still present: %v", err)
+	}
+	if branch, _ := state.Branch(); branch != "" {
+		t.Errorf("branch not reset: %q", branch)
+	}
+	if state.CloneDir() != newDir || state.BaseBranch() != "main" || state.PRNumber() != 0 || state.RunID() != "abc" {
+		t.Errorf("unexpected session: dir=%q base=%q pr=%d run=%q", state.CloneDir(), state.BaseBranch(), state.PRNumber(), state.RunID())
+	}
+}
+
+func TestCloneRepoHandler_failureLeavesNoSession(t *testing.T) {
+	fake := &fakeGitClient{err: errors.New("clone failed")}
+	state, oldDir := staleSession(t)
+	tool := mcp.NewTool("clone_repo",
+		mcp.WithString("run_id", mcp.Required()),
+		mcp.WithString("base_branch"),
+	)
+	handler := git.HandleCloneRepo(fake, state, "https://x-access-token:tok@github.com/x/y.git", testMaxBytes)
+
+	result, err := callHandler(t, "clone_repo", tool, handler, map[string]any{"run_id": "abc"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true")
+	}
+	if state.CloneDir() != "" || state.PRNumber() != 0 {
+		t.Errorf("session survived failed clone: dir=%q pr=%d", state.CloneDir(), state.PRNumber())
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Errorf("previous clone dir still present: %v", err)
 	}
 }
 
