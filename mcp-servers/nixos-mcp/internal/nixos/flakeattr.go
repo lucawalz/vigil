@@ -11,6 +11,9 @@ const (
 	flakeAttrPath        = "/etc/vigil/flake-attr"
 	readFlakeAttrCommand = "cat " + flakeAttrPath
 	flakeCheckout        = "/opt/vigil/infra/nixos"
+
+	reconciledRevisionPath        = "/var/lib/vigil-reconciler/last-sha"
+	readReconciledRevisionCommand = "cat " + reconciledRevisionPath
 )
 
 var flakeAttrRE = regexp.MustCompile(`^[a-z0-9-]+$`)

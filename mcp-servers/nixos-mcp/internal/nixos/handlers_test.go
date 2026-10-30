@@ -36,6 +36,8 @@ type fakeNixOSClient struct {
 	dryBuildErr      error
 	reconcileOut     string
 	reconcileErr     error
+	revisionOut      string
+	revisionErr      error
 	lastStageGen     int
 	lastJournalUnit  string
 	lastJournalLines int
@@ -88,6 +90,10 @@ func (f *fakeNixOSClient) DryBuild(_ context.Context, _ string) (string, error) 
 
 func (f *fakeNixOSClient) TriggerReconcile(_ context.Context, _ string) (string, error) {
 	return f.reconcileOut, f.reconcileErr
+}
+
+func (f *fakeNixOSClient) GetReconciledRevision(_ context.Context, _ string) (string, error) {
+	return f.revisionOut, f.revisionErr
 }
 
 func newTestServer(t *testing.T, client nixos.NixOSClient) *mcptest.Server {
@@ -152,6 +158,10 @@ func newTestServer(t *testing.T, client nixos.NixOSClient) *mcptest.Server {
 		server.ServerTool{
 			Tool:    mcp.NewTool("trigger_reconcile", mcp.WithString("host", mcp.Required())),
 			Handler: nixos.HandleTriggerReconcile(client, 4096),
+		},
+		server.ServerTool{
+			Tool:    mcp.NewTool("get_reconciled_revision", mcp.WithString("host", mcp.Required())),
+			Handler: nixos.HandleGetReconciledRevision(client, 4096),
 		},
 	)
 	if err != nil {
@@ -583,5 +593,33 @@ func TestTriggerReconcileHandler_UnitNotFound(t *testing.T) {
 	}
 	if !strings.Contains(resultText(result), "TriggerReconcile") {
 		t.Errorf("expected 'TriggerReconcile' in response, got: %s", resultText(result))
+	}
+}
+
+func TestGetReconciledRevisionHandler_Success(t *testing.T) {
+	srv := newTestServer(t, &fakeNixOSClient{revisionOut: "abc1234"})
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_reconciled_revision", map[string]any{"host": "vigil-worker-1"})
+
+	if result.IsError {
+		t.Fatalf("expected success, got IsError=true: %s", resultText(result))
+	}
+	if resultText(result) != "abc1234" {
+		t.Errorf("revision = %q, want %q", resultText(result), "abc1234")
+	}
+}
+
+func TestGetReconciledRevisionHandler_MissingHost(t *testing.T) {
+	srv := newTestServer(t, &fakeNixOSClient{})
+	defer srv.Close()
+
+	result := callTool(t, srv, "get_reconciled_revision", map[string]any{})
+
+	if !result.IsError {
+		t.Error("expected IsError=true for missing host")
+	}
+	if !strings.Contains(resultText(result), "host") {
+		t.Errorf("expected 'host' in response, got: %s", resultText(result))
 	}
 }

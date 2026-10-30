@@ -9,7 +9,7 @@ import (
 const catTokenCount = 2
 
 var allowList = map[string]map[string]bool{
-	"cat":                     {flakeAttrPath: true},
+	"cat":                     {flakeAttrPath: true, reconciledRevisionPath: true},
 	"nix-env":                 {},
 	"nixos-rebuild":           {"test": true, "dry-activate": true},
 	"switch-to-configuration": {"test": true, "boot": true},

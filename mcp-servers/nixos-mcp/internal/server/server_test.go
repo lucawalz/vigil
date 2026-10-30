@@ -38,22 +38,27 @@ func (f *fakeNixOSClient) TriggerReconcile(_ context.Context, _ string) (string,
 	return "", nil
 }
 
+func (f *fakeNixOSClient) GetReconciledRevision(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func TestNixOSToolInventory(t *testing.T) {
 	cfg := &config.Config{MaxOutputBytesDescribe: 4096, MaxOutputBytesLogs: 4096}
 	s := NewServer(&fakeNixOSClient{}, cfg)
 	tools := s.ListTools()
 	want := map[string]bool{
-		"get_generations":    true,
-		"stage_generation":   true,
-		"commit_generation":  true,
-		"rebuild_test":       true,
-		"get_journal":        true,
-		"get_systemd_status": true,
-		"get_sysctl":         true,
-		"etcd_snapshot_save": true,
-		"get_nix_path":       true,
-		"dry_build":          true,
-		"trigger_reconcile":  true,
+		"get_generations":         true,
+		"stage_generation":        true,
+		"commit_generation":       true,
+		"rebuild_test":            true,
+		"get_journal":             true,
+		"get_systemd_status":      true,
+		"get_sysctl":              true,
+		"etcd_snapshot_save":      true,
+		"get_nix_path":            true,
+		"dry_build":               true,
+		"trigger_reconcile":       true,
+		"get_reconciled_revision": true,
 	}
 	if len(tools) != len(want) {
 		t.Errorf("expected %d registered tools, got %d", len(want), len(tools))

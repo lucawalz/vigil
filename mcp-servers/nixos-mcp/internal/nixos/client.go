@@ -64,6 +64,7 @@ type NixOSClient interface {
 	GetNixPath(ctx context.Context, hostname string) (string, error)
 	DryBuild(ctx context.Context, host string) (string, error)
 	TriggerReconcile(ctx context.Context, host string) (string, error)
+	GetReconciledRevision(ctx context.Context, host string) (string, error)
 }
 
 type realNixOSClient struct {
@@ -301,4 +302,12 @@ func (c *realNixOSClient) TriggerReconcile(ctx context.Context, host string) (st
 		return "", fmt.Errorf("trigger_reconcile: %w", err)
 	}
 	return fmt.Sprintf("issued: %s\nresponse: %s", cmd, out), nil
+}
+
+func (c *realNixOSClient) GetReconciledRevision(ctx context.Context, host string) (string, error) {
+	out, err := c.runCommand(ctx, host, readReconciledRevisionCommand)
+	if err != nil {
+		return "", fmt.Errorf("get_reconciled_revision: %w", err)
+	}
+	return strings.TrimSpace(out), nil
 }

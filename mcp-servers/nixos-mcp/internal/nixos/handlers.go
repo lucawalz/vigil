@@ -19,6 +19,8 @@ const (
 	hintGetNixPath       = "verify the hostname matches a NixOS configuration in the flake"
 	hintDryBuild         = "check get_nix_path to verify the configuration path, then fix Nix syntax errors"
 	hintTriggerReconcile = "verify the host is reachable and the NixOS agent service is running"
+
+	hintGetReconciledRevision = "verify the host is reachable and the auto-reconciler has applied a revision"
 )
 
 func HandleGetGenerations(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
@@ -184,6 +186,20 @@ func HandleDryBuild(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
 		out, err := client.DryBuild(ctx, host)
 		if err != nil {
 			return toolError("DryBuild", err.Error(), hintDryBuild), nil
+		}
+		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
+	}
+}
+
+func HandleGetReconciledRevision(client NixOSClient, maxBytes int) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		host, ok := req.GetArguments()["host"].(string)
+		if !ok || host == "" {
+			return mcp.NewToolResultError("host: missing or wrong type"), nil
+		}
+		out, err := client.GetReconciledRevision(ctx, host)
+		if err != nil {
+			return toolError("GetReconciledRevision", err.Error(), hintGetReconciledRevision), nil
 		}
 		return mcp.NewToolResultText(truncateOutput(out, maxBytes)), nil
 	}

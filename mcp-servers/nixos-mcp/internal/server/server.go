@@ -122,5 +122,14 @@ func NewServer(client nixos.NixOSClient, cfg *config.Config) *server.MCPServer {
 		nixos.HandleTriggerReconcile(client, cfg.MaxOutputBytesDescribe),
 	)
 
+	s.AddTool(
+		mcp.NewTool("get_reconciled_revision",
+			mcp.WithDescription("Read the git revision the vigil auto-reconciler last applied on a host"),
+			mcp.WithString("host", mcp.Required(), mcp.Description("Target hostname or IP")),
+			mcp.WithOutputSchema[TextResult](),
+		),
+		nixos.HandleGetReconciledRevision(client, cfg.MaxOutputBytesDescribe),
+	)
+
 	return s
 }

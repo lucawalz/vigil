@@ -45,11 +45,20 @@ func TestRebuildCommandTrimsOnlyTrailingWhitespace(t *testing.T) {
 	}
 }
 
-func TestReadFlakeAttrCommandIsTheOnlyAllowedCat(t *testing.T) {
-	if err := validateCommand(readFlakeAttrCommand); err != nil {
-		t.Fatalf("flake-attr read rejected: %v", err)
+func TestCatAllowsOnlyTheFixedVigilFiles(t *testing.T) {
+	for _, cmd := range []string{readFlakeAttrCommand, readReconciledRevisionCommand} {
+		if err := validateCommand(cmd); err != nil {
+			t.Fatalf("fixed read %q rejected: %v", cmd, err)
+		}
 	}
-	for _, cmd := range []string{"cat /etc/shadow", "cat", "sudo cat /root/.ssh/id_ed25519", "cat /etc/vigil/flake-attr /etc/shadow"} {
+	for _, cmd := range []string{
+		"cat /etc/shadow",
+		"cat /var/lib/vigil-reconciler/other",
+		"cat",
+		"sudo cat /root/.ssh/id_ed25519",
+		"cat /etc/vigil/flake-attr /etc/shadow",
+		"cat /var/lib/vigil-reconciler/last-sha /etc/shadow",
+	} {
 		if err := validateCommand(cmd); err == nil {
 			t.Errorf("expected rejection for %q", cmd)
 		}
@@ -57,8 +66,9 @@ func TestReadFlakeAttrCommandIsTheOnlyAllowedCat(t *testing.T) {
 }
 
 type scriptedRunner struct {
-	attr  string
-	calls []string
+	attr     string
+	revision string
+	calls    []string
 }
 
 func (s *scriptedRunner) run(_ context.Context, _, cmd string) (string, error) {
@@ -66,7 +76,21 @@ func (s *scriptedRunner) run(_ context.Context, _, cmd string) (string, error) {
 	if cmd == readFlakeAttrCommand {
 		return s.attr, nil
 	}
+	if cmd == readReconciledRevisionCommand {
+		return s.revision, nil
+	}
 	return "", nil
+}
+
+func TestGetReconciledRevisionReadsTheFixedPath(t *testing.T) {
+	runner := &scriptedRunner{revision: "abc1234\n"}
+	got, err := (&realNixOSClient{runCommand: runner.run}).GetReconciledRevision(context.Background(), "vigil-worker-1")
+	if err != nil || got != "abc1234" {
+		t.Fatalf("GetReconciledRevision = %q, %v; want %q", got, err, "abc1234")
+	}
+	if !reflect.DeepEqual(runner.calls, []string{readReconciledRevisionCommand}) {
+		t.Fatalf("calls = %q; want only %q", runner.calls, readReconciledRevisionCommand)
+	}
 }
 
 func TestRebuildPathsReadTheFlakeAttrBeforeRebuilding(t *testing.T) {
