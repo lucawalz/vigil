@@ -17,6 +17,7 @@ type GitServer struct {
 	lastCommitSHA string
 	runID         string
 	cloneDir      string
+	prNumber      int
 }
 
 func (s *GitServer) BeginSession(runID, cloneDir string) {
@@ -68,10 +69,21 @@ func (s *GitServer) CloneDir() string {
 	return s.cloneDir
 }
 
+func (s *GitServer) PRNumber() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.prNumber
+}
+
+func (s *GitServer) SetPRNumber(prNumber int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.prNumber = prNumber
+}
+
 const (
-	serverVersion             = "1.1.0"
-	gateWaitEndDescription    = "when the wait ends without a merge, auto-merge is disabled and the final PR state is reported"
-	timeoutSecondsDescription = "Wait limit in seconds; defaults to and is capped by the configured maximum"
+	serverVersion          = "1.1.0"
+	gateWaitEndDescription = "when the wait ends without a merge, the final PR state is reported"
 )
 
 func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *server.MCPServer {
@@ -150,7 +162,7 @@ func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *s
 
 	mcpServer.AddTool(
 		mcp.NewTool("create_pr",
-			mcp.WithDescription("Open a pull request from the remediation branch into the cloned base branch"),
+			mcp.WithDescription("Open a pull request from the remediation branch into the cloned base branch; wait_for_gate merges it once the gate passes"),
 			mcp.WithString("title",
 				mcp.Required(),
 				mcp.Description("Pull request title"),
@@ -158,9 +170,6 @@ func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *s
 			mcp.WithString("body",
 				mcp.Required(),
 				mcp.Description("Pull request description"),
-			),
-			mcp.WithBoolean("auto_merge",
-				mcp.Description("enable auto-merge (default true); set false to require human review before merge"),
 			),
 			mcp.WithOutputSchema[git.PRNumberResult](),
 		),
@@ -181,13 +190,10 @@ func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *s
 
 	mcpServer.AddTool(
 		mcp.NewTool("wait_for_gate",
-			mcp.WithDescription("Poll until the remediation PR is merged or fails the CI gate; "+gateWaitEndDescription),
+			mcp.WithDescription("Poll the CI gate of the remediation PR and merge the PR at the checked head once the gate passes; "+gateWaitEndDescription),
 			mcp.WithNumber("pr_number",
 				mcp.Required(),
 				mcp.Description("Pull request number"),
-			),
-			mcp.WithNumber("timeout_seconds",
-				mcp.Description(timeoutSecondsDescription),
 			),
 			mcp.WithOutputSchema[git.GatePassedResult](),
 		),
@@ -196,13 +202,10 @@ func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *s
 
 	mcpServer.AddTool(
 		mcp.NewTool("revert_commit",
-			mcp.WithDescription("Revert a merged remediation commit on a new branch, open a pull request into the session's base branch with auto-merge, wait for the CI gate, and return the revert SHA, the pull request number and the merge commit SHA on the base branch; "+gateWaitEndDescription),
+			mcp.WithDescription("Revert a merged remediation commit on a new branch, open a pull request into the session's base branch, wait for the CI gate, and return the revert SHA, the pull request number and the merge commit SHA on the base branch; "+gateWaitEndDescription),
 			mcp.WithString("merge_commit_sha",
 				mcp.Required(),
 				mcp.Description("SHA of the merge commit to revert"),
-			),
-			mcp.WithNumber("timeout_seconds",
-				mcp.Description(timeoutSecondsDescription),
 			),
 			mcp.WithOutputSchema[git.RevertResult](),
 		),

@@ -21,8 +21,7 @@ func (f *fakeGitClient) CreatePR(_ context.Context, _, _, _, _ string) (int, err
 func (f *fakeGitClient) GetPRStatus(_ context.Context, _ int) (string, bool, string, error) {
 	return "", false, "", nil
 }
-func (f *fakeGitClient) EnableAutoMerge(_ context.Context, _ int) error  { return nil }
-func (f *fakeGitClient) DisableAutoMerge(_ context.Context, _ int) error { return nil }
+func (f *fakeGitClient) MergePR(_ context.Context, _ int, _ string) (string, error) { return "", nil }
 func (f *fakeGitClient) RevertCommit(_ context.Context, _, _, _, _ string) (string, error) {
 	return "", nil
 }
@@ -75,6 +74,27 @@ func TestServerRegisters13Tools(t *testing.T) {
 	for name := range want {
 		if _, ok := tools[name]; !ok {
 			t.Errorf("missing tool: %s", name)
+		}
+	}
+}
+
+func TestServer_gateToolsTakeOnlyTheirTarget(t *testing.T) {
+	cfg := &config.Config{GitHubToken: "tok", RepoURL: "https://github.com/lucawalz/vigil.git", MaxOutputBytes: 4096}
+	tools := NewServer(&fakeGitClient{}, cfg, config.DefaultWaitForGateTimeoutSeconds).ListTools()
+	want := map[string][]string{
+		"create_pr":     {"title", "body"},
+		"wait_for_gate": {"pr_number"},
+		"revert_commit": {"merge_commit_sha"},
+	}
+	for name, params := range want {
+		props := tools[name].Tool.InputSchema.Properties
+		if len(props) != len(params) {
+			t.Errorf("%s parameters = %v, want only %v", name, props, params)
+		}
+		for _, p := range params {
+			if _, ok := props[p]; !ok {
+				t.Errorf("%s is missing parameter %s", name, p)
+			}
 		}
 	}
 }

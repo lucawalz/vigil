@@ -17,6 +17,10 @@ func toolError(what, why, hint string) *mcp.CallToolResult {
 
 var ErrProtectedBranch = errors.New("branch is protected")
 
+var ErrHeadMoved = errors.New("head moved since the gate ran")
+
+var errNoGatedHead = errors.New("no gated head SHA to pin the merge to")
+
 func protectedBranchError(what, branch string) *mcp.CallToolResult {
 	return toolError(what, fmt.Sprintf("%s: %s", ErrProtectedBranch.Error(), branch), hintProtectedBranch)
 }

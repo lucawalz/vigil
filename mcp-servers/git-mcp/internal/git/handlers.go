@@ -27,6 +27,8 @@ const (
 	unmergeableGateGraceProbes = 4
 	mergeableStateDirty        = "dirty"
 	gateWaitFinaliseTimeout    = 30 * time.Second
+	mergeCallTimeout           = 10 * time.Second
+	gateConclusionSuccess      = "success"
 )
 
 const DefaultPollInterval = pollIntervalSeconds * time.Second
@@ -38,7 +40,6 @@ const (
 	hintCommitFiles      = "ensure write_manifest was called with valid content before committing"
 	hintPushBranch       = "verify the auth token has push permissions to the remote"
 	hintCreatePR         = "ensure push_branch succeeded and the branch exists on the remote"
-	hintEnableAutoMerge  = "auto-merge may require branch protection rules; verify repo settings"
 	hintGetPRStatus      = "verify the PR number was returned by create_pull_request"
 	hintWaitForGate      = "check PR status with get_pr_status; the PR may have been closed or a CI check failed"
 	hintClosePR          = "verify the PR number is correct; it may already be closed"
@@ -54,6 +55,8 @@ var runIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 var commitSHAPattern = regexp.MustCompile(`^[a-f0-9]{7,40}$`)
 
+var errMergeSHAMissing = errors.New("merge accepted without a merge commit sha; reading it from the pull request")
+
 type SessionState interface {
 	BeginSession(runID, cloneDir string)
 	Branch() (branch string, cloneDir string)
@@ -63,6 +66,8 @@ type SessionState interface {
 	SetLastCommit(sha string)
 	RunID() string
 	CloneDir() string
+	PRNumber() int
+	SetPRNumber(prNumber int)
 }
 
 func HandleCloneRepo(client GitClient, state SessionState, repoURL string, maxBytes int) server.ToolHandlerFunc {
@@ -328,11 +333,10 @@ func HandlePushBranch(client GitClient, state SessionState, protected ProtectedB
 }
 
 type createPRParams struct {
-	title     string
-	body      string
-	base      string
-	branch    string
-	autoMerge bool
+	title  string
+	body   string
+	base   string
+	branch string
 }
 
 func parseCreatePRParams(args map[string]any, state SessionState) (createPRParams, *mcp.CallToolResult) {
@@ -352,14 +356,7 @@ func parseCreatePRParams(args map[string]any, state SessionState) (createPRParam
 	if branch == "" {
 		return createPRParams{}, mcp.NewToolResultError("HandleCreatePR: session not initialised; call create_branch first")
 	}
-
-	autoMerge := true
-	if raw, present := args["auto_merge"]; present {
-		if b, ok := raw.(bool); ok {
-			autoMerge = b
-		}
-	}
-	return createPRParams{title: title, body: body, base: base, branch: branch, autoMerge: autoMerge}, nil
+	return createPRParams{title: title, body: body, base: base, branch: branch}, nil
 }
 
 func HandleCreatePR(client GitClient, state SessionState) server.ToolHandlerFunc {
@@ -368,17 +365,11 @@ func HandleCreatePR(client GitClient, state SessionState) server.ToolHandlerFunc
 		if errResult != nil {
 			return errResult, nil
 		}
-		title, body, base, branch, autoMerge := params.title, params.body, params.base, params.branch, params.autoMerge
-
-		prNumber, err := client.CreatePR(ctx, title, branch, base, body)
+		prNumber, err := client.CreatePR(ctx, params.title, params.branch, params.base, params.body)
 		if err != nil {
 			return toolError("HandleCreatePR", err.Error(), hintCreatePR), nil
 		}
-		if autoMerge {
-			if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
-				return toolError("HandleCreatePR", "enable auto-merge: "+err.Error(), hintEnableAutoMerge), nil
-			}
-		}
+		state.SetPRNumber(prNumber)
 		return mcp.NewToolResultStructured(PRNumberResult{PRNumber: prNumber}, fmt.Sprintf("pr created: #%d", prNumber)), nil
 	}
 }
@@ -413,9 +404,12 @@ func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeab
 	if prState == "closed" {
 		return "", true, errors.New("PR closed without merge")
 	}
-	gateFailed, conclusion, _, checkErr := client.GetCheckRunStatus(ctx, prNumber)
+	gateFailed, conclusion, headSHA, checkErr := client.GetCheckRunStatus(ctx, prNumber)
 	if checkErr == nil && gateFailed {
 		return "", true, fmt.Errorf("gate check failed (conclusion=%s)", conclusion)
+	}
+	if checkErr == nil && conclusion == gateConclusionSuccess {
+		return mergeGatedHead(ctx, client, prNumber, headSHA)
 	}
 
 	mergeableState, msErr := client.GetMergeableState(ctx, prNumber)
@@ -428,11 +422,30 @@ func pollGateOnce(ctx context.Context, client GitClient, prNumber int, unmergeab
 	} else {
 		*unmergeableProbes = 0
 	}
+	if checkErr == nil && conclusion != "" {
+		return "", false, fmt.Errorf("gate check concluded %s; only success merges", conclusion)
+	}
 	return "", false, checkErr
 }
 
-func waitForMerge(ctx context.Context, client GitClient, prNumber int, start time.Time, timeoutSecs int, pollInterval time.Duration) (string, error) {
-	waitCtx, cancel := context.WithDeadline(ctx, start.Add(time.Duration(timeoutSecs)*time.Second))
+// The merge runs detached from the wait deadline so an accepted merge is never abandoned mid-request.
+func mergeGatedHead(ctx context.Context, client GitClient, prNumber int, headSHA string) (string, bool, error) {
+	mergeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mergeCallTimeout)
+	defer cancel()
+	mergeCommitSHA, err := client.MergePR(mergeCtx, prNumber, headSHA)
+	switch {
+	case err == nil && mergeCommitSHA != "":
+		return mergeCommitSHA, true, nil
+	case err == nil:
+		return "", false, errMergeSHAMissing
+	case errors.Is(err, ErrHeadMoved):
+		return "", true, err
+	}
+	return "", false, err
+}
+
+func waitForMerge(ctx context.Context, client GitClient, prNumber int, start time.Time, maxWaitSeconds int, pollInterval time.Duration) (string, error) {
+	waitCtx, cancel := context.WithDeadline(ctx, start.Add(time.Duration(maxWaitSeconds)*time.Second))
 	defer cancel()
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
@@ -446,16 +459,14 @@ func waitForMerge(ctx context.Context, client GitClient, prNumber int, start tim
 			return finaliseGateWait(ctx, client, prNumber, time.Since(start), lastErr)
 		case <-ticker.C:
 			mergeCommitSHA, done, err := pollGateOnce(waitCtx, client, prNumber, &unmergeableProbes)
-			if waitCtx.Err() != nil {
-				continue
-			}
 			switch {
 			case done && err == nil:
 				return mergeCommitSHA, nil
 			case done:
 				return finaliseGateWait(ctx, client, prNumber, time.Since(start), err)
+			case waitCtx.Err() == nil:
+				lastErr = err
 			}
-			lastErr = err
 		}
 	}
 }
@@ -468,24 +479,14 @@ func finaliseGateWait(ctx context.Context, client GitClient, prNumber int, waite
 	if cause != nil {
 		ended += fmt.Sprintf(" (%v)", cause)
 	}
-	disableErr := client.DisableAutoMerge(ctx, prNumber)
 	prState, merged, mergeCommitSHA, statusErr := client.GetPRStatus(ctx, prNumber)
 	switch {
-	case statusErr == nil && merged:
-		return mergeCommitSHA, nil
-	case disableErr != nil:
-		return "", fmt.Errorf("%s; auto-merge could not be disabled (%w); PR #%d may still merge", ended, errors.Join(disableErr, statusErr), prNumber)
 	case statusErr != nil:
-		return "", fmt.Errorf("%s; auto-merge disabled; final state of PR #%d could not be read (%w)", ended, prNumber, statusErr)
+		return "", fmt.Errorf("%s; final state of PR #%d could not be read (%w)", ended, prNumber, statusErr)
+	case merged:
+		return mergeCommitSHA, nil
 	}
-	return "", fmt.Errorf("%s; auto-merge disabled; PR #%d %s and not merged", ended, prNumber, prState)
-}
-
-func gateTimeoutSeconds(args map[string]any, maxWaitSeconds int) int {
-	if ts, ok := args["timeout_seconds"].(float64); ok && ts > 0 {
-		return min(int(ts), maxWaitSeconds)
-	}
-	return maxWaitSeconds
+	return "", fmt.Errorf("%s; PR #%d %s and not merged", ended, prNumber, prState)
 }
 
 func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.Duration, maxWaitSeconds int) server.ToolHandlerFunc {
@@ -496,8 +497,15 @@ func HandleWaitForGate(client GitClient, state SessionState, pollInterval time.D
 		if !ok {
 			return mcp.NewToolResultError("pr_number: missing or wrong type"), nil
 		}
+		sessionPR := state.PRNumber()
+		if sessionPR == 0 {
+			return mcp.NewToolResultError("HandleWaitForGate: no pull request opened in this session; call create_pr first"), nil
+		}
+		if int(prNumF) != sessionPR {
+			return mcp.NewToolResultError(fmt.Sprintf("pr_number: must be #%d, the pull request opened in this session", sessionPR)), nil
+		}
 
-		mergeCommitSHA, err := waitForMerge(ctx, client, int(prNumF), start, gateTimeoutSeconds(args, maxWaitSeconds), pollInterval)
+		mergeCommitSHA, err := waitForMerge(ctx, client, sessionPR, start, maxWaitSeconds, pollInterval)
 		if err != nil {
 			return toolError("HandleWaitForGate", err.Error(), hintWaitForGate), nil
 		}
@@ -650,10 +658,7 @@ func HandleRevertCommit(client GitClient, state SessionState, protected Protecte
 		if err != nil {
 			return toolError("HandleRevertCommit", err.Error(), hintRevertCommit), nil
 		}
-		if err := client.EnableAutoMerge(ctx, prNumber); err != nil {
-			return toolError("HandleRevertCommit", fmt.Sprintf("revert PR #%d: enable auto-merge: %s", prNumber, err), hintEnableAutoMerge), nil
-		}
-		landedSHA, err := waitForMerge(ctx, client, prNumber, start, gateTimeoutSeconds(args, maxWaitSeconds), pollInterval)
+		landedSHA, err := waitForMerge(ctx, client, prNumber, start, maxWaitSeconds, pollInterval)
 		if err != nil {
 			return toolError("HandleRevertCommit", fmt.Sprintf("revert PR #%d: %s", prNumber, err), hintWaitForGate), nil
 		}

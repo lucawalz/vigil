@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -164,6 +165,8 @@ func (s *cloneOnlyState) SetBaseBranch(string)            {}
 func (s *cloneOnlyState) SetLastCommit(string)            {}
 func (s *cloneOnlyState) RunID() string                   { return "" }
 func (s *cloneOnlyState) CloneDir() string                { return s.dir }
+func (s *cloneOnlyState) PRNumber() int                   { return 0 }
+func (s *cloneOnlyState) SetPRNumber(int)                 {}
 
 func mustRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
@@ -353,15 +356,15 @@ func TestCreateBranch_FetchFailureReturnsClearError(t *testing.T) {
 	}
 }
 
-func newGitHubStubClient(t *testing.T, pullRequestJSON string, graphQLCalls *int) *realGitClient {
+func mergeServer(t *testing.T, status int, body string, gotBody *map[string]any, calls *int) *realGitClient {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /repos/test/test/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(pullRequestJSON))
-	})
-	mux.HandleFunc("POST /graphql", func(w http.ResponseWriter, _ *http.Request) {
-		*graphQLCalls++
-		_, _ = w.Write([]byte(`{"data":{}}`))
+	mux.HandleFunc("PUT /repos/test/test/pulls/7/merge", func(w http.ResponseWriter, r *http.Request) {
+		*calls++
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, gotBody)
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -374,28 +377,40 @@ func newGitHubStubClient(t *testing.T, pullRequestJSON string, graphQLCalls *int
 	return &realGitClient{gh: gh, owner: "test", repo: "test"}
 }
 
-func TestDisableAutoMerge_skipsMutationWithoutAutoMergeRequest(t *testing.T) {
-	graphQLCalls := 0
-	client := newGitHubStubClient(t, `{"number":7,"node_id":"PR_7"}`, &graphQLCalls)
-
-	if err := client.DisableAutoMerge(context.Background(), 7); err != nil {
-		t.Fatalf("DisableAutoMerge: %v", err)
+func TestMergePR_sendsGatedHeadSHA(t *testing.T) {
+	const head = "0123456789abcdef0123456789abcdef01234567"
+	cases := []struct {
+		name       string
+		status     int
+		body       string
+		wantHeadMv bool
+		wantErr    bool
+		wantSHA    string
+	}{
+		{"merged", http.StatusOK, `{"sha":"feedface","merged":true,"message":"Pull Request successfully merged"}`, false, false, "feedface"},
+		{"head moved", http.StatusConflict, `{"message":"Head branch was modified. Review and try the merge again."}`, true, true, ""},
+		{"not mergeable", http.StatusMethodNotAllowed, `{"message":"Required status check \"remediation-gate\" is expected."}`, false, true, ""},
 	}
-	if graphQLCalls != 0 {
-		t.Errorf("expected no mutation for a PR without auto-merge, got %d calls", graphQLCalls)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got map[string]any
+			calls := 0
+			sha, err := mergeServer(t, tc.status, tc.body, &got, &calls).MergePR(context.Background(), 7, head)
+			if got["sha"] != head || got["merge_method"] != "squash" {
+				t.Errorf("request body = %v, want sha %s and squash", got, head)
+			}
+			if errors.Is(err, ErrHeadMoved) != tc.wantHeadMv || (err != nil) != tc.wantErr || sha != tc.wantSHA {
+				t.Errorf("MergePR = (%q, %v), want sha %q, error %v, head moved %v", sha, err, tc.wantSHA, tc.wantErr, tc.wantHeadMv)
+			}
+		})
 	}
-}
-
-func TestDisableAutoMerge_postsMutationForAutoMergeRequest(t *testing.T) {
-	graphQLCalls := 0
-	client := newGitHubStubClient(t, `{"number":7,"node_id":"PR_7","auto_merge":{"merge_method":"squash"}}`, &graphQLCalls)
-
-	if err := client.DisableAutoMerge(context.Background(), 7); err != nil {
-		t.Fatalf("DisableAutoMerge: %v", err)
-	}
-	if graphQLCalls != 1 {
-		t.Errorf("expected one mutation for a PR with auto-merge, got %d calls", graphQLCalls)
-	}
+	t.Run("empty head", func(t *testing.T) {
+		var got map[string]any
+		calls := 0
+		if _, err := mergeServer(t, http.StatusOK, `{}`, &got, &calls).MergePR(context.Background(), 7, ""); err == nil || calls != 0 {
+			t.Errorf("MergePR with an empty head = %v after %d requests, want an error and no request", err, calls)
+		}
+	})
 }
 
 func TestTruncateOutput_noTruncation(t *testing.T) {
