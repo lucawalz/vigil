@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from common import trace
@@ -38,6 +39,10 @@ from .models import (
 )
 
 DIAGNOSIS_REQUEST_LIMIT: int = int(os.environ.get("DIAGNOSIS_REQUEST_LIMIT", "25"))
+
+_PRIOR_TRIES_HEADER = (
+    "Earlier tries for this incident, oldest first, as recorded by the orchestrator:"
+)
 
 if TYPE_CHECKING:
     from orchestrator.models import FaultEvent
@@ -253,7 +258,7 @@ def lookup_os_manifest_path(hostname: str) -> str:
 def _build_user_message(
     fault: "FaultEvent",
     context: DiagnosisContext,
-    retry_hint: str | None = None,
+    prior_tries: Sequence[str] = (),
 ) -> str:
     admission_lines: list[str] = []
     for ao in context.live_admission_objects:
@@ -268,9 +273,13 @@ def _build_user_message(
         if admission_lines
         else "  live_admission_objects: []"
     )
-    retry_block = f"Retry signal: {retry_hint}\n\n" if retry_hint else ""
+    prior_block = (
+        _PRIOR_TRIES_HEADER + "".join(f"\n- {entry}" for entry in prior_tries) + "\n\n"
+        if prior_tries
+        else ""
+    )
     return (
-        f"{retry_block}"
+        f"{prior_block}"
         f"Diagnose fault.\n\n"
         f"Fault: {fault.model_dump_json()}\n\n"
         f"DiagnosisContext:\n"
@@ -309,7 +318,7 @@ async def run_diagnosis(
     fault: FaultEvent,
     context: DiagnosisContext,
     model: OpenAIChatModel | None = None,
-    retry_hint: str | None = None,
+    prior_tries: Sequence[str] = (),
     breaker: Breaker | None = None,
 ) -> tuple[DiagnosisReport, RunUsage, list[ModelMessage]]:
     kubectl_readonly = _build_readonly_toolset(
@@ -336,7 +345,7 @@ async def run_diagnosis(
         )
         for ts in repeat_limited
     ]
-    user_message = _build_user_message(fault, context, retry_hint)
+    user_message = _build_user_message(fault, context, prior_tries)
     try:
         async with diagnosis_agent.iter(
             user_message,

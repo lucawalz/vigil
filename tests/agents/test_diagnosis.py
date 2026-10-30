@@ -2278,22 +2278,26 @@ def _canned_fault_for_msg():
     )
 
 
-def test_build_user_message_includes_retry_hint_prefix() -> None:
-    hint = (
-        "Attempt 2 of 3: prior recommended_action=git_commit_k8s. "
-        "Cluster still degraded after settle."
-    )
-    msg = _build_user_message(_canned_fault_for_msg(), _canned_context_for_msg(), hint)
-    assert msg.startswith("Retry signal:")
-    assert hint in msg
-    assert "Diagnose fault." in msg
+_PRIOR_TRIES_HEADER = (
+    "Earlier tries for this incident, oldest first, as recorded by the orchestrator:"
+)
+_FIRST_TRY = "try 1: action=git_commit_k8s; gate=merged; rollback=succeeded"
+_SECOND_TRY = "try 2: action=git_commit_k8s; gate=closed; rollback=not run"
 
 
-def test_build_user_message_without_hint_has_no_retry_block() -> None:
+def test_build_user_message_lists_prior_tries_oldest_first() -> None:
     msg = _build_user_message(
-        _canned_fault_for_msg(), _canned_context_for_msg(), retry_hint=None
+        _canned_fault_for_msg(),
+        _canned_context_for_msg(),
+        prior_tries=(_FIRST_TRY, _SECOND_TRY),
     )
-    assert "Retry signal:" not in msg
+    assert msg.startswith(f"{_PRIOR_TRIES_HEADER}\n- {_FIRST_TRY}\n- {_SECOND_TRY}\n")
+    assert msg.index(_SECOND_TRY) < msg.index("Diagnose fault.")
+
+
+def test_build_user_message_without_prior_tries_starts_with_the_fault_summary() -> None:
+    msg = _build_user_message(_canned_fault_for_msg(), _canned_context_for_msg())
+    assert _PRIOR_TRIES_HEADER not in msg
     assert msg.startswith("Diagnose fault.")
 
 

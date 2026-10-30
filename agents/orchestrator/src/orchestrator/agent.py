@@ -650,7 +650,7 @@ async def _run_diagnosis_attempt(
                 event,
                 diagnosis_context,
                 model=model,
-                retry_hint=None,
+                prior_tries=(),
                 breaker=breaker,
             )
     except asyncio.TimeoutError:
