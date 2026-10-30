@@ -22,6 +22,7 @@ from common.constants import (
     GIT_MCP_GATE_FINALISER_S,
     GIT_MCP_GATE_POLL_INTERVAL_S,
     GIT_MCP_READ_TIMEOUT_S,
+    LLM_MAX_RETRIES,
     LLM_REQUEST_TIMEOUT_S,
     MCP_CALL_TIMEOUT_S,
 )
@@ -154,19 +155,48 @@ def test_gate_wait_budget_check_passes_with_defaults() -> None:
     main_mod._check_gate_wait_budget()
 
 
-def test_gate_wait_budget_check_reserves_one_llm_request_before_the_gate_wait(
+def _attempt_s() -> float:
+    return (
+        main_mod.DIAGNOSIS_TIMEOUT_S
+        + main_mod.REMEDIATION_TIMEOUT_S
+        + GIT_MCP_READ_TIMEOUT_S
+        + MCP_CALL_TIMEOUT_S
+        + main_mod.WATCHDOG_WINDOW_S
+    )
+
+
+def test_gate_wait_budget_check_fits_one_attempt_in_the_run_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    gate_wait_with_llm_request_s = GIT_MCP_READ_TIMEOUT_S + LLM_REQUEST_TIMEOUT_S
-    monkeypatch.setattr(
-        main_mod, "REMEDIATION_TIMEOUT_S", gate_wait_with_llm_request_s + 1
-    )
+    monkeypatch.setattr(main_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", _attempt_s() + 1)
     main_mod._check_gate_wait_budget()
 
-    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", gate_wait_with_llm_request_s)
+    monkeypatch.setattr(main_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", _attempt_s())
     with pytest.raises(
-        ValueError,
-        match="GIT_MCP_READ_TIMEOUT_S \\+ LLM_REQUEST_TIMEOUT_S.*REMEDIATION_TIMEOUT_S",
+        ValueError, match="WATCHDOG_WINDOW_S.*ORCHESTRATOR_RUN_TIMEOUT_S"
+    ):
+        main_mod._check_gate_wait_budget()
+
+
+def test_gate_wait_budget_check_passes_with_agent_env_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main_mod, "DIAGNOSIS_TIMEOUT_S", 600.0)
+    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", 540.0)
+    monkeypatch.setattr(main_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", 2400.0)
+    main_mod._check_gate_wait_budget()
+
+
+def test_gate_wait_budget_check_covers_the_llm_retry_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retry_budget_s = (1 + LLM_MAX_RETRIES) * LLM_REQUEST_TIMEOUT_S
+    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", retry_budget_s + 1)
+    main_mod._check_gate_wait_budget()
+
+    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", retry_budget_s)
+    with pytest.raises(
+        ValueError, match="LLM_REQUEST_TIMEOUT_S.*REMEDIATION_TIMEOUT_S"
     ):
         main_mod._check_gate_wait_budget()
 
@@ -179,16 +209,6 @@ def test_gate_wait_budget_check_rejects_gate_wait_outside_git_mcp_bounds(
 ) -> None:
     monkeypatch.setattr(main_mod, "GATE_WAIT_TIMEOUT_S", gate_wait_s)
     with pytest.raises(ValueError, match=f"GATE_WAIT_TIMEOUT_S.*{gate_wait_s}"):
-        main_mod._check_gate_wait_budget()
-
-
-def test_gate_wait_budget_check_rejects_remediation_timeout_below_read_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S - 1)
-    with pytest.raises(
-        ValueError, match="GIT_MCP_READ_TIMEOUT_S.*REMEDIATION_TIMEOUT_S"
-    ):
         main_mod._check_gate_wait_budget()
 
 
@@ -213,8 +233,8 @@ def test_gate_wait_budget_check_rejects_revert_call_not_above_read_timeout(
 async def test_lifespan_checks_the_gate_wait_budget_before_starting_servers(
     recorded_servers: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(main_mod, "REMEDIATION_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S)
-    with pytest.raises(ValueError, match="REMEDIATION_TIMEOUT_S"):
+    monkeypatch.setattr(main_mod, "ORCHESTRATOR_RUN_TIMEOUT_S", _attempt_s())
+    with pytest.raises(ValueError, match="ORCHESTRATOR_RUN_TIMEOUT_S"):
         async with main_mod.lifespan(FastAPI()):
             pass
     assert recorded_servers == []

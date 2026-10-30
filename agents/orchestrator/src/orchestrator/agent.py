@@ -75,7 +75,7 @@ ORCHESTRATOR_RUN_TIMEOUT_S: float = float(
     os.environ.get("ORCHESTRATOR_RUN_TIMEOUT_S", "1800")
 )
 DIAGNOSIS_TIMEOUT_S: float = float(os.environ.get("DIAGNOSIS_TIMEOUT_S", "300"))
-REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "900"))
+REMEDIATION_TIMEOUT_S: float = float(os.environ.get("REMEDIATION_TIMEOUT_S", "540"))
 _MAX_DIAGNOSIS_ATTEMPTS = 3
 _RUN_ID_SUFFIX_LEN = 8
 

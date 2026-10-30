@@ -12,14 +12,23 @@ from common.constants import (
     GATE_WAIT_TIMEOUT_MIN_S,
     GATE_WAIT_TIMEOUT_S,
     GIT_MCP_READ_TIMEOUT_S,
+    LLM_MAX_RETRIES,
     LLM_REQUEST_TIMEOUT_S,
+    MCP_CALL_TIMEOUT_S,
     POLLER_UNHEALTHY_AFTER,
 )
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic_ai.mcp import MCPServerStdio
+from watchdog.agent import WATCHDOG_WINDOW_S
 
-from .agent import REMEDIATION_TIMEOUT_S, build_run_id, run_orchestration
+from .agent import (
+    DIAGNOSIS_TIMEOUT_S,
+    ORCHESTRATOR_RUN_TIMEOUT_S,
+    REMEDIATION_TIMEOUT_S,
+    build_run_id,
+    run_orchestration,
+)
 from .models import FaultEvent, eval_target_from_env
 from .poller import log_task_exception, prometheus_poller
 
@@ -58,16 +67,25 @@ def _check_gate_wait_budget() -> None:
         )
     gate_wait = ("GATE_WAIT_TIMEOUT_S", GATE_WAIT_TIMEOUT_S)
     read = ("GIT_MCP_READ_TIMEOUT_S", GIT_MCP_READ_TIMEOUT_S)
-    read_after_llm_request = (
-        "GIT_MCP_READ_TIMEOUT_S + LLM_REQUEST_TIMEOUT_S",
-        GIT_MCP_READ_TIMEOUT_S + LLM_REQUEST_TIMEOUT_S,
-    )
+    llm_retry_s = (1 + LLM_MAX_RETRIES) * LLM_REQUEST_TIMEOUT_S
+    llm_retry = ("(1 + LLM_MAX_RETRIES) * LLM_REQUEST_TIMEOUT_S", llm_retry_s)
     revert_call = ("GATE_REVERT_CALL_TIMEOUT_S", GATE_REVERT_CALL_TIMEOUT_S)
     remediation = ("REMEDIATION_TIMEOUT_S", REMEDIATION_TIMEOUT_S)
+    attempt = (
+        "DIAGNOSIS_TIMEOUT_S + REMEDIATION_TIMEOUT_S + GIT_MCP_READ_TIMEOUT_S + "
+        "MCP_CALL_TIMEOUT_S + WATCHDOG_WINDOW_S",
+        DIAGNOSIS_TIMEOUT_S
+        + REMEDIATION_TIMEOUT_S
+        + GIT_MCP_READ_TIMEOUT_S
+        + MCP_CALL_TIMEOUT_S
+        + WATCHDOG_WINDOW_S,
+    )
+    run = ("ORCHESTRATOR_RUN_TIMEOUT_S", ORCHESTRATOR_RUN_TIMEOUT_S)
     for (shorter, shorter_s), (longer, longer_s) in (
         (gate_wait, read),
         (read, revert_call),
-        (read_after_llm_request, remediation),
+        (llm_retry, remediation),
+        (attempt, run),
     ):
         if shorter_s >= longer_s:
             raise ValueError(

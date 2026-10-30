@@ -1106,7 +1106,7 @@ def test_score_diagnosis_accuracy_boundary_os_escalation_is_false(
 
 def test_orchestrator_constants_have_correct_defaults() -> None:
     assert orch_mod.ORCHESTRATOR_RUN_TIMEOUT_S == 1800.0
-    assert orch_mod.REMEDIATION_TIMEOUT_S == 900.0
+    assert orch_mod.REMEDIATION_TIMEOUT_S == 540.0
     assert orch_mod._MAX_DIAGNOSIS_ATTEMPTS == 3
 
 
