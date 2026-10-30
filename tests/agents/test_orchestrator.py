@@ -22,7 +22,7 @@ os.environ.setdefault("LLM_MODEL_NAME", "test-model")
 os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
-from common.constants import GATE_REVERT_CALL_TIMEOUT_S, GATE_WAIT_TIMEOUT_S
+from common.constants import GATE_REVERT_CALL_TIMEOUT_S
 from diagnosis.models import DiagnosisOutputRetryExhausted, DiagnosisReport
 from orchestrator import agent as orch_mod
 from orchestrator.agent import (
@@ -2230,10 +2230,7 @@ async def test_rollback_git_commit_nix_calls_revert_and_trigger() -> None:
         if c.args and c.args[0] == "revert_commit"
     ]
     assert len(revert_calls) == 1
-    assert revert_calls[0].args[1] == {
-        "merge_commit_sha": "abc123",
-        "timeout_seconds": GATE_WAIT_TIMEOUT_S,
-    }
+    assert revert_calls[0].args[1] == {"merge_commit_sha": "abc123"}
     trigger_calls = [
         c
         for c in nixos_mcp.direct_call_tool.call_args_list
@@ -2271,7 +2268,7 @@ async def test_rollback_revert_waits_for_gate_within_its_own_call_timeout(
     assert revert_calls == [
         (
             "revert_commit",
-            {"merge_commit_sha": "abc123", "timeout_seconds": GATE_WAIT_TIMEOUT_S},
+            {"merge_commit_sha": "abc123"},
             GATE_REVERT_CALL_TIMEOUT_S,
         )
     ]

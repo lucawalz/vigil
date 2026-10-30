@@ -17,7 +17,6 @@ from common.constants import (
     CONFIDENCE_AUTO_THRESHOLD,
     CONFIDENCE_REVIEW_THRESHOLD,
     GATE_REVERT_CALL_TIMEOUT_S,
-    GATE_WAIT_TIMEOUT_S,
     GIT_COMMIT_BUDGET,
     WATCHDOG_NAMESPACE,
 )
@@ -330,10 +329,7 @@ async def _revert_through_gate(
     await call_tool(
         git_mcp,
         "revert_commit",
-        {
-            "merge_commit_sha": merge_commit_sha,
-            "timeout_seconds": GATE_WAIT_TIMEOUT_S,
-        },
+        {"merge_commit_sha": merge_commit_sha},
         timeout_s=GATE_REVERT_CALL_TIMEOUT_S,
     )
 
