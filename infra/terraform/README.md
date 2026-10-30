@@ -44,9 +44,8 @@ One-time setup in the fork, in order:
 2. Create the `eval` environment with the secrets listed under [Campaign workflow](../../eval/README.md#campaign-workflow).
 3. Register a GitHub App under the fork owner's account with the webhook off and "Only on this account". Grant the repository permissions Contents read and write, Pull requests read and write, Checks read and Metadata read, and no others. Install it on the fork only, generate a private key, and add the App's client ID and the key as the `VIGIL_APP_CLIENT_ID` and `VIGIL_APP_PRIVATE_KEY` secrets. Pull requests, merges and agent commits then appear as `<app-slug>[bot]`. The App must not be a bypass actor of any ruleset, so that `remediation-gate` gates its pull requests.
 4. Register a second GitHub App for the eval harness in the same way, with the repository permissions Contents read and write, Pull requests read and Metadata read. Install it on the fork only, generate a private key, and add the App's client ID and the key as the `VIGIL_HARNESS_APP_CLIENT_ID` and `VIGIL_HARNESS_APP_PRIVATE_KEY` secrets. The harness creates the cell branches, pushes the scenario faults and the baseline reset, and deletes the branches at the end of the campaign.
-5. Enable Settings > General > Pull Requests > Allow auto-merge.
-6. Add a branch ruleset targeting `refs/heads/eval/**/*` that requires the `remediation-gate` status check, with the eval harness App as a bypass actor; the agent App stays without bypass. The campaign verifies the ruleset and the previous setting before it starts.
-7. Make sure the Hetzner project has room for four servers at a time: the four snapshot builds run in parallel and finish before the four cluster servers of the first cell are created.
+5. Add a branch ruleset targeting `refs/heads/eval/**/*` that requires the `remediation-gate` status check, with the eval harness App as a bypass actor; the agent App stays without bypass. The campaign verifies the ruleset before it starts.
+6. Make sure the Hetzner project has room for four servers at a time: the four snapshot builds run in parallel and finish before the four cluster servers of the first cell are created.
 
 Then dispatch the Eval Campaign workflow with `target: hetzner`. Cell branches, the `docs/eval-results` results branch, snapshots and teardown are handled by the workflow.
 
