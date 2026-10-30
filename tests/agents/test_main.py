@@ -383,6 +383,15 @@ async def test_healthz_reports_degraded_when_poller_unhealthy(
     assert body["consecutive_failures"] == POLLER_UNHEALTHY_AFTER
 
 
+async def test_healthz_reports_the_run_timeout(test_app: FastAPI) -> None:
+    from orchestrator.agent import ORCHESTRATOR_RUN_TIMEOUT_S
+
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.get("/healthz")
+    assert r.json()["run_timeout_s"] == ORCHESTRATOR_RUN_TIMEOUT_S
+
+
 async def test_webhook_rejects_missing_auth(test_app: FastAPI) -> None:
     transport = httpx.ASGITransport(app=test_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

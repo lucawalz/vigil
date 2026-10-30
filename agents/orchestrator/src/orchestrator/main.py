@@ -215,6 +215,7 @@ async def healthz(request: Request) -> dict[str, object]:
         "detection": detection,
         "consecutive_failures": consecutive_failures,
         "last_success_at": health.get("last_success_at"),
+        "run_timeout_s": ORCHESTRATOR_RUN_TIMEOUT_S,
     }
 
 
