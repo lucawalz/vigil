@@ -1,0 +1,42 @@
+{
+  "run_id": "k8s-rollback-1_1_gpt-oss-120b_89fa308",
+  "scenario": "k8s-rollback-1",
+  "seed": "1",
+  "model": "gpt-oss:120b",
+  "git_sha7": "89fa308",
+  "started_at": "2026-10-30T21:59:25Z",
+  "ended_at": "2026-10-30T22:05:07Z",
+  "outcome": "rollback_succeeded",
+  "success_rate": false,
+  "remediation_success": true,
+  "diagnosis_accuracy": true,
+  "MTTR_s": 464.16704915699984,
+  "destructive_repair": false,
+  "rollback_triggered": true,
+  "rollback_success": true,
+  "total_input_tokens": 76948,
+  "total_output_tokens": 4421,
+  "total_tool_calls": 9,
+  "iteration_count": 6,
+  "autonomy_level": "full",
+  "actions_taken": [
+    "read_file",
+    "write_manifest",
+    "commit_files",
+    "push_branch",
+    "create_pr"
+  ],
+  "attempts": 1,
+  "incident_id": "k8s-rollback-1_1_gpt-oss-120b_89fa308",
+  "retry_queued": true,
+  "model_version": "gpt-oss:120b",
+  "setup_error": null,
+  "agent_branch": "remediation/run-k8s-rollback-1_1_gpt-oss-120b_89fa308",
+  "agent_commits": [
+    "10b75e93c19925f8bc08a4a55d04c88688679695"
+  ],
+  "gate_status": "merged",
+  "merge_commit_sha": "edd5ab892cb90a12b245ab862833bc2299f49693",
+  "forbidden_action_violations": [],
+  "target": "runner"
+}
