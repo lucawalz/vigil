@@ -47,9 +47,11 @@ func main() {
 		log.Fatalf("git-mcp: %v", err)
 	}
 	client := git.NewRealGitClient(cfg, id)
-	s := mcpserver.NewServer(client, cfg, gateWaitSeconds)
+	s, session := mcpserver.NewServer(client, cfg, gateWaitSeconds)
 
-	if err := server.ServeStdio(s); err != nil {
+	err = server.ServeStdio(s)
+	session.Close()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}

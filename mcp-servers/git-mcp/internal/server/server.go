@@ -1,6 +1,7 @@
 package server
 
 import (
+	"os"
 	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -29,6 +30,16 @@ func (s *GitServer) BeginSession(runID, cloneDir string) {
 	s.baseBranch = ""
 	s.lastCommitSHA = ""
 	s.prNumber = 0
+}
+
+func (s *GitServer) Close() {
+	s.mu.Lock()
+	dir := s.cloneDir
+	s.mu.Unlock()
+	if dir != "" {
+		_ = os.RemoveAll(dir)
+	}
+	s.BeginSession("", "")
 }
 
 func (s *GitServer) Branch() (string, string) {
@@ -90,7 +101,7 @@ const (
 	gateWaitEndDescription = "when the wait ends without a merge, the final PR state is reported"
 )
 
-func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *server.MCPServer {
+func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) (*server.MCPServer, *GitServer) {
 	s := &GitServer{}
 	protected := git.LoadProtectedBranches()
 
@@ -273,5 +284,5 @@ func NewServer(client git.GitClient, cfg *config.Config, gateWaitSeconds int) *s
 		git.HandleResolveManifestPath(client, s),
 	)
 
-	return mcpServer
+	return mcpServer, s
 }

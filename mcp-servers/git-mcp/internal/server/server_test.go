@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/lucawalz/vigil/mcp-servers/git-mcp/internal/config"
@@ -47,7 +48,7 @@ func TestServerRegisters13Tools(t *testing.T) {
 		MaxOutputBytes: 4096,
 	}
 	client := &fakeGitClient{}
-	mcpSrv := NewServer(client, cfg, config.DefaultWaitForGateTimeoutSeconds)
+	mcpSrv, _ := NewServer(client, cfg, config.DefaultWaitForGateTimeoutSeconds)
 	if mcpSrv == nil {
 		t.Fatal("NewServer returned nil")
 	}
@@ -80,7 +81,8 @@ func TestServerRegisters13Tools(t *testing.T) {
 
 func TestServer_gateToolsTakeOnlyTheirTarget(t *testing.T) {
 	cfg := &config.Config{GitHubToken: "tok", RepoURL: "https://github.com/lucawalz/vigil.git", MaxOutputBytes: 4096}
-	tools := NewServer(&fakeGitClient{}, cfg, config.DefaultWaitForGateTimeoutSeconds).ListTools()
+	mcpSrv, _ := NewServer(&fakeGitClient{}, cfg, config.DefaultWaitForGateTimeoutSeconds)
+	tools := mcpSrv.ListTools()
 	want := map[string][]string{
 		"create_pr":     {"title", "body"},
 		"wait_for_gate": {"pr_number"},
@@ -136,4 +138,18 @@ func TestGitServer_beginSessionResetsRunState(t *testing.T) {
 	if s.currentBranch != "" || s.baseBranch != "" || s.lastCommitSHA != "" || s.prNumber != 0 {
 		t.Errorf("run state not reset: %+v", s)
 	}
+}
+
+func TestGitServer_closeRemovesTheClone(t *testing.T) {
+	dir := t.TempDir()
+	s := &GitServer{}
+	s.BeginSession("run-1", dir)
+	s.Close()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("clone dir still present: %v", err)
+	}
+	if s.CloneDir() != "" || s.RunID() != "" {
+		t.Errorf("session not reset: %q %q", s.CloneDir(), s.RunID())
+	}
+	s.Close()
 }
