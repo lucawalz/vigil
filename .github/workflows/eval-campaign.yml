@@ -185,7 +185,7 @@ jobs:
     needs: [setup, check-secrets, snapshots]
     if: ${{ !cancelled() && needs.setup.result == 'success' && needs.check-secrets.result == 'success' && needs.snapshots.result != 'failure' && needs.setup.outputs.matrix != '{"include":[]}' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     environment:
       name: eval
       deployment: false
