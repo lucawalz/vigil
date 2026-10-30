@@ -115,6 +115,11 @@ def test_git_exposes_exactly_the_allow_list() -> None:
     assert exposed == DIAGNOSIS_GIT_READ_TOOLS
 
 
+def test_git_session_tool_is_not_offered_to_diagnosis() -> None:
+    assert "clone_repo" not in DIAGNOSIS_GIT_READ_TOOLS
+    assert "clone_repo" not in _exposed(_GIT_ALL_TOOLS, DIAGNOSIS_GIT_READ_TOOLS)
+
+
 def test_all_git_write_tools_are_filtered_out() -> None:
     write_tools = _GIT_ALL_TOOLS - DIAGNOSIS_GIT_READ_TOOLS
     exposed = _exposed(_GIT_ALL_TOOLS, DIAGNOSIS_GIT_READ_TOOLS)

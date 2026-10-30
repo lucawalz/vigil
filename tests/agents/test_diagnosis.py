@@ -479,6 +479,9 @@ def test_build_diagnosis_context_k8s_happy_path() -> None:
     assert "--- live" in ctx.diff or ctx.diff == ""
     assert ctx.source_branch == "main"
     assert ctx.manifest_path is not None
+    assert "clone_repo" not in [
+        c.args[0] for c in mock_git.direct_call_tool.call_args_list
+    ]
 
 
 def test_build_diagnosis_context_rolled_pod_resolves_deployment() -> None:

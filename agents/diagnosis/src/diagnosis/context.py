@@ -1003,11 +1003,6 @@ async def build_diagnosis_context(
     deps: DiagnosisDeps, fault: FaultEvent
 ) -> DiagnosisContext:
     source_branch = await resolve_source_branch(deps)
-    await call_tool(
-        deps.git_mcp,
-        "clone_repo",
-        {"run_id": deps.run_id, "base_branch": source_branch},
-    )
     target_host = _extract_target_host(fault)
 
     if target_host:

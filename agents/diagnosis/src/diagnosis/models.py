@@ -180,10 +180,10 @@ class DiagnosisReport(BaseModel):
 class DiagnosisDeps:
     """Exposes kubectl-mcp, nixos-mcp, git-mcp, and flux-mcp to the diagnosis agent.
 
-    git-mcp session is warmed via clone_repo before the LLM runs, so read_file
-    is available for declared-state lookups. nixos-mcp is the typed NixOS
-    interface for OS-layer observation. flux-mcp provides read access to
-    Kustomization state.
+    The orchestrator opens the git-mcp session with clone_repo before
+    diagnosis, so read_file is available for declared-state lookups. nixos-mcp
+    is the typed NixOS interface for OS-layer observation. flux-mcp provides
+    read access to Kustomization state.
     """
 
     kubectl_mcp: MCPServerStdio

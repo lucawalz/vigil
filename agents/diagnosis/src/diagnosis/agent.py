@@ -53,7 +53,7 @@ Available tools:
                rollout_status, get_events, describe_node, get_taints
   nixos-mcp:   get_nix_path, dry_build, get_journal, get_systemd_status,
                get_generations, get_sysctl
-  git-mcp:     clone_repo, read_file, resolve_manifest_path
+  git-mcp:     read_file, resolve_manifest_path
   flux-mcp:    get_kustomization_status, get_gitrepository_status
   lookup_manifest_path helpers:
     lookup_os_manifest_path(hostname): return the repo-relative NixOS config path for
@@ -78,8 +78,9 @@ live_admission_objects: list of ResourceQuota/LimitRange/NetworkPolicy objects
   and git_path. An object with declared_in_git=False is an out-of-band live injection.
   For such objects: set drift_classification=live_only_drift only if an agent tool can
   remove them; otherwise escalate.
-The git-mcp session is pre-warmed; use read_file(branch, path) to inspect related
-manifests (parent Kustomizations, ConfigMap sources, Helm values) when needed.
+The orchestrator opens the git-mcp session before diagnosis; use
+read_file(branch, path) to inspect related manifests (parent Kustomizations,
+ConfigMap sources, Helm values) when needed.
 If read_file returns a path-not-found error for manifest_path, call
 resolve_manifest_path(kustomize_path, kind, name, namespace) with the
 Kustomization spec.path to recover the correct path, then retry read_file once.

@@ -97,7 +97,6 @@ DIAGNOSIS_NIXOS_READ_TOOLS: frozenset[str] = frozenset(
 
 DIAGNOSIS_GIT_READ_TOOLS: frozenset[str] = frozenset(
     {
-        "clone_repo",
         "read_file",
         "resolve_manifest_path",
     }
