@@ -2281,6 +2281,7 @@ def _canned_fault_for_msg():
 _PRIOR_TRIES_HEADER = (
     "Earlier tries for this incident, oldest first, as recorded by the orchestrator:"
 )
+_MSG_NONCE = "0123456789ab"
 _FIRST_TRY = "try 1: action=git_commit_k8s; gate=merged; rollback=succeeded"
 _SECOND_TRY = "try 2: action=git_commit_k8s; gate=closed; rollback=not run"
 
@@ -2290,13 +2291,16 @@ def test_build_user_message_lists_prior_tries_oldest_first() -> None:
         _canned_fault_for_msg(),
         _canned_context_for_msg(),
         prior_tries=(_FIRST_TRY, _SECOND_TRY),
+        nonce=_MSG_NONCE,
     )
     assert msg.startswith(f"{_PRIOR_TRIES_HEADER}\n- {_FIRST_TRY}\n- {_SECOND_TRY}\n")
     assert msg.index(_SECOND_TRY) < msg.index("Diagnose fault.")
 
 
 def test_build_user_message_without_prior_tries_starts_with_the_fault_summary() -> None:
-    msg = _build_user_message(_canned_fault_for_msg(), _canned_context_for_msg())
+    msg = _build_user_message(
+        _canned_fault_for_msg(), _canned_context_for_msg(), nonce=_MSG_NONCE
+    )
     assert _PRIOR_TRIES_HEADER not in msg
     assert msg.startswith("Diagnose fault.")
 

@@ -22,6 +22,7 @@ from common.toolset_guards import (
     GlobalToolCounter,
     ToolRepeatLimitToolset,
 )
+from common.untrusted import UNTRUSTED_DATA_RULE, FencingToolset, fence, new_nonce
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
@@ -49,7 +50,8 @@ if TYPE_CHECKING:
     from pydantic_ai.mcp import MCPServerStdio
 
 
-_SYSTEM_PROMPT = """GitOps four-quadrant fault classification agent.
+_SYSTEM_PROMPT = (
+    """GitOps four-quadrant fault classification agent.
 Classify each fault into exactly one of five action classes and emit a DiagnosisReport.
 Emit only tool calls from the list below; do not invent tool names.
 
@@ -64,20 +66,20 @@ Available tools:
     lookup_os_manifest_path(hostname): return the repo-relative NixOS config path for
                the given hostname
 
-Ground-truth context (DiagnosisContext):
+Pre-fetched context (DiagnosisContext):
 The user message includes a DiagnosisContext block containing:
   source_branch, manifest_path, live_yaml, declared_yaml, diff,
   live_pod_status, live_services, live_admission_objects
-These fields are pre-computed by Python and are ground truth. Treat them as
-authoritative inputs. Do not call get_resource_yaml to re-derive live_yaml; that
-call has already been made. Use the provided diff to determine drift direction.
+These fields were already fetched for this run. Do not call get_resource_yaml to
+re-derive live_yaml; that call has already been made. Use the provided diff to
+determine drift direction.
 live_pod_status: pre-fetched pod and event table for the alert's namespace.
   Non-empty for K8s workload alerts. Contains pod phase/readiness and recent
   namespace events. Use this as primary pod-failure evidence before calling
   additional kubectl tools.
 live_services: pre-fetched Service list for the alert's namespace
-  (non-empty for K8s workload alerts). The authoritative set of Services
-  that exist and resolve in-cluster.
+  (non-empty for K8s workload alerts). The Services already fetched for this run:
+  the set that exists and resolves in-cluster.
 live_admission_objects: list of ResourceQuota/LimitRange/NetworkPolicy objects
   discovered in the alert's namespace, each annotated with declared_in_git (True/False)
   and git_path. An object with declared_in_git=False is an out-of-band live injection.
@@ -237,7 +239,11 @@ patch_body / target_host rules:
 Emit a DiagnosisReport with all required fields populated from tool output and the
 provided DiagnosisContext.
 Do not call stage_generation, commit_generation, or etcd_snapshot_save; diagnosis is
-read-only."""
+read-only.
+
+"""
+    + UNTRUSTED_DATA_RULE
+)
 
 
 diagnosis_agent: Agent[DiagnosisDeps, DiagnosisReport] = Agent(
@@ -259,6 +265,8 @@ def _build_user_message(
     fault: "FaultEvent",
     context: DiagnosisContext,
     prior_tries: Sequence[str] = (),
+    *,
+    nonce: str,
 ) -> str:
     admission_lines: list[str] = []
     for ao in context.live_admission_objects:
@@ -269,7 +277,8 @@ def _build_user_message(
         line += f"\n      {ao.summary}"
         admission_lines.append(line)
     admission_block = (
-        "  live_admission_objects:\n" + "\n".join(admission_lines)
+        "  live_admission_objects:\n"
+        + fence("\n".join(admission_lines), "live_admission_objects", nonce)
         if admission_lines
         else "  live_admission_objects: []"
     )
@@ -281,15 +290,16 @@ def _build_user_message(
     return (
         f"{prior_block}"
         f"Diagnose fault.\n\n"
-        f"Fault: {fault.model_dump_json()}\n\n"
+        f"Fault: {fence(fault.model_dump_json(), 'fault', nonce)}\n\n"
         f"DiagnosisContext:\n"
         f"  source_branch: {context.source_branch}\n"
         f"  manifest_path: {context.manifest_path}\n"
-        f"  live_yaml:\n{context.live_yaml}\n"
-        f"  declared_yaml:\n{context.declared_yaml}\n"
-        f"  diff:\n{context.diff}\n"
-        f"  live_pod_status:\n{context.live_pod_status}\n"
-        f"  live_services:\n{context.live_services}\n"
+        f"  live_yaml:\n{fence(context.live_yaml, 'live_yaml', nonce)}\n"
+        f"  declared_yaml:\n{fence(context.declared_yaml, 'declared_yaml', nonce)}\n"
+        f"  diff:\n{fence(context.diff, 'diff', nonce)}\n"
+        f"  live_pod_status:\n"
+        f"{fence(context.live_pod_status, 'live_pod_status', nonce)}\n"
+        f"  live_services:\n{fence(context.live_services, 'live_services', nonce)}\n"
         f"{admission_block}"
     )
 
@@ -304,12 +314,17 @@ def is_diagnosis_tool_allowed(
 def _build_readonly_toolset(
     server: MCPServerStdio,
     allowed_tools: frozenset[str],
-) -> FilteredToolset:
-    return FilteredToolset(
-        server,
-        filter_func=lambda _ctx, tool_def: is_diagnosis_tool_allowed(
-            tool_def.name, allowed_tools
+    nonce: str,
+) -> FencingToolset:
+    return FencingToolset(
+        wrapped=FilteredToolset(
+            server,
+            filter_func=lambda _ctx, tool_def: is_diagnosis_tool_allowed(
+                tool_def.name, allowed_tools
+            ),
         ),
+        nonce=nonce,
+        tools=allowed_tools,
     )
 
 
@@ -321,12 +336,19 @@ async def run_diagnosis(
     prior_tries: Sequence[str] = (),
     breaker: Breaker | None = None,
 ) -> tuple[DiagnosisReport, RunUsage, list[ModelMessage]]:
+    nonce = new_nonce()
     kubectl_readonly = _build_readonly_toolset(
-        deps.kubectl_mcp, DIAGNOSIS_KUBECTL_READ_TOOLS
+        deps.kubectl_mcp, DIAGNOSIS_KUBECTL_READ_TOOLS, nonce
     )
-    nixos_readonly = _build_readonly_toolset(deps.nixos_mcp, DIAGNOSIS_NIXOS_READ_TOOLS)
-    git_readonly = _build_readonly_toolset(deps.git_mcp, DIAGNOSIS_GIT_READ_TOOLS)
-    flux_readonly = _build_readonly_toolset(deps.flux_mcp, DIAGNOSIS_FLUX_READ_TOOLS)
+    nixos_readonly = _build_readonly_toolset(
+        deps.nixos_mcp, DIAGNOSIS_NIXOS_READ_TOOLS, nonce
+    )
+    git_readonly = _build_readonly_toolset(
+        deps.git_mcp, DIAGNOSIS_GIT_READ_TOOLS, nonce
+    )
+    flux_readonly = _build_readonly_toolset(
+        deps.flux_mcp, DIAGNOSIS_FLUX_READ_TOOLS, nonce
+    )
     read_toolsets = (kubectl_readonly, nixos_readonly, git_readonly, flux_readonly)
     if breaker is not None:
         read_toolsets = tuple(
@@ -345,7 +367,7 @@ async def run_diagnosis(
         )
         for ts in repeat_limited
     ]
-    user_message = _build_user_message(fault, context, prior_tries)
+    user_message = _build_user_message(fault, context, prior_tries, nonce=nonce)
     try:
         async with diagnosis_agent.iter(
             user_message,
