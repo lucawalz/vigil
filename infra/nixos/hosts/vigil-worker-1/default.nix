@@ -27,5 +27,6 @@
   };
 
   services.vigilAutoReconciler.enable = true;
-  services.k3s.enable = lib.mkForce false;
+  # Enable k3s on worker nodes
+  services.k3s.enable = true;
 }
