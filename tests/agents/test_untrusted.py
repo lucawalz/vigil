@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +13,7 @@ os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:1/v1")
 os.environ.setdefault("OLLAMA_API_KEY", "sk-test")
 
 import diagnosis.agent as _diag_module
+import remediation.agent as _rem_agent_mod
 from common.toolset_guards import CircuitBreakerToolset
 from common.untrusted import (
     UNTRUSTED_DATA_RULE,
@@ -21,8 +24,9 @@ from common.untrusted import (
 )
 from diagnosis.agent import _build_user_message, run_diagnosis
 from diagnosis.context import AdmissionObject, DiagnosisContext
-from diagnosis.models import DiagnosisDeps
+from diagnosis.models import DiagnosisDeps, DiagnosisReport
 from mcp import types as mcp_types
+from orchestrator.agent import _committed_shas, _created_pr_number
 from orchestrator.models import FaultEvent
 from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.mcp import MCPServerStdio
@@ -37,6 +41,14 @@ from pydantic_ai.messages import (
     tool_return_ta,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from remediation.agent import (
+    _EXTERNAL_CONTENT_TOOLS,
+    _FENCED_REPORT_FIELDS,
+    _ORCHESTRATOR_OWNED_GIT_TOOLS,
+    _ORCHESTRATOR_OWNED_NIXOS_TOOLS,
+    run_remediation,
+)
+from remediation.models import RemediationDeps, RemediationResult
 
 _NONCE = "0123456789ab"
 _OPEN = re.compile(r"<vigil-data-[0-9a-f]{12} source=")
@@ -429,3 +441,186 @@ def test_diagnosis_prompt_states_the_data_rule() -> None:
     for word in ("ground truth", "ground-truth", "authoritative"):
         assert word not in lowered
     assert "quoted from tool output" in prompt
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REM_GIT_TOOLS = (
+    "read_file",
+    "resolve_manifest_path",
+    "get_pr_status",
+    "write_manifest",
+    "commit_files",
+    "push_branch",
+    "create_pr",
+)
+_REM_FLUX_TOOLS = (
+    "get_kustomization_status",
+    "get_gitrepository_status",
+    "reconcile_kustomization",
+)
+_REM_NIXOS_TOOLS = (
+    "get_generations",
+    "get_journal",
+    "get_systemd_status",
+    "get_sysctl",
+    "get_nix_path",
+    "dry_build",
+    "stage_generation",
+    "rebuild_test",
+    "etcd_snapshot_save",
+    "trigger_reconcile",
+)
+_UNFENCED_WRITE_TOOLS = ("write_manifest", "push_branch", "reconcile_kustomization")
+_STUB_RESULT = {
+    "success": True,
+    "actions_taken": [],
+    "tool_calls_count": 0,
+    "mutation_attempted": False,
+}
+_PATCH_BODY = "kind: Deployment\nmetadata:\n  name: vigil-app\n"
+
+
+def _rem_report(**overrides: object) -> DiagnosisReport:
+    fields: dict[str, object] = {
+        "root_cause": "bad image tag",
+        "root_cause_component": "Deployment/vigil-app",
+        "severity": "high",
+        "affected_resources": ["default/vigil-app"],
+        "evidence": "ImagePullBackOff",
+        "drift_classification": "declared_drift",
+        "recommended_action": "git_commit_k8s",
+        "confidence": 0.9,
+        "manifest_path": "apps/vigil-app.yaml",
+        "patch_body": _PATCH_BODY,
+    }
+    fields.update(overrides)
+    return DiagnosisReport(**fields)
+
+
+async def _remediate(
+    replies: dict[str, object],
+    calls: tuple[str, ...] = (),
+    report: DiagnosisReport | None = None,
+) -> tuple[RemediationResult, list[ModelMessage], str]:
+    pending = list(calls)
+
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if pending:
+            return ModelResponse(parts=[ToolCallPart(pending.pop(0), {})])
+        return ModelResponse(
+            parts=[ToolCallPart(info.output_tools[0].name, _STUB_RESULT)]
+        )
+
+    deps = RemediationDeps(
+        git_mcp=_CannedMCP(_REM_GIT_TOOLS, replies),
+        flux_mcp=_CannedMCP(_REM_FLUX_TOOLS, replies),
+        nixos_mcp=_CannedMCP(_REM_NIXOS_TOOLS, replies),
+    )
+    result, _, messages = await run_remediation(
+        deps,
+        report or _rem_report(),
+        source_branch="remediation/run-x",
+        model=FunctionModel(model_fn),
+        agent_branch="remediation/run-x",
+    )
+    task = _last_request_parts(messages[:1], UserPromptPart)[0].content
+    return result, messages, task
+
+
+async def test_remediation_task_fences_diagnosis_free_text() -> None:
+    report = _rem_report(
+        root_cause="MARK-cause",
+        root_cause_component="MARK-component",
+        affected_resources=["MARK-resource"],
+        evidence="MARK-evidence",
+    )
+    _, _, task = await _remediate({}, report=report)
+    assert "MARK-" in task
+    assert "MARK-" not in _strip(task)
+    for field in _FENCED_REPORT_FIELDS:
+        assert f'source="{field}"' in task
+
+
+async def test_remediation_task_keeps_the_rest_of_the_report_unfenced() -> None:
+    report = _rem_report()
+    _, _, task = await _remediate({}, report=report)
+    rest = report.model_dump_json(exclude=_FENCED_REPORT_FIELDS)
+    stripped = _strip(task)
+    assert rest in stripped
+    for part in (
+        "recommended_action = git_commit_k8s",
+        "source_branch = remediation/run-x",
+        "agent_branch = remediation/run-x",
+    ):
+        assert part in stripped
+
+
+async def test_multiline_patch_body_survives_verbatim_in_the_task() -> None:
+    _, _, task = await _remediate({})
+    assert json.dumps(_PATCH_BODY) in _strip(task)
+
+
+@pytest.mark.parametrize("name", sorted(_EXTERNAL_CONTENT_TOOLS))
+async def test_external_tool_returns_reach_the_model_fenced(name: str) -> None:
+    _, messages, _ = await _remediate({name: _INJECTION}, calls=(name,))
+    (part,) = _tool_returns(messages, name)
+    assert f'source="tool:{name}"' in part.content
+    assert _INJECTION in part.content
+
+
+@pytest.mark.parametrize(
+    "name", ["read_file", "write_manifest", "create_pr", "reconcile_kustomization"]
+)
+async def test_tool_errors_reach_the_model_fenced(name: str) -> None:
+    _, messages, _ = await _remediate({name: ModelRetry("boom")}, calls=(name,))
+    (part,) = _last_request_parts(messages, RetryPromptPart)
+    assert f'source="tool:{name}"' in part.content
+    assert "boom" in part.content
+
+
+async def test_commit_and_pr_returns_stay_readable_by_the_orchestrator() -> None:
+    sha = "a" * 40
+    _, messages, _ = await _remediate(
+        {"commit_files": {"sha": sha}, "create_pr": {"pr_number": 7}},
+        calls=("commit_files", "create_pr"),
+    )
+    assert _committed_shas(messages) == (sha,)
+    assert _created_pr_number(messages) == 7
+
+
+@pytest.mark.parametrize("name", _UNFENCED_WRITE_TOOLS)
+async def test_git_and_flux_write_returns_stay_unfenced(name: str) -> None:
+    _, messages, _ = await _remediate({name: "canned reply"}, calls=(name,))
+    (part,) = _tool_returns(messages, name)
+    assert part.content == "canned reply"
+
+
+def test_every_offered_tool_is_classified() -> None:
+    owned = {
+        "git": _ORCHESTRATOR_OWNED_GIT_TOOLS,
+        "flux": frozenset(),
+        "nixos": _ORCHESTRATOR_OWNED_NIXOS_TOOLS,
+    }
+    classified = _EXTERNAL_CONTENT_TOOLS | {
+        "write_manifest",
+        "commit_files",
+        "push_branch",
+        "create_pr",
+        "reconcile_kustomization",
+    }
+    for server, skip in owned.items():
+        path = _REPO_ROOT / f"mcp-servers/{server}-mcp/internal/server/server.go"
+        offered = set(re.findall(r'mcp\.NewTool\("(\w+)"', path.read_text()))
+        assert offered, server
+        assert offered - skip <= classified, (server, offered - skip - classified)
+
+
+async def test_commit_budget_stops_the_second_commit() -> None:
+    result, _, _ = await _remediate(
+        {"commit_files": {"sha": "a" * 40}}, calls=("commit_files", "commit_files")
+    )
+    assert result.budget_refused is True
+
+
+def test_remediation_prompt_states_the_data_rule() -> None:
+    assert UNTRUSTED_DATA_RULE in _rem_agent_mod._SYSTEM_PROMPT

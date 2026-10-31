@@ -13,7 +13,13 @@ from __future__ import annotations
 import os
 
 from common import trace
-from common.constants import GIT_COMMIT_BUDGET, PROTECTED_BRANCHES
+from common.constants import (
+    DIAGNOSIS_FLUX_READ_TOOLS,
+    DIAGNOSIS_GIT_READ_TOOLS,
+    DIAGNOSIS_NIXOS_READ_TOOLS,
+    GIT_COMMIT_BUDGET,
+    PROTECTED_BRANCHES,
+)
 from common.provider import build_model
 from common.toolset_guards import (
     Breaker,
@@ -21,6 +27,7 @@ from common.toolset_guards import (
     CircuitBreakerToolset,
     CircuitBreakerTripped,
 )
+from common.untrusted import UNTRUSTED_DATA_RULE, FencingToolset, fence_value, new_nonce
 from diagnosis.models import DiagnosisReport
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
@@ -54,7 +61,29 @@ _ORCHESTRATOR_OWNED_GIT_TOOLS = frozenset(
     }
 )
 
-_SYSTEM_PROMPT = """\
+_FENCED_REPORT_FIELDS: set[str] = {
+    "root_cause",
+    "root_cause_component",
+    "affected_resources",
+    "evidence",
+}
+_EXTERNAL_CONTENT_TOOLS = (
+    DIAGNOSIS_GIT_READ_TOOLS
+    | DIAGNOSIS_FLUX_READ_TOOLS
+    | DIAGNOSIS_NIXOS_READ_TOOLS
+    | frozenset(
+        {
+            "get_pr_status",
+            "stage_generation",
+            "rebuild_test",
+            "etcd_snapshot_save",
+            "trigger_reconcile",
+        }
+    )
+)
+
+_SYSTEM_PROMPT = (
+    """\
 You are the Remediation stage of the vigil fault-response pipeline. Execute one of
 four action classes, determined by recommended_action from the DiagnosisReport.
 Operate through MCP tool calls only.
@@ -152,7 +181,11 @@ return RemediationResult(success=False, actions_taken=[], tool_calls_count=0,
 mutation_attempted=False, agent_branch=None, agent_commits=None) immediately with
 error="unexpected_action: <value>" in actions_taken. Do not call any tools.
 The orchestrator handles "escalate" before run_remediation is ever called;
-this guard exists for unexpected values only."""
+this guard exists for unexpected values only.
+
+"""
+    + UNTRUSTED_DATA_RULE
+)
 
 
 remediation_agent: Agent[RemediationDeps, RemediationOutput] = Agent(
@@ -224,17 +257,25 @@ async def run_remediation(
         filter_func=lambda _ctx, td: td.name not in _ORCHESTRATOR_OWNED_NIXOS_TOOLS,
     )
 
-    toolsets: list[object] = [git_toolset, deps.flux_mcp, nixos_toolset]
+    nonce = new_nonce()
+    toolsets: list[object] = [
+        FencingToolset(wrapped=ts, nonce=nonce, tools=_EXTERNAL_CONTENT_TOOLS)
+        for ts in [git_toolset, deps.flux_mcp, nixos_toolset]
+    ]
     if breaker is not None:
         toolsets = [
             CircuitBreakerToolset(wrapped=ts, breaker=breaker) for ts in toolsets
         ]
 
     review_block = _build_review_block(require_human_review)
+    fenced_fields = "".join(
+        f"{field}:\n{fence_value(getattr(report, field), field, nonce)}\n"
+        for field in sorted(_FENCED_REPORT_FIELDS)
+    )
     task = (
         f"Remediate the fault described in this DiagnosisReport: "
-        f"{report.model_dump_json()}. "
-        f"affected_resources = {report.affected_resources}. "
+        f"{report.model_dump_json(exclude=_FENCED_REPORT_FIELDS)}. "
+        f"{fenced_fields}"
         f"recommended_action = {report.recommended_action}. "
         f"source_branch = {source_branch}."
         f" agent_branch = {agent_branch}."
