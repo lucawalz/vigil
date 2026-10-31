@@ -27,4 +27,7 @@
   };
 
   services.vigilAutoReconciler.enable = true;
+
+  # Enable k3s to provide the Kubernetes node services
+  services.k3s.enable = true;
 }
