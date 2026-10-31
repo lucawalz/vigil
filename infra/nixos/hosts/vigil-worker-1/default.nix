@@ -27,5 +27,5 @@
   };
 
   services.vigilAutoReconciler.enable = true;
-  services.k3s.enable = lib.mkForce false;
+  services.k3s.enable = true;
 }
