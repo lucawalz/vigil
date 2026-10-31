@@ -44,7 +44,7 @@ spec:
             requests:
               memory: "8Mi"
             limits:
-              memory: "128Mi"
+              memory: "32Mi"
       volumes:
         - name: nginx-config-template
           configMap:
