@@ -205,7 +205,6 @@ async def test_breaker_counts_a_fenced_return_as_success() -> None:
 
 
 _STRIP_FENCES = re.compile(r"<vigil-data-(\w+) .*?</vigil-data-\1>", re.DOTALL)
-_MSG_NONCE = "0123456789ab"
 _ESCALATE_REPORT = {
     "root_cause": "unknown",
     "root_cause_component": "Deployment/vigil-app",
@@ -325,7 +324,7 @@ def test_every_untrusted_field_of_the_user_message_is_fenced(
             )
         ],
     )
-    msg = _build_user_message(fault, context, nonce=_MSG_NONCE)
+    msg = _build_user_message(fault, context, nonce=_NONCE)
     assert "MARK-" in msg
     assert "MARK-" not in _strip(msg)
     for source in (
@@ -343,7 +342,7 @@ def test_every_untrusted_field_of_the_user_message_is_fenced(
 def test_prior_tries_stay_outside_the_fences(sample_fault_event: FaultEvent) -> None:
     tries = ("try 1: action=git_commit_k8s", "try 2: action=escalate")
     msg = _build_user_message(
-        sample_fault_event, _context(), prior_tries=tries, nonce=_MSG_NONCE
+        sample_fault_event, _context(), prior_tries=tries, nonce=_NONCE
     )
     assert all(t in _strip(msg) for t in tries)
 
@@ -351,7 +350,7 @@ def test_prior_tries_stay_outside_the_fences(sample_fault_event: FaultEvent) -> 
 def test_source_branch_and_manifest_path_stay_outside_the_fences(
     sample_fault_event: FaultEvent,
 ) -> None:
-    msg = _build_user_message(sample_fault_event, _context(), nonce=_MSG_NONCE)
+    msg = _build_user_message(sample_fault_event, _context(), nonce=_NONCE)
     assert "manifest_path: apps/vigil-app.yaml" in _strip(msg)
     assert "source_branch: main" in _strip(msg)
 
@@ -359,7 +358,7 @@ def test_source_branch_and_manifest_path_stay_outside_the_fences(
 def test_empty_admission_list_keeps_its_literal_line(
     sample_fault_event: FaultEvent,
 ) -> None:
-    msg = _build_user_message(sample_fault_event, _context(), nonce=_MSG_NONCE)
+    msg = _build_user_message(sample_fault_event, _context(), nonce=_NONCE)
     assert "live_admission_objects: []" in _strip(msg)
 
 
@@ -367,7 +366,7 @@ def test_user_message_handles_empty_context_fields(
     sample_fault_event: FaultEvent,
 ) -> None:
     context = _context(live_pod_status="", live_services="", manifest_path=None)
-    msg = _build_user_message(sample_fault_event, context, nonce=_MSG_NONCE)
+    msg = _build_user_message(sample_fault_event, context, nonce=_NONCE)
     assert "manifest_path: None" in msg
     assert 'source="live_pod_status"' in msg
 
