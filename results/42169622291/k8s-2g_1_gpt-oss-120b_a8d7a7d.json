@@ -1,0 +1,43 @@
+{
+  "run_id": "k8s-2g_1_gpt-oss-120b_a8d7a7d",
+  "scenario": "k8s-2g",
+  "seed": "1",
+  "model": "gpt-oss:120b",
+  "git_sha7": "a8d7a7d",
+  "started_at": "2026-11-06T06:24:26Z",
+  "ended_at": "2026-11-06T06:26:55Z",
+  "outcome": "success",
+  "success_rate": true,
+  "remediation_success": true,
+  "diagnosis_accuracy": true,
+  "MTTR_s": 149.46973702100013,
+  "destructive_repair": false,
+  "rollback_triggered": false,
+  "rollback_success": null,
+  "total_input_tokens": 64450,
+  "total_output_tokens": 3240,
+  "total_tool_calls": 10,
+  "iteration_count": 7,
+  "autonomy_level": "full",
+  "actions_taken": [
+    "read_file",
+    "write_manifest",
+    "commit_files",
+    "push_branch",
+    "create_pr",
+    "final_result"
+  ],
+  "attempts": 1,
+  "incident_id": "k8s-2g_1_gpt-oss-120b_a8d7a7d",
+  "retry_queued": false,
+  "model_version": "gpt-oss:120b",
+  "setup_error": null,
+  "agent_branch": "remediation/run-k8s-2g_1_gpt-oss-120b_a8d7a7d",
+  "agent_commits": [
+    "f14ada74ec6cb93e8c93aff505f5bafd4940a728"
+  ],
+  "gate_status": "merged",
+  "merge_commit_sha": "5e0d2a19cdcc39c5d2eac042273df5a03fe08d00",
+  "forbidden_action_violations": [],
+  "target": "runner"
+}
