@@ -1,23 +1,10 @@
 { config, lib, pkgs, meta, ... }:
 {
-  imports = [
-    ../common
-  ];
-
-  boot.initrd.availableKernelModules = [
-    "ahci"
-    "sd_mod"
-    "sr_mod"
-    "virtio_pci"
-    "virtio_scsi"
-    "virtio_blk"
-  ];
-
+  imports = [ ../common ];
+  boot.initrd.availableKernelModules = [ "ahci" "sd_mod" "sr_mod" "virtio_pci" "virtio_scsi" "virtio_blk" ];
   system.stateVersion = "25.05";
-
   networking.firewall.allowedTCPPorts = [ 22 10250 ];
   networking.firewall.allowedUDPPorts = [ 8472 ];
-
   services.openssh = {
     enable = true;
     settings = {
@@ -25,7 +12,6 @@
       PasswordAuthentication = false;
     };
   };
-
   services.vigilAutoReconciler.enable = true;
-  services.k3s.enable = lib.mkForce false;
+  services.k3s.enable = true;
 }
