@@ -23,6 +23,9 @@ spec:
       persistence:
         storageClass: longhorn
         size: 1Gi
+      readinessProbe:
+        initialDelaySeconds: 30
+        periodSeconds: 10
   install:
     createNamespace: false
     remediation:
