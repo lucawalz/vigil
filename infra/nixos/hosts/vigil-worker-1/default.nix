@@ -2,13 +2,6 @@
 {
   imports = [
     ../common
-    ./disko.nix
-    ./boot.nix
-    ./locale.nix
-    ./networking.nix
-    ./nix-settings.nix
-    ./packages.nix
-    ./users.nix
   ];
 
   boot.initrd.availableKernelModules = [
@@ -34,7 +27,4 @@
   };
 
   services.vigilAutoReconciler.enable = true;
-
-  # Enable k3s service with proper ExecStart/ExecStop definitions.
-  services.k3s.enable = true;
 }
