@@ -2,7 +2,7 @@ rules:
   unpinned-uses:
     config:
       policies:
-        "*": ref-pin
+        "*": hash-pin
   # actionlint rejects the $/ self-repository form this audit suggests
   self-repository:
     disable: true

@@ -140,7 +140,7 @@ jobs:
           echo "All required secrets for target $TARGET are set"
 
       - name: Check the GitHub App grants
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.VIGIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.VIGIL_APP_PRIVATE_KEY }}
@@ -150,7 +150,7 @@ jobs:
           permission-checks: read
 
       - name: Check the eval harness App grants
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
           private-key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
@@ -209,13 +209,13 @@ jobs:
       GROUP: ${{ matrix.group }}
       SEED: ${{ matrix.seed }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Mint an eval harness App token
         id: harness-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
           private-key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
@@ -237,14 +237,14 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
 
-      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
-      - uses: hashicorp/setup-terraform@v4
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         if: inputs.target == 'hetzner'
         with:
           terraform_version: "~1.15"
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
           prune-cache: true
@@ -472,7 +472,7 @@ jobs:
 
       - name: Upload run artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: group-runs-${{ matrix.group }}-s${{ matrix.seed }}
           path: |
@@ -508,7 +508,7 @@ jobs:
       name: eval
       deployment: false
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -529,17 +529,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: true
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
           prune-cache: true
 
       - name: Download all group artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: group-runs-*
           merge-multiple: true
@@ -596,7 +596,7 @@ jobs:
       - name: Mint an eval harness App token
         id: harness-token
         if: always() && !(inputs.skip_destroy && inputs.target == 'hetzner')
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.VIGIL_HARNESS_APP_CLIENT_ID }}
           private-key: ${{ secrets.VIGIL_HARNESS_APP_PRIVATE_KEY }}
