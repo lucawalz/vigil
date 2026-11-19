@@ -66,7 +66,6 @@ Format: `<type>/<description>`
 | `feat/` | `feature/` | New features | `feat/watchdog-prometheus-poller` |
 | `fix/` | `bugfix/` | Bug fixes | `fix/flux-mcp-reconcile-timeout` |
 | `hotfix/` | - | Urgent fixes | `hotfix/rollback-gate-deadline` |
-| `release/` | - | Release preparation | `release/v1.1.0` |
 | `chore/` | - | Non-code tasks (deps, docs) | `chore/bump-pydantic-ai` |
 
 Branch names use lowercase letters, numbers, and hyphens only, with no uppercase, underscores, spaces, or consecutive hyphens.
@@ -98,14 +97,9 @@ chore(eval): bump ollama cloud model version to latest release
 
 ## Releases
 
-Maintainers cut releases. `make release VERSION=X.Y.Z` runs [`scripts/release.sh`](scripts/release.sh), which sets the version in every Python package and MCP server, regenerates `CHANGELOG.md` and creates the commit `chore(release): prepare vX.Y.Z`. Run it on `main` when no other work is in flight, otherwise on a `release/vX.Y.Z` branch merged through a pull request. Once `ci-gate` is green on that commit on `main`, a maintainer tags it:
+Releases are cut by [release-please](https://github.com/googleapis/release-please) through the shared release workflow, as [ADR-0018](docs/adr/0018-releases-through-release-please.md) records. The Conventional Commit pull request titles merged since the last release decide the next version: `fix`, `perf` and `docs` give a patch release, `feat` a minor one and a breaking change marked with `!` a major one. Types left out of the changelog, such as `chore`, `ci`, `refactor`, `test` and `build`, open no release on their own.
 
-```bash
-git tag -a vX.Y.Z -m vX.Y.Z
-git push origin vX.Y.Z
-```
-
-The release workflow publishes the GitHub release only after a green `ci-gate` on the tagged commit, with the version's `CHANGELOG.md` section as release notes. For a final release it then comments on and adds the `released` label to every issue and pull request referenced as `(#n)` in a commit subject since the previous release, apart from Dependabot pull requests. Only maintainers create tags.
+Every merge to `main` keeps one release pull request up to date. It opens as a draft with the `held` label and carries the `CHANGELOG.md` section and the new version in every `pyproject.toml`, `uv.lock` and MCP server. A maintainer marks it ready for review and merges it to release. The merge creates the tag and the GitHub release, and the workflow then comments on and adds the `released` label to every pull request in the release and the issues they close. Tags are never pushed and versions are never edited by hand.
 
 ## Versioning
 

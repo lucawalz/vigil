@@ -1,5 +1,5 @@
 ---
-status: Accepted
+status: Superseded by [ADR-0018](0018-releases-through-release-please.md)
 date: 2026-06-17
 decision-makers: [Luca Walz]
 consulted: []
@@ -7,6 +7,8 @@ informed: []
 ---
 
 # ADR-0016: Release tagging and changelog automation
+
+> Superseded by [ADR-0018](0018-releases-through-release-please.md) on 2026-11-19. Releases are cut through release pull requests from release-please.
 
 ## Context and Problem Statement
 

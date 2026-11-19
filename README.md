@@ -121,7 +121,7 @@ The thesis, "Autonomous Fault Diagnosis and Remediation in Kubernetes Clusters U
 | [`eval/`](eval/) | Eval harness, scenarios and helper scripts |
 | [`docs/adr/`](docs/adr/) | Architecture decision records |
 | [`tests/`](tests/) | Agent and eval test suites |
-| [`scripts/`](scripts/) | Local eval, measurement and release helpers |
+| [`scripts/`](scripts/) | Local eval and measurement helpers |
 
 ## Documentation
 
