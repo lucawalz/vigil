@@ -13,7 +13,7 @@ type TextResult struct {
 }
 
 func NewFluxServer(client flux.FluxClient, cfg *config.Config) *server.MCPServer {
-	mcpServer := server.NewMCPServer("flux-mcp", "2.0.0", // x-release-please-version
+	mcpServer := server.NewMCPServer("flux-mcp", "2.0.1", // x-release-please-version
 		server.WithToolCapabilities(true),
 	)
 
