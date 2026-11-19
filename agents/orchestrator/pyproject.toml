@@ -1,6 +1,6 @@
 [project]
 name = "vigil-orchestrator"
-version = "2.0.0"
+version = "2.0.1"
 requires-python = ">=3.12"
 dependencies = ["vigil-common", "vigil-diagnosis", "vigil-remediation", "vigil-watchdog", "fastapi>=0.115"]
 

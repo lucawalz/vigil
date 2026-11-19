@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.1](https://github.com/lucawalz/vigil/compare/v2.0.0...v2.0.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **ci:** pin actions by sha and require hash pins in zizmor ([0327856](https://github.com/lucawalz/vigil/commit/0327856532aa3125b4cb91ef4c7827cc2e1ac658))
+
+
+### Documentation
+
+* **readme:** add results section linking eval campaign reports ([025755b](https://github.com/lucawalz/vigil/commit/025755b8e978bfe155d225298e27fd7a9fc34123))
+* **readme:** clarify results scoring and name the thesis only model ([08fe0e1](https://github.com/lucawalz/vigil/commit/08fe0e1351f4830566d724adf944be77dd67dc85))
+
 ## [2.0.0](https://github.com/lucawalz/vigil/compare/v1.1.0...v2.0.0) - 2026-11-07
 
 ### Breaking changes

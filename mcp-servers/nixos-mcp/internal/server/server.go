@@ -13,7 +13,7 @@ type TextResult struct {
 }
 
 func NewServer(client nixos.NixOSClient, cfg *config.Config) *server.MCPServer {
-	s := server.NewMCPServer("nixos-mcp", "2.0.0", // x-release-please-version
+	s := server.NewMCPServer("nixos-mcp", "2.0.1", // x-release-please-version
 		server.WithToolCapabilities(true),
 	)
 
