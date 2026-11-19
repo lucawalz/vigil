@@ -5,44 +5,16 @@ on:
     branches: [main]
     types: [opened, reopened, synchronize]
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  auto-merge:
-    if: >-
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  automerge:
+    uses: lucawalz/.github/.github/workflows/dependabot-automerge.yml@512d402b682a017ae2629ee41f794686a8d1468c # v0.1.0
     permissions:
       contents: write
       pull-requests: write
-    steps:
-      - name: Fetch Dependabot metadata
-        id: meta
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Enable auto-merge for non-major github-actions updates
-        if: >-
-          steps.meta.outputs.package-ecosystem == 'github_actions' &&
-          (steps.meta.outputs.update-type == 'version-update:semver-patch' ||
-          steps.meta.outputs.update-type == 'version-update:semver-minor')
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge --auto --squash "$PR_URL"
-
-      - name: Comment on major version bumps
-        if: steps.meta.outputs.update-type == 'version-update:semver-major'
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr comment "$PR_URL" --edit-last --create-if-none \
-            --body "Major version bump - auto-merge skipped, manual review required."

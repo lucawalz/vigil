@@ -78,35 +78,6 @@ jobs:
       - name: Check lockfile is up to date
         run: make lock-check
 
-  commit-format:
-    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check Conventional Commits format
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          pattern='^(feat|fix|chore|ci|docs|refactor|perf|test|build)(\([a-z0-9-]+\))?: [a-z0-9](.*[^.])?$'
-          failed=0
-          check() {
-            if ! [[ $1 =~ $pattern ]]; then
-              echo "::error::Commit subject does not follow Conventional Commits: $1"
-              failed=1
-            fi
-          }
-          check "$PR_TITLE"
-          while IFS= read -r subject; do
-            check "$subject"
-          done < <(git log --no-merges --format=%s "$BASE_SHA..$HEAD_SHA")
-          exit "$failed"
-
   workflow-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -436,6 +407,26 @@ jobs:
           if pgrep -f qemu-system || pgrep -f 'vigil_lab hub'; then exit 1; fi
           test ! -e "$LAB_STATE"
 
+  zizmor:
+    uses: lucawalz/.github/.github/workflows/zizmor.yml@512d402b682a017ae2629ee41f794686a8d1468c # v0.1.0
+    permissions:
+      contents: read
+
+  pr-title:
+    if: github.event_name == 'pull_request'
+    uses: lucawalz/.github/.github/workflows/pr-title.yml@512d402b682a017ae2629ee41f794686a8d1468c # v0.1.0
+    permissions:
+      contents: read
+      pull-requests: read
+
+  codeql:
+    uses: lucawalz/.github/.github/workflows/codeql.yml@512d402b682a017ae2629ee41f794686a8d1468c # v0.1.0
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      languages: actions,go,python
+
   ci-gate:
     if: always()
     needs:
@@ -443,7 +434,6 @@ jobs:
       - python-test
       - python-typecheck
       - lockfile-drift
-      - commit-format
       - workflow-lint
       - detect-go-modules
       - go-lint
@@ -452,11 +442,15 @@ jobs:
       - terraform-lint
       - nix-vendor-hash
       - lab-smoke
+      - zizmor
+      - pr-title
+      - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions: {}
     steps:
       - name: Require all checks to pass
         uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: lockfile-drift,commit-format
+          allowed-skips: lockfile-drift,pr-title

@@ -1,6 +1,6 @@
 # Contributing to vigil
 
-Participation in this project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+Participation in this project follows the [Code of Conduct](https://github.com/lucawalz/.github/blob/main/CODE_OF_CONDUCT.md).
 
 ## Prerequisites
 
@@ -79,10 +79,9 @@ Format: `<type>[optional scope]: <description>`
 
 - Types: `feat` `fix` `chore` `ci` `docs` `refactor` `perf` `test` `build`
 - Scope: optional, lowercase, the component name (`kubectl-mcp`, `diagnosis`, `eval`)
-- Description: lowercase and imperative, with no trailing period; 7 to 12 words is the guideline
-- Subject line only, no body
+- Description: lowercase and imperative, with no trailing period
 
-The `commit-format` CI job checks the pull request title and every commit subject against this format.
+Pull requests are squash-merged with the title as the commit subject, and the `pr-title` CI job checks that the title is a Conventional Commit.
 
 ```text
 feat(diagnosis): add confidence threshold for os-layer escalation
@@ -95,7 +94,7 @@ chore(eval): bump ollama cloud model version to latest release
 1. Run `make ci` locally.
 2. Open the pull request against `main` and fill in the template.
 3. The `ci-gate` check must pass before merging.
-4. Pull requests are merged by squash or rebase.
+4. Pull requests are squash-merged.
 
 ## Releases
 
@@ -126,7 +125,7 @@ Significant design choices are documented as ADRs in [`docs/adr/`](docs/adr/). A
 
 ## AI-assisted contributions
 
-The pull request author is accountable for every change, whatever tools produced it. Substantial AI assistance is mentioned in the pull request description.
+The pull request author is accountable for every change, whatever tools produced it, and understands, explains and defends it in review. AI use is disclosed in the pull request description, with a short note on what the tool did. Low-effort AI pull requests, such as unreviewed generated changes, drive-by rewrites or changes that fail the checks, are closed without detailed review.
 
 ## Security
 

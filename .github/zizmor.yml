@@ -6,3 +6,6 @@ rules:
   # actionlint rejects the $/ self-repository form this audit suggests
   self-repository:
     disable: true
+  dangerous-triggers:
+    ignore:
+      - needs-info.yml

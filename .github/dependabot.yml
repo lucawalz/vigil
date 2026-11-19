@@ -24,6 +24,8 @@ updates:
       - /mcp-servers/*
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     open-pull-requests-limit: 0
@@ -40,6 +42,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     open-pull-requests-limit: 0
@@ -56,6 +60,8 @@ updates:
     directory: /infra/terraform
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     open-pull-requests-limit: 0

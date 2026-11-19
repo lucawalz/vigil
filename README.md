@@ -1,12 +1,11 @@
 # vigil
 
 [![ci](https://github.com/lucawalz/vigil/actions/workflows/ci.yml/badge.svg)](https://github.com/lucawalz/vigil/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/lucawalz/vigil)](https://github.com/lucawalz/vigil/releases)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lucawalz/vigil/badge)](https://scorecard.dev/viewer/?uri=github.com/lucawalz/vigil)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 
-A multi-agent system for autonomous fault diagnosis and remediation in Kubernetes clusters running on NixOS declarative infrastructure.
+Autonomous Kubernetes fault diagnosis and remediation with LLM agents over GitOps and NixOS, reversible by construction
 
 ## Description
 
@@ -29,6 +28,26 @@ The central thesis claim is that the system is reversible by construction: every
 Autonomous remediation is only safe when its actions can be undone. vigil takes the position that declarative infrastructure makes rollback tractable: when the desired state lives in git and is reconciled by Flux, and when OS configuration is expressed as immutable NixOS generations, every repair has a well-defined inverse.
 
 The work is a bachelor's thesis research project. It evaluates whether LLM-based agents can perform end-to-end fault remediation reliably when constrained to typed, auditable tool interfaces, and whether the Kubernetes-plus-NixOS pairing forms a realistic target for autonomous repair. The design rationale is recorded as architecture decision records under [`docs/adr/`](docs/adr/).
+
+## Installation
+
+Install the toolchain listed in the [prerequisites](CONTRIBUTING.md#prerequisites), or enter the Nix development shell with `nix develop`. Then install every Python workspace package:
+
+```bash
+make setup
+```
+
+The Go MCP servers need no separate setup step. LLM access is configured through environment variables only: `claude-*` model names use the Anthropic API, every other name an OpenAI-compatible endpoint such as Ollama. Credentials are never committed.
+
+## Usage
+
+Run the full check suite, the same one CI runs:
+
+```bash
+make ci
+```
+
+Plain `make` runs the same target. Live runs need the Hetzner Cloud eval cluster, provisioned as described in [`infra/terraform/README.md`](infra/terraform/README.md). The local lab in [`infra/lab/`](infra/lab/README.md) runs the cluster hosts as qemu VMs on a laptop or a GitHub runner. Scenarios and evaluation campaigns are covered in [`eval/README.md`](eval/README.md), and running the orchestrator locally in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-orchestrator-locally).
 
 ## Architecture
 
@@ -83,26 +102,6 @@ flowchart LR
 
 The orchestrator receives an alert, runs diagnosis with a read-only subset of the four MCP servers' tools, then dispatches remediation and the watchdog. The watchdog only observes; the orchestrator owns the rollback decision and issues it when the watchdog reports degraded health.
 
-## Installation
-
-Install the toolchain listed in the [prerequisites](CONTRIBUTING.md#prerequisites), or enter the Nix development shell with `nix develop`. Then install every Python workspace package:
-
-```bash
-make setup
-```
-
-The Go MCP servers need no separate setup step. LLM access is configured through environment variables only: `claude-*` model names use the Anthropic API, every other name an OpenAI-compatible endpoint such as Ollama. Credentials are never committed.
-
-## Usage
-
-Run the full check suite, the same one CI runs:
-
-```bash
-make ci
-```
-
-Plain `make` runs the same target. Live runs need the Hetzner Cloud eval cluster, provisioned as described in [`infra/terraform/README.md`](infra/terraform/README.md). The local lab in [`infra/lab/`](infra/lab/README.md) runs the cluster hosts as qemu VMs on a laptop or a GitHub runner. Scenarios and evaluation campaigns are covered in [`eval/README.md`](eval/README.md), and running the orchestrator locally in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-orchestrator-locally).
-
 ## Results
 
 The thesis, "Autonomous Fault Diagnosis and Remediation in Kubernetes Clusters Using LLM-Based Agents on Declarative Infrastructure", evaluates the system on the frozen `v1.0.0` release over 13 scenarios at three replicate seeds, 39 runs per model. DeepSeek-V3.2, the third model, is covered in the thesis only. Each figure below comes from one campaign report on the [`docs/eval-results`](https://github.com/lucawalz/vigil/tree/docs/eval-results/results) branch.
@@ -124,13 +123,23 @@ The thesis, "Autonomous Fault Diagnosis and Remediation in Kubernetes Clusters U
 | [`tests/`](tests/) | Agent and eval test suites |
 | [`scripts/`](scripts/) | Local eval, measurement and release helpers |
 
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [docs/adr/](docs/adr/README.md) | Architecture decision records |
+| [infra/terraform/README.md](infra/terraform/README.md) | Provisioning the Hetzner Cloud eval cluster |
+| [infra/lab/README.md](infra/lab/README.md) | The local lab running the cluster hosts as qemu VMs |
+| [eval/README.md](eval/README.md) | Scenarios and evaluation campaigns |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Toolchain, checks, running the orchestrator locally, and conventions |
+
 ## Support
 
 Report bugs and request features through the [issue forms](https://github.com/lucawalz/vigil/issues/new/choose). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and conventions, and the architecture decision records under [docs/adr/](docs/adr/) for the reasoning behind the major design choices.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and conventions, the [Code of Conduct](https://github.com/lucawalz/.github/blob/main/CODE_OF_CONDUCT.md) for participation, and the architecture decision records under [docs/adr/](docs/adr/) for the reasoning behind the major design choices.
 
 ## Authors and acknowledgment
 
